@@ -48,6 +48,8 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Test Rust core
         run: cargo test --workspace --locked
+      - name: Test APK packaging
+        run: python3 -m unittest discover -s scripts -p "test_*.py"
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
@@ -61,23 +63,26 @@ jobs:
       - name: Android Lint
         working-directory: android
         run: ./gradlew --no-daemon lintDebug
+      - name: Name APKs for distribution
+        id: package
+        run: python3 scripts/package-apks.py >> "$GITHUB_OUTPUT"
       - name: Verify APK signatures and 16 KB alignment
         shell: bash
         run: |
           set -euo pipefail
-          for apk in android/app/build/outputs/apk/debug/*.apk; do
+          for apk in "${{ steps.package.outputs.directory }}"/*.apk; do
             "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify "$apk"
             "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 4 "$apk"
           done
-          cd android/app/build/outputs/apk/debug
-          sha256sum ./*.apk > SHA256SUMS.txt
+          cd "${{ steps.package.outputs.directory }}"
+          sha256sum --check SHA256SUMS.txt
       - name: Upload test APKs
         uses: actions/upload-artifact@v4
         with:
           name: luma-music-test-${{ github.run_number }}
           path: |
-            android/app/build/outputs/apk/debug/*.apk
-            android/app/build/outputs/apk/debug/SHA256SUMS.txt
+            ${{ steps.package.outputs.directory }}/*.apk
+            ${{ steps.package.outputs.directory }}/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
       - name: Upload Lint report
@@ -111,9 +116,11 @@ jobs:
           set -euo pipefail
           cat > notes.md <<'NOTES'
           Luma Music — тестовая версия «Жидкое стекло» для Android 11+.
-          made by Romeo_13card
+          made by Romeo13card
 
-          Для телефона ARM64 выберите app-arm64-v8a-debug.apk.
+          Новый экран настроек: вибрация, повтор и перемешивание сохраняются между запусками.
+
+          Для телефона ARM64 выберите Luma-Music-*-arm64-v8a.apk.
           Без аккаунта можно открыть деморежим и локальный тестовый звук.
 
           Это APK с отладочной подписью. Работа настоящего аккаунта и полный диапазон Android 11–17 ещё не проверены. Для OAuth-входа через браузер нужен собственный Client ID. «Моя волна» и офлайн-загрузка каталога пока не реализованы.

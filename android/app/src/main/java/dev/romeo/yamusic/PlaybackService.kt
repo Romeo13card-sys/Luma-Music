@@ -71,6 +71,9 @@ class PlaybackService : Service() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        val preferences = getSharedPreferences("player_settings", MODE_PRIVATE)
+        shuffle = preferences.getBoolean("shuffle", false)
+        repeat = preferences.getBoolean("repeat", false)
         audio = getSystemService(AudioManager::class.java)
         getSystemService(NotificationManager::class.java)
             .createNotificationChannel(

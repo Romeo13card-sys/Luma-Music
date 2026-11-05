@@ -39,6 +39,8 @@ class MainActivity : Activity() {
             }
         }
 
+    private val preferences by lazy { getSharedPreferences("player_settings", MODE_PRIVATE) }
+
     private fun dp(n: Int) = (n * resources.displayMetrics.density).toInt()
 
     private val white = Color.rgb(239, 247, 248)
@@ -47,6 +49,8 @@ class MainActivity : Activity() {
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
+        PlaybackService.shuffle = preferences.getBoolean("shuffle", false)
+        PlaybackService.repeat = preferences.getBoolean("repeat", false)
         token = TokenStore(this).load().orEmpty()
         if (token.isEmpty()) login() else shell("Главная")
         handleOAuth(intent)
@@ -89,7 +93,9 @@ class MainActivity : Activity() {
             isFocusable = true
             contentDescription = label
             setOnClickListener {
-                performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                if (preferences.getBoolean("haptics", true)) {
+                    performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                }
                 click()
             }
         }
@@ -307,7 +313,7 @@ class MainActivity : Activity() {
             text(getString(R.string.app_name), 18f, white, true),
             LinearLayout.LayoutParams(0, -2, 1f),
         )
-        header.addView(action(if (demo) "Демо" else "Аккаунт") { settings() })
+        header.addView(action("Настройки") { settings() })
         root.addView(header)
         status = text(if (demo) "ДЕМОРЕЖИМ · БЕЗ ПОДКЛЮЧЕНИЯ К ЯНДЕКСУ" else "", 11f, mint)
         root.addView(status)
@@ -540,6 +546,7 @@ class MainActivity : Activity() {
         body.addView(
             action("Перемешивание: ${if(PlaybackService.shuffle) "вкл" else "выкл"}") {
                 PlaybackService.shuffle = !PlaybackService.shuffle
+                preferences.edit().putBoolean("shuffle", PlaybackService.shuffle).apply()
                 fullPlayer()
             }
         )
@@ -547,6 +554,7 @@ class MainActivity : Activity() {
         body.addView(
             action("Повтор трека: ${if(PlaybackService.repeat) "вкл" else "выкл"}") {
                 PlaybackService.repeat = !PlaybackService.repeat
+                preferences.edit().putBoolean("repeat", PlaybackService.repeat).apply()
                 fullPlayer()
             }
         )
@@ -576,22 +584,72 @@ class MainActivity : Activity() {
     }
 
     private fun settings() {
-        AlertDialog.Builder(this)
-            .setTitle(getString(R.string.app_name))
-            .setMessage(
-                "${getString(R.string.author_credit)}\n\nТема: ${getString(R.string.theme_name)}.\n\nЛёгкий стеклянный интерфейс без постоянного размытия.\n\nНеофициальный клиент Яндекс Музыки. Токен защищён Android Keystore.\n\nДоступность треков зависит от подписки и региона."
+        backdrop()
+        root.addView(action("‹ Назад") { shell(page) })
+        val scroll = ScrollView(this)
+        body = column()
+        scroll.addView(body)
+        root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        body.addView(text("Настройки", 32f, white, true))
+        status = text("", 13f, muted)
+        body.addView(status)
+        val player = panel(body)
+        player.addView(text("Плеер", 22f, white, true))
+        fun toggle(title: String, value: Boolean, change: (Boolean) -> Unit) {
+            player.addView(
+                Switch(this).apply {
+                    text = title
+                    textSize = 16f
+                    setTextColor(white)
+                    minHeight = dp(56)
+                    isChecked = value
+                    setOnCheckedChangeListener { _, enabled -> change(enabled) }
+                }
             )
-            .setPositiveButton("Закрыть", null)
-            .setNeutralButton(if (demo) "Войти" else "Выйти") { _, _ ->
-                stopService(Intent(this, PlaybackService::class.java))
-                PlaybackService.queue = emptyList()
-                PlaybackService.index = -1
-                TokenStore(this).clear()
-                token = ""
-                demo = false
-                login()
+        }
+        toggle("Вибрация кнопок", preferences.getBoolean("haptics", true)) {
+            preferences.edit().putBoolean("haptics", it).apply()
+        }
+        toggle("Перемешивание", PlaybackService.shuffle) {
+            PlaybackService.shuffle = it
+            preferences.edit().putBoolean("shuffle", it).apply()
+        }
+        toggle("Повтор трека", PlaybackService.repeat) {
+            PlaybackService.repeat = it
+            preferences.edit().putBoolean("repeat", it).apply()
+        }
+        val about = panel(body)
+        about.addView(text(getString(R.string.app_name), 24f, white, true))
+        val version = packageManager.getPackageInfo(packageName, 0).versionName.orEmpty()
+        about.addView(text("Версия $version · Android ${Build.VERSION.RELEASE}", 14f, muted))
+        about.addView(text("Тема: ${getString(R.string.theme_name)}", 16f, white))
+        about.addView(text(getString(R.string.author_credit), 16f, mint, true))
+        about.addView(
+            text(
+                "Неофициальный клиент Яндекс Музыки. Токен защищён Android Keystore. Доступность треков зависит от подписки и региона.",
+                13f,
+                muted,
+            )
+        )
+        gap(body)
+        body.addView(
+            action(if (demo) "Подключить аккаунт" else "Выйти из аккаунта") {
+                AlertDialog.Builder(this)
+                    .setTitle(if (demo) "Перейти ко входу?" else "Выйти из аккаунта?")
+                    .setMessage("Воспроизведение будет остановлено.")
+                    .setNegativeButton("Отмена", null)
+                    .setPositiveButton("Продолжить") { _, _ ->
+                        stopService(Intent(this, PlaybackService::class.java))
+                        PlaybackService.queue = emptyList()
+                        PlaybackService.index = -1
+                        TokenStore(this).clear()
+                        token = ""
+                        demo = false
+                        login()
+                    }
+                    .show()
             }
-            .show()
+        )
     }
 
     private fun openFile() {
