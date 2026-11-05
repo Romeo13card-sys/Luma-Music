@@ -1,0 +1,54 @@
+name: Publish signed APKs
+on:
+  push:
+    branches: ['publish-apk/**']
+permissions:
+  contents: read
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: '13114758'
+          packages: 'platform-tools build-tools;36.0.0'
+          log-accepted-android-sdk-licenses: false
+      - name: Validate signed payload
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/verify-release-payload.py >> "$GITHUB_OUTPUT"
+      - name: Publish immutable test release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          SOURCE_COMMIT: ${{ steps.release.outputs.commit }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo 'Release already exists; refusing to replace signed assets' >&2
+            exit 1
+          fi
+          gh release create "$RELEASE_TAG" .release-input/*.apk .release-input/SHA256SUMS.txt .release-input/certificate.sha256 \
+            --target "$SOURCE_COMMIT" --prerelease --title "Luma Music $RELEASE_TAG" --notes-file .release-input/notes.md
+      - name: Remove completed transport branch
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TRANSPORT_BRANCH: ${{ github.ref_name }}
+        run: gh api --method DELETE "repos/$GH_REPO/git/refs/heads/$TRANSPORT_BRANCH"

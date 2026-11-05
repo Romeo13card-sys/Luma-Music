@@ -11,44 +11,38 @@ class QueueStore(context: Context) {
     data class Snapshot(val songs: List<Song>, val index: Int, val position: Int)
 
     companion object {
-        private fun localUri(uri: String?) =
-            uri?.takeIf { it.startsWith("content://") || it.startsWith("file://") }
-
         fun encode(snapshot: Snapshot): String {
             val items = JSONArray()
             snapshot.songs.take(200).forEach { song ->
                 items.put(
                     JSONObject()
-                        .put("id", song.id.take(256))
-                        .put("title", song.title.take(512))
-                        .put("artists", song.artist.take(512))
+                        .put("id", song.id)
+                        .put("title", song.title)
+                        .put("artists", song.artist)
                         .put("available", song.available)
-                        .apply { localUri(song.uri)?.let { put("uri", it.take(4096)) } }
+                        .apply { song.uri?.let { put("uri", it) } }
                 )
             }
-            return JSONObject()
-                .put("songs", items)
-                .put("index", snapshot.index.coerceIn(0, maxOf(0, items.length() - 1)))
-                .put("position", snapshot.position.coerceAtLeast(0))
-                .toString()
+            val raw =
+                JSONObject()
+                    .put("songs", items)
+                    .put("index", snapshot.index)
+                    .put("position", snapshot.position)
+                    .toString()
+            return NativeCore.call("queue_normalize", raw) as String
         }
 
         fun decode(raw: String?): Snapshot? {
-            if (raw == null || raw.length > 512_000) return null
-            val data = JSONObject(raw)
+            if (raw == null) return null
+            val data = JSONObject(NativeCore.call("queue_normalize", raw) as String)
             val items = data.getJSONArray("songs")
             val songs =
-                (0 until minOf(items.length(), 200)).map { i ->
+                (0 until items.length()).map { i ->
                     val v = items.getJSONObject(i)
-                    Song.from(v).copy(uri = localUri(v.optString("uri")))
+                    Song.from(v).copy(uri = v.optString("uri").takeIf { it.isNotEmpty() })
                 }
             return if (songs.isEmpty()) null
-            else
-                Snapshot(
-                    songs,
-                    data.optInt("index").coerceIn(0, songs.lastIndex),
-                    data.optInt("position").coerceAtLeast(0),
-                )
+            else Snapshot(songs, data.getInt("index"), data.getInt("position"))
         }
     }
 

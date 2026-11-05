@@ -1,3 +1,5 @@
+mod queue;
+mod updates;
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -331,6 +333,53 @@ pub fn dispatch(token: &str, operation: &str, argument: &str) -> String {
     }
 }
 
+pub fn core_dispatch(operation: &str, argument: &str) -> String {
+    let result: Result<Value> = (|| {
+        if argument.len() > queue::MAX_BYTES {
+            return Err("Запрос ядра слишком большой".into());
+        }
+        if operation == "queue_normalize" {
+            return queue::normalize(argument).map(|s| json!(s));
+        }
+        let v: Value = serde_json::from_str(argument).map_err(|_| "Некорректный запрос ядра")?;
+        match operation {
+            "version_compare" => Ok(json!(updates::compare(
+                v["candidate"].as_str().unwrap_or(""),
+                v["installed"].as_str().unwrap_or("")
+            ))),
+            "checksum" => updates::checksum(
+                v["text"].as_str().unwrap_or(""),
+                v["name"].as_str().unwrap_or(""),
+            )
+            .map(|s| json!(s)),
+            "asset_select" => updates::asset(&v["assets"], &v["abis"]),
+            _ => Err("Неизвестная операция ядра".into()),
+        }
+    })();
+    match result {
+        Ok(data) => json!({"ok":true,"data":data}).to_string(),
+        Err(error) => json!({"ok":false,"error":error}).to_string(),
+    }
+}
+#[cfg(target_os = "android")]
+#[no_mangle]
+pub extern "system" fn Java_org_luma_music_Native_core(
+    mut env: jni::JNIEnv,
+    _object: jni::objects::JObject,
+    operation: jni::objects::JString,
+    argument: jni::objects::JString,
+) -> jni::sys::jstring {
+    let value = (|| {
+        let operation: String = env.get_string(&operation).ok()?.into();
+        let argument: String = env.get_string(&argument).ok()?.into();
+        Some(core_dispatch(&operation, &argument))
+    })()
+    .unwrap_or_else(|| json!({"ok":false,"error":"Ошибка JNI"}).to_string());
+    env.new_string(value)
+        .map(|s| s.into_raw())
+        .unwrap_or(std::ptr::null_mut())
+}
+
 #[cfg(target_os = "android")]
 #[no_mangle]
 pub extern "system" fn Java_org_luma_music_Native_request(
@@ -355,6 +404,19 @@ pub extern "system" fn Java_org_luma_music_Native_request(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn offline_dispatch_needs_no_credentials_and_reports_invalid_input() {
+        let reply: Value = serde_json::from_str(&core_dispatch(
+            "queue_normalize",
+            r#"{"songs":[],"index":0,"position":0}"#,
+        ))
+        .unwrap();
+        assert_eq!(reply["ok"], true);
+        for (op, arg) in [("unknown", "{}"), ("queue_normalize", "bad-json")] {
+            let error: Value = serde_json::from_str(&core_dispatch(op, arg)).unwrap();
+            assert_eq!(error["ok"], false);
+        }
+    }
     #[test]
     fn parses_search_tracks_with_multiple_artists() {
         let result = track(

@@ -35,8 +35,8 @@ android {
         applicationId = "org.luma.music"
         minSdk = 30
         targetSdk = 36
-        versionCode = 8
-        versionName = "0.4.1-test"
+        versionCode = 9
+        versionName = "0.4.2-test"
         ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64") }
     }
     splits {
