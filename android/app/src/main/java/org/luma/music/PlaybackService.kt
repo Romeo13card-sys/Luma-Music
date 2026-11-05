@@ -1,4 +1,4 @@
-package dev.romeo.yamusic
+package org.luma.music
 
 import android.app.*
 import android.content.*
@@ -14,6 +14,7 @@ data class Song(
     val artist: String,
     val available: Boolean = true,
     val uri: String? = null,
+    val waveBatch: String? = null,
 ) {
     companion object {
         fun from(v: JSONObject) =
@@ -22,6 +23,7 @@ data class Song(
                 v.getString("title"),
                 v.getString("artists"),
                 v.optBoolean("available"),
+                waveBatch = v.optString("waveBatch").takeIf { it.isNotBlank() },
             )
     }
 }
@@ -35,13 +37,35 @@ class PlaybackService : Service() {
         var message = "Выберите музыку"
         var shuffle = false
         var repeat = false
+        var restoredPosition = 0
+
+        fun forgetQueue(context: Context) {
+            queue = emptyList()
+            index = -1
+            restoredPosition = 0
+            val app = context.applicationContext
+            val service = instance
+            if (service != null) service.worker.execute { QueueStore(app).clear() }
+            else QueueStore(app).clear()
+        }
+
+        fun restore(context: Context) {
+            if (instance != null || queue.isNotEmpty()) return
+            QueueStore(context).load()?.let {
+                queue = it.songs
+                index = it.index
+                restoredPosition = it.position
+                message = "Очередь восстановлена · нажмите играть"
+            }
+        }
 
         fun command(context: Context, action: String, position: Int = -1) {
             val intent =
                 Intent(context, PlaybackService::class.java)
                     .setAction(action)
                     .putExtra("position", position)
-            if (action == "play") context.startForegroundService(intent)
+            if (action == "play" || action == "wave" || action == "restore")
+                context.startForegroundService(intent)
             else context.startService(intent)
         }
     }
@@ -53,6 +77,69 @@ class PlaybackService : Service() {
     private lateinit var audio: AudioManager
     private var generation = 0
     private var prepared = false
+    private var waveSessionStarted = false
+    private var resumePosition = 0
+    private val checkpoint =
+        object : Runnable {
+            override fun run() {
+                if (playing) saveQueue()
+                main.postDelayed(this, 30000)
+            }
+        }
+
+    private fun saveQueue() {
+        if (index !in queue.indices) return
+        val start = maxOf(0, index - 20)
+        val snapshot = QueueStore.Snapshot(queue.drop(start).take(200), index - start, position())
+        worker.execute { QueueStore(this).save(snapshot) }
+    }
+
+    private fun feedback(song: Song, type: String, seconds: Int = 0) {
+        val batch = song.waveBatch ?: return
+        val data =
+            JSONObject()
+                .put("type", type)
+                .put("timestamp", java.time.Instant.now().toString())
+                .put("batchId", batch)
+                .put("trackId", song.id)
+                .put("totalPlayedSeconds", seconds.coerceAtLeast(0))
+        Native.request(TokenStore(this).load().orEmpty(), "wave_feedback", data.toString())
+    }
+
+    private fun refillWave(song: Song, finished: Boolean = true, playedSeconds: Int = 0) {
+        val version = ++generation
+        release()
+        message = "Продолжаем Мою волну…"
+        publish()
+        worker.execute {
+            if (finished) feedback(song, "trackFinished", playedSeconds)
+            val data =
+                try {
+                    JSONObject(Native.request(TokenStore(this).load().orEmpty(), "wave", song.id))
+                } catch (_: Exception) {
+                    null
+                }
+            main.post {
+                if (version != generation) return@post
+                if (data == null || !data.optBoolean("ok")) {
+                    fail(data?.optString("error") ?: "Не удалось продолжить волну")
+                    return@post
+                }
+                val items = data.getJSONArray("data")
+                val songs =
+                    (0 until items.length())
+                        .map { Song.from(items.getJSONObject(it)) }
+                        .filter { it.id != song.id }
+                if (songs.isEmpty()) {
+                    fail("Волна повторила предыдущую партию. Запустите её заново.")
+                    return@post
+                }
+                queue = songs
+                load(0)
+            }
+        }
+    }
+
     private val focus by lazy {
         AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
             .setAudioAttributes(
@@ -74,6 +161,7 @@ class PlaybackService : Service() {
         val preferences = getSharedPreferences("player_settings", MODE_PRIVATE)
         shuffle = preferences.getBoolean("shuffle", false)
         repeat = preferences.getBoolean("repeat", false)
+        main.postDelayed(checkpoint, 30000)
         audio = getSystemService(AudioManager::class.java)
         getSystemService(NotificationManager::class.java)
             .createNotificationChannel(
@@ -128,10 +216,31 @@ class PlaybackService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             "play" -> {
+                restoredPosition = 0
                 startForeground(1, notification())
                 load(intent.getIntExtra("position", 0))
             }
-            "toggle" -> if (playing) pause() else resume()
+            "wave" -> {
+                restoredPosition = 0
+                startForeground(1, notification())
+                waveSessionStarted = false
+                load(intent.getIntExtra("position", 0))
+            }
+            "restore" -> {
+                startForeground(1, notification())
+                resumePosition = restoredPosition
+                restoredPosition = 0
+                load(index.coerceAtLeast(0))
+            }
+            "toggle" ->
+                if (playing) pause()
+                else if (prepared) resume()
+                else {
+                    startForeground(1, notification())
+                    resumePosition = restoredPosition
+                    restoredPosition = 0
+                    load(index.coerceAtLeast(0))
+                }
             "next" -> next(1)
             "previous" -> next(-1)
             "stop" -> stopSelf()
@@ -160,6 +269,7 @@ class PlaybackService : Service() {
     fun seek(position: Int) {
         if (prepared) {
             player?.seekTo(position)
+            saveQueue()
             publish()
         }
     }
@@ -191,6 +301,10 @@ class PlaybackService : Service() {
         worker.execute {
             val response =
                 try {
+                    if (song.waveBatch != null && !waveSessionStarted) {
+                        feedback(song, "radioStarted")
+                        waveSessionStarted = true
+                    }
                     song.uri
                         ?: JSONObject(
                                 Native.request(TokenStore(this).load().orEmpty(), "stream", song.id)
@@ -222,7 +336,14 @@ class PlaybackService : Service() {
                     media.setOnPreparedListener {
                         if (player === it) {
                             prepared = true
+                            if (resumePosition > 0) {
+                                it.seekTo(resumePosition.coerceAtMost(it.duration))
+                                resumePosition = 0
+                            }
+                            if (song.waveBatch != null)
+                                worker.execute { feedback(song, "trackStarted") }
                             resume()
+                            saveQueue()
                         }
                     }
                     media.setOnErrorListener { failed, _, _ ->
@@ -234,6 +355,12 @@ class PlaybackService : Service() {
                             if (repeat) {
                                 it.seekTo(0)
                                 resume()
+                            } else if (song.waveBatch != null) {
+                                if (index + 1 < queue.size) {
+                                    val seconds = it.duration / 1000
+                                    worker.execute { feedback(song, "trackFinished", seconds) }
+                                    load(index + 1)
+                                } else refillWave(song, playedSeconds = it.duration / 1000)
                             } else if (index + 1 < queue.size || shuffle) next(1)
                             else {
                                 pause()
@@ -268,6 +395,7 @@ class PlaybackService : Service() {
     }
 
     private fun pause() {
+        saveQueue()
         if (prepared) player?.pause()
         playing = false
         message = "Пауза"
@@ -277,6 +405,13 @@ class PlaybackService : Service() {
 
     private fun next(step: Int) {
         if (queue.isEmpty()) return
+        val current = queue.getOrNull(index)
+        if (current?.waveBatch != null && step > 0) {
+            val seconds = position() / 1000
+            worker.execute { feedback(current, "skip", seconds) }
+            if (index + 1 >= queue.size) refillWave(current, false) else load(index + 1)
+            return
+        }
         val available = queue.indices.filter { queue[it].available }
         if (available.isEmpty()) return
         val destination =
@@ -377,7 +512,9 @@ class PlaybackService : Service() {
     }
 
     override fun onDestroy() {
+        saveQueue()
         generation++
+        main.removeCallbacksAndMessages(null)
         release()
         session.release()
         unregisterReceiver(noisy)

@@ -1,4 +1,4 @@
-package dev.romeo.yamusic
+package org.luma.music
 
 object Native {
     init {

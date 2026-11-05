@@ -62,7 +62,7 @@ jobs:
         run: bash scripts/build-android.sh
       - name: Android Lint
         working-directory: android
-        run: ./gradlew --no-daemon lintDebug
+        run: ./gradlew --no-daemon testDebugUnitTest lintDebug
       - name: Name APKs for distribution
         id: package
         run: python3 scripts/package-apks.py >> "$GITHUB_OUTPUT"
@@ -123,7 +123,8 @@ jobs:
           Для телефона ARM64 выберите Luma-Music-*-arm64-v8a.apk.
           Без аккаунта можно открыть деморежим и локальный тестовый звук.
 
-          Это APK с отладочной подписью. Работа настоящего аккаунта и полный диапазон Android 11–17 ещё не проверены. Для OAuth-входа через браузер нужен собственный Client ID. «Моя волна» и офлайн-загрузка каталога пока не реализованы.
+          Это APK с отладочной подписью. Работа настоящего аккаунта и полный диапазон Android 11–17 ещё не проверены. Для OAuth-входа через браузер нужен собственный Client ID. «Моя волна» добавлена экспериментально; требуется проверка на аккаунте. Офлайн-загрузка каталога пока не реализована.
+          Новый идентификатор org.luma.music: устанавливается отдельно от предыдущих версий.
           NOTES
           gh release create "$RELEASE_TAG" release/*.apk release/SHA256SUMS.txt \
             --prerelease --verify-tag --title "Luma Music — Жидкое стекло ($RELEASE_TAG)" \

@@ -161,6 +161,57 @@ impl MusicClient {
             .filter_map(track)
             .collect())
     }
+    pub fn wave(&self, previous: &str) -> Result<Value> {
+        if !previous.is_empty() && !previous.bytes().all(|b| b.is_ascii_digit()) {
+            return Err("Некорректный трек продолжения волны".into());
+        }
+        let mut query = vec![("settings2", "True")];
+        if !previous.is_empty() {
+            query.push(("queue", previous));
+        }
+        parse_wave(&self.get("/rotor/station/user:onyourwave/tracks", &query)?)
+    }
+    pub fn wave_feedback(&self, argument: &str) -> Result<Value> {
+        let body: Value = serde_json::from_str(argument).map_err(|_| "Некорректный отзыв волны")?;
+        let kind = body["type"].as_str().unwrap_or("");
+        if !["radioStarted", "trackStarted", "trackFinished", "skip"].contains(&kind)
+            || body["timestamp"].as_str().is_none()
+            || body["batchId"].as_str().is_none()
+            || (kind != "radioStarted"
+                && !body["trackId"]
+                    .as_str()
+                    .map(|s| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()))
+                    .unwrap_or(false))
+        {
+            return Err("Некорректный отзыв волны".into());
+        }
+        let mut data = json!({"type":kind, "timestamp":body["timestamp"]});
+        if kind == "radioStarted" {
+            data["from"] = json!("luma-music");
+        } else {
+            data["trackId"] = body["trackId"].clone();
+        }
+        if let Some(seconds) = body["totalPlayedSeconds"].as_u64() {
+            data["totalPlayedSeconds"] = json!(seconds);
+        }
+        let response = self
+            .client
+            .post(format!("{API}/rotor/station/user:onyourwave/feedback"))
+            .header("Authorization", format!("OAuth {}", self.token))
+            .query(&[("batch-id", body["batchId"].as_str().unwrap_or(""))])
+            .json(&data)
+            .send()
+            .map_err(|_| "Ошибка отправки отзыва волны")?
+            .error_for_status()
+            .map_err(|_| "Сервис отклонил отзыв волны")?;
+        let result: Value = response
+            .json()
+            .map_err(|_| "Неизвестный ответ на отзыв волны")?;
+        if result["result"] != "ok" {
+            return Err("Отзыв волны не принят".into());
+        }
+        Ok(json!(true))
+    }
     pub fn stream(&self, id: &str) -> Result<String> {
         if id.is_empty() || !id.bytes().all(|b| b.is_ascii_digit()) {
             return Err("Некорректный идентификатор трека".into());
@@ -193,6 +244,29 @@ impl MusicClient {
             quick_xml::de::from_str(&xml).map_err(|_| "Неизвестный формат данных аудио")?;
         info.signed_url()
     }
+}
+
+fn parse_wave(value: &Value) -> Result<Value> {
+    let batch = value["batchId"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .ok_or("Отсутствует партия волны")?;
+    let sequence = value["sequence"].as_array().ok_or("Нет треков волны")?;
+    let tracks: Vec<Value> = sequence
+        .iter()
+        .filter_map(|v| track(&v["track"]))
+        .filter(|t| t.available)
+        .take(30)
+        .map(|t| {
+            let mut value = json!(t);
+            value["waveBatch"] = json!(batch);
+            value
+        })
+        .collect();
+    if tracks.is_empty() {
+        return Err("Волна не вернула доступных треков".into());
+    }
+    Ok(json!(tracks))
 }
 
 fn validate_download_url(raw: &str) -> Result<()> {
@@ -245,6 +319,8 @@ pub fn dispatch(token: &str, operation: &str, argument: &str) -> String {
             "library" => client.library(),
             "playlist" => client.playlist(argument).map(|v| json!(v)),
             "likes" => client.likes().map(|v| json!(v)),
+            "wave" => client.wave(argument),
+            "wave_feedback" => client.wave_feedback(argument),
             "stream" => client.stream(argument).map(|url| json!(url)),
             _ => Err("Неизвестная операция".into()),
         }
@@ -257,7 +333,7 @@ pub fn dispatch(token: &str, operation: &str, argument: &str) -> String {
 
 #[cfg(target_os = "android")]
 #[no_mangle]
-pub extern "system" fn Java_dev_romeo_yamusic_Native_request(
+pub extern "system" fn Java_org_luma_music_Native_request(
     mut env: jni::JNIEnv,
     _class: jni::objects::JObject,
     token: jni::objects::JString,
@@ -328,5 +404,34 @@ mod tests {
                 "Некорректный плейлист"
             );
         }
+    }
+    #[test]
+    fn wave_keeps_batch_and_filters_unavailable_tracks() {
+        let value = json!({"batchId":"batch-42", "sequence":[
+            {"track":{"id":1,"title":"Available","available":true}},
+            {"track":{"id":2,"available":false}}, {"track":{}}
+        ]});
+        let parsed = parse_wave(&value).unwrap();
+        assert_eq!(parsed.as_array().unwrap().len(), 1);
+        assert_eq!(parsed[0]["waveBatch"], "batch-42");
+        assert!(parse_wave(&json!({"sequence":[]})).is_err());
+        assert!(parse_wave(&json!({"batchId":"b","sequence":[]})).is_err());
+    }
+    #[test]
+    fn wave_bounds_memory_and_rejects_invalid_inputs_without_network() {
+        let items: Vec<Value> = (1..=100)
+            .map(|id| json!({"track":{"id":id,"available":true}}))
+            .collect();
+        assert_eq!(
+            parse_wave(&json!({"batchId":"b","sequence":items}))
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .len(),
+            30
+        );
+        let client = MusicClient::new("test-token").unwrap();
+        assert!(client.wave("../escape").is_err());
+        assert!(client.wave_feedback(r#"{"type":"unknown"}"#).is_err());
     }
 }

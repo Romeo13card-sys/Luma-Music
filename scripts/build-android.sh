@@ -16,12 +16,13 @@ export CC_x86_64_linux_android="$CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER"
 export AR_x86_64_linux_android="$ndk_bin/llvm-ar"
 export CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS='-C link-arg=-Wl,-z,max-page-size=16384'
 export CARGO_TARGET_X86_64_LINUX_ANDROID_RUSTFLAGS='-C link-arg=-Wl,-z,max-page-size=16384'
+target_dir="${CARGO_TARGET_DIR:-target}"
 for target in aarch64-linux-android x86_64-linux-android; do
     cargo build --release --locked -p yamusic-core --target "$target"
 done
 mkdir -p android/app/src/main/jniLibs/{arm64-v8a,x86_64}
-cp target/aarch64-linux-android/release/libyamusic_core.so android/app/src/main/jniLibs/arm64-v8a/
-cp target/x86_64-linux-android/release/libyamusic_core.so android/app/src/main/jniLibs/x86_64/
+cp "$target_dir/aarch64-linux-android/release/libyamusic_core.so" android/app/src/main/jniLibs/arm64-v8a/
+cp "$target_dir/x86_64-linux-android/release/libyamusic_core.so" android/app/src/main/jniLibs/x86_64/
 # Keep exported JNI symbols while removing development-only debug data.
 "$ndk_bin/llvm-strip" --strip-unneeded android/app/src/main/jniLibs/arm64-v8a/libyamusic_core.so
 "$ndk_bin/llvm-strip" --strip-unneeded android/app/src/main/jniLibs/x86_64/libyamusic_core.so

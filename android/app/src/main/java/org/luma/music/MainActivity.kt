@@ -1,4 +1,4 @@
-package dev.romeo.yamusic
+package org.luma.music
 
 import android.app.*
 import android.content.*
@@ -51,6 +51,7 @@ class MainActivity : Activity() {
         super.onCreate(state)
         PlaybackService.shuffle = preferences.getBoolean("shuffle", false)
         PlaybackService.repeat = preferences.getBoolean("repeat", false)
+        PlaybackService.restore(this)
         token = TokenStore(this).load().orEmpty()
         if (token.isEmpty()) login() else shell("Главная")
         handleOAuth(intent)
@@ -370,6 +371,31 @@ class MainActivity : Activity() {
                 if (demo) playDemo() else showTracks("Избранное", "likes")
             }
         )
+        if (!demo) {
+            val wave = panel(body)
+            wave.addView(text("Моя волна", 28f, white, true))
+            wave.addView(
+                text("Персональный поток Яндекс Музыки. Нужны аккаунт и подписка.", 14f, muted)
+            )
+            wave.addView(
+                action("Запустить Мою волну", true) {
+                    request("wave") {
+                        val songs = (it as JSONArray).songs()
+                        if (songs.isEmpty()) {
+                            status.text = "Волна пока недоступна"
+                            return@request
+                        }
+                        PlaybackService.queue = songs
+                        PlaybackService.command(this, "wave", 0)
+                        fullPlayer()
+                    }
+                }
+            )
+        }
+        if (PlaybackService.queue.isNotEmpty()) {
+            body.addView(action("Продолжить последнюю очередь") { fullPlayer() })
+            gap(body)
+        }
         val local = panel(body)
         local.addView(text("На устройстве", 22f, white, true))
         local.addView(text("Откройте свой аудиофайл — без загрузки на сервер.", 14f, muted))
@@ -454,30 +480,52 @@ class MainActivity : Activity() {
             target.addView(text("Здесь пока тихо. Попробуйте другой запрос.", 16f, muted))
             return
         }
-        songs.forEachIndexed { i, song ->
-            val item =
-                row().apply {
-                    setPadding(dp(12), dp(8), dp(12), dp(8))
-                    background = glass(dp(20).toFloat())
+        val host = column()
+        target.addView(host)
+        fun showPage(start: Int) {
+            host.removeAllViews()
+            songs.drop(start).take(40).forEachIndexed { offset, song ->
+                val i = start + offset
+                val item =
+                    row().apply {
+                        setPadding(dp(12), dp(8), dp(12), dp(8))
+                        background = glass(dp(20).toFloat())
+                    }
+                item.addView(
+                    text(String.format(java.util.Locale.ROOT, "%02d", i + 1), 13f, mint),
+                    LinearLayout.LayoutParams(dp(36), -2),
+                )
+                val labels = column()
+                labels.addView(text(song.title, 16f, white, true))
+                labels.addView(text(song.artist, 13f, muted))
+                item.addView(labels, LinearLayout.LayoutParams(0, -2, 1f))
+                item.addView(text(if (song.available) "▶" else "—", 18f, mint))
+                item.isEnabled = song.available
+                item.alpha = if (song.available) 1f else .45f
+                item.setOnClickListener {
+                    PlaybackService.queue = songs
+                    PlaybackService.command(this, "play", i)
+                    refreshPlayer()
                 }
-            item.addView(
-                text(String.format(java.util.Locale.ROOT, "%02d", i + 1), 13f, mint),
-                LinearLayout.LayoutParams(dp(36), -2),
-            )
-            val labels = column()
-            labels.addView(text(song.title, 16f, white, true))
-            labels.addView(text(song.artist, 13f, muted))
-            item.addView(labels, LinearLayout.LayoutParams(0, -2, 1f))
-            item.addView(text(if (song.available) "▶" else "—", 18f, mint))
-            item.isEnabled = song.available
-            item.alpha = if (song.available) 1f else .45f
-            item.setOnClickListener {
-                PlaybackService.queue = songs
-                PlaybackService.command(this, "play", i)
-                refreshPlayer()
+                host.addView(item, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
             }
-            target.addView(item, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+            val navigation = row()
+            if (start > 0)
+                navigation.addView(
+                    action("‹ Назад") { showPage(maxOf(0, start - 40)) },
+                    LinearLayout.LayoutParams(0, -2, 1f),
+                )
+            if (start + 40 < songs.size)
+                navigation.addView(
+                    action("Ещё ›") { showPage(start + 40) },
+                    LinearLayout.LayoutParams(0, -2, 1f),
+                )
+            host.addView(
+                text("${start+1}–${minOf(start+40,songs.size)} из ${songs.size}", 12f, muted)
+            )
+            host.addView(navigation)
         }
+        showPage(0)
     }
 
     private fun fullPlayer() {
@@ -561,6 +609,14 @@ class MainActivity : Activity() {
         gap(body)
         body.addView(text("Очередь", 22f, white, true))
         renderTracks(body, PlaybackService.queue)
+        gap(body)
+        body.addView(
+            action("Очистить очередь") {
+                stopService(Intent(this, PlaybackService::class.java))
+                PlaybackService.forgetQueue(this)
+                shell(page)
+            }
+        )
         refreshPlayer()
     }
 
@@ -640,8 +696,7 @@ class MainActivity : Activity() {
                     .setNegativeButton("Отмена", null)
                     .setPositiveButton("Продолжить") { _, _ ->
                         stopService(Intent(this, PlaybackService::class.java))
-                        PlaybackService.queue = emptyList()
-                        PlaybackService.index = -1
+                        PlaybackService.forgetQueue(this)
                         TokenStore(this).clear()
                         token = ""
                         demo = false

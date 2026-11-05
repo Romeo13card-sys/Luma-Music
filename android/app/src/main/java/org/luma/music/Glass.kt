@@ -1,4 +1,4 @@
-package dev.romeo.yamusic
+package org.luma.music
 
 import android.content.Context
 import android.graphics.*
@@ -6,11 +6,44 @@ import android.graphics.drawable.GradientDrawable
 import android.view.View
 
 fun glass(radius: Float = 28f, accent: Boolean = false): GradientDrawable =
-    GradientDrawable(
-            GradientDrawable.Orientation.TL_BR,
-            if (accent) intArrayOf(Color.parseColor("#C2F8E5"), Color.parseColor("#78C9C0"))
-            else intArrayOf(Color.parseColor("#35FFFFFF"), Color.parseColor("#12FFFFFF")),
-        )
+    object :
+            GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                if (accent) intArrayOf(Color.parseColor("#C2F8E5"), Color.parseColor("#78C9C0"))
+                else intArrayOf(Color.parseColor("#35FFFFFF"), Color.parseColor("#12FFFFFF")),
+            ) {
+            private val rim =
+                Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    style = Paint.Style.STROKE
+                    strokeWidth = 1.5f
+                }
+            private val rimBounds = RectF()
+
+            override fun onBoundsChange(bounds: Rect) {
+                super.onBoundsChange(bounds)
+                rimBounds.set(
+                    bounds.left + .75f,
+                    bounds.top + .75f,
+                    bounds.right - .75f,
+                    bounds.bottom - .75f,
+                )
+                rim.shader =
+                    LinearGradient(
+                        bounds.left.toFloat(),
+                        bounds.top.toFloat(),
+                        bounds.right.toFloat(),
+                        bounds.bottom.toFloat(),
+                        intArrayOf(0xA0FFFFFF.toInt(), 0x08FFFFFF, 0x508BD8CC),
+                        null,
+                        Shader.TileMode.CLAMP,
+                    )
+            }
+
+            override fun draw(canvas: Canvas) {
+                super.draw(canvas)
+                canvas.drawRoundRect(rimBounds, radius, radius, rim)
+            }
+        }
         .apply {
             cornerRadius = radius
             setStroke(1, if (accent) 0x70FFFFFF else 0x38FFFFFF)

@@ -1,4 +1,4 @@
-package dev.romeo.yamusic
+package org.luma.music
 
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec

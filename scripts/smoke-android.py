@@ -27,8 +27,8 @@ def tap(label):
     raise AssertionError('Missing visible control: ' + label)
 
 assert adb('shell', 'getprop', 'sys.boot_completed').strip() == b'1', 'Android has not finished booting'
-adb('shell', 'am', 'force-stop', 'dev.romeo.yamusic')
-adb('shell', 'am', 'start', '-W', '-n', 'dev.romeo.yamusic/.MainActivity')
+adb('shell', 'am', 'force-stop', 'org.luma.music')
+adb('shell', 'am', 'start', '-W', '-n', 'org.luma.music/.MainActivity')
 tap('Попробовать без аккаунта')
 adb('shell', 'screencap', '-p', '/sdcard/glass-home.png')
 out = ROOT / 'android/app/build/outputs/smoke'
@@ -38,10 +38,10 @@ tap('Слушать тестовый звук')
 time.sleep(1)
 # Verify a real active session, rather than only an open activity or service PID.
 sessions = adb('shell', 'dumpsys', 'media_session').decode(errors='replace')
-assert 'dev.romeo.yamusic' in sessions and 'Luma · тестовый звук' in sessions, sessions
+assert 'org.luma.music' in sessions and 'Luma · тестовый звук' in sessions, sessions
 assert 'state=3' in sessions, 'Demo audio did not reach PLAYING'
 adb('shell', 'input', 'keyevent', '3')
 sessions = adb('shell', 'dumpsys', 'media_session').decode(errors='replace')
 assert 'state=3' in sessions, 'Playback stopped when application went into background'
-adb('shell', 'am', 'start', '-W', '-n', 'dev.romeo.yamusic/.MainActivity')
+adb('shell', 'am', 'start', '-W', '-n', 'org.luma.music/.MainActivity')
 print('PASS: demo navigation, playback session and foreground playback while UI is in background')
