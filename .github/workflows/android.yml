@@ -49,7 +49,7 @@ jobs:
       - name: Verify pinned YAYMA source and license
         run: python3 scripts/verify-upstream.py
       - name: Test Rust core
-        run: cargo test --workspace --locked
+        run: cargo test -p yamusic-core --locked
       - name: Test APK packaging
         run: python3 -m unittest discover -s scripts -p "test_*.py"
       - name: Set up Android SDK

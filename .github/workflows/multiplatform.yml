@@ -1,0 +1,49 @@
+name: Luma platform previews
+on:
+  push:
+    branches: [main]
+    paths: ['desktop/**', 'ios/**', 'core/**', 'Cargo.lock', 'Cargo.toml', '.github/workflows/multiplatform.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.90.0
+      - uses: Swatinem/rust-cache@v2
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libxkbcommon-dev libwayland-dev libgl1-mesa-dev
+      - run: cargo build --release --locked -p luma-desktop
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Luma-Music-desktop-preview-${{ runner.os }}-${{ runner.arch }}
+          path: |
+            target/release/luma-desktop
+            target/release/luma-desktop.exe
+          if-no-files-found: error
+  iphone-simulator:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.90.0
+        with:
+          targets: aarch64-apple-ios-sim
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release --locked -p yamusic-core --target aarch64-apple-ios-sim
+      - run: brew install xcodegen
+      - working-directory: ios
+        run: |
+          xcodegen generate
+          xcodebuild -project LumaMusic.xcodeproj -scheme LumaMusic -sdk iphonesimulator -configuration Release -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Luma-Music-iPhone-simulator-preview
+          path: ios/build/Build/Products/Release-iphonesimulator/LumaMusic.app

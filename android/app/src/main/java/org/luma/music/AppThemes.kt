@@ -12,21 +12,21 @@ data class AppPalette(
 
 object AppThemes {
     val dark =
-        AppPalette(0xFF09131A.toInt(), 0xFFEFF7F8.toInt(), 0xFFACC1C9.toInt(), 0xFFB6F4DD.toInt())
+        AppPalette(0xFF121212.toInt(), 0xFFF5F5F5.toInt(), 0xFFB3B3B3.toInt(), 0xFFFFE04A.toInt())
     val light =
         AppPalette(
-            0xFFF2F7F6.toInt(),
-            0xFF16262D.toInt(),
-            0xFF4E626A.toInt(),
-            0xFF165C50.toInt(),
+            0xFFFAFAFA.toInt(),
+            0xFF191919.toInt(),
+            0xFF626262.toInt(),
+            0xFF7C5700.toInt(),
             light = true,
         )
     val oled =
         AppPalette(
             0xFF000000.toInt(),
-            0xFFEFF7F8.toInt(),
-            0xFFACC1C9.toInt(),
-            0xFFB6F4DD.toInt(),
+            0xFFF5F5F5.toInt(),
+            0xFFB3B3B3.toInt(),
+            0xFFFFE04A.toInt(),
             oled = true,
         )
 

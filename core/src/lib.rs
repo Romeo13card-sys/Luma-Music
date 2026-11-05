@@ -247,28 +247,46 @@ impl MusicClient {
     }
 }
 
+fn bitrate(value: &Value) -> Option<u64> {
+    value["bitrateInKbps"]
+        .as_u64()
+        .or_else(|| value["bitrateInKbps"].as_str()?.parse().ok())
+}
 fn download_choice(value: &Value, quality: u64) -> Result<&Value> {
     if ![128, 192, 320].contains(&quality) {
         return Err("Неизвестное качество звука".into());
     }
-    value
+    let items = value
         .as_array()
-        .and_then(|items| {
-            items
-                .iter()
-                .filter(|v| {
-                    v["codec"] == "mp3"
-                        && v["transport"] == "raw"
-                        && v["bitrateInKbps"]
-                            .as_u64()
-                            .map(|rate| rate > 0 && rate <= quality)
-                            .unwrap_or(false)
-                })
-                .max_by_key(|v| v["bitrateInKbps"].as_u64().unwrap_or(0))
+        .ok_or("Неизвестный формат списка аудиопотоков")?;
+    let compatible: Vec<_> = items
+        .iter()
+        .filter(|v| {
+            v["codec"]
+                .as_str()
+                .is_some_and(|s| s.eq_ignore_ascii_case("mp3"))
+                && (v["transport"].is_null()
+                    || v["transport"]
+                        .as_str()
+                        .is_some_and(|s| s.eq_ignore_ascii_case("raw")))
+                && bitrate(v).is_some_and(|rate| rate > 0)
         })
-        .ok_or_else(|| {
-            "Нет MP3-потока в выбранном качестве. Выберите другое качество в настройках.".into()
-        })
+        .collect();
+    if let Some(info) = compatible
+        .iter()
+        .copied()
+        .filter(|v| bitrate(v).unwrap_or(u64::MAX) <= quality)
+        .max_by_key(|v| bitrate(v))
+    {
+        return Ok(info);
+    }
+    if !compatible.is_empty() {
+        let mut rates: Vec<_> = compatible.iter().filter_map(|v| bitrate(v)).collect();
+        rates.sort_unstable();
+        rates.dedup();
+        return Err(format!("Лимит качества {quality} кбит/с, доступны {} кбит/с. Откройте настройки качества звука и повысьте лимит для текущей сети.",rates.iter().map(u64::to_string).collect::<Vec<_>>().join(", ")));
+    }
+    Err("Яндекс не предоставил доступный обычный MP3-поток. Проверьте подписку и права аккаунта или попробуйте другой трек. Защищённые потоки не поддерживаются.".into())
 }
 
 fn parse_wave(value: &Value) -> Result<Value> {
@@ -605,6 +623,17 @@ mod tests {
         assert!(client.wave_feedback(r#"{"type":"unknown"}"#).is_err());
     }
     #[test]
+    fn supports_optional_transport_and_string_bitrate_without_accepting_protected_streams() {
+        let v = json!([{"codec":"MP3","bitrateInKbps":"192"}]);
+        assert_eq!(download_choice(&v, 320).unwrap()["bitrateInKbps"], "192");
+        assert!(download_choice(&v, 128).unwrap_err().contains("192"));
+        assert!(download_choice(
+            &json!([{"codec":"mp3","transport":"encrypted","bitrateInKbps":128}]),
+            320
+        )
+        .is_err());
+    }
+    #[test]
     fn quality_limit_never_silently_exceeds_mobile_budget() {
         let items = json!([
             {"codec":"mp3","transport":"raw","bitrateInKbps":320},
@@ -620,5 +649,52 @@ mod tests {
         )
         .is_err());
         assert!(download_choice(&items, 999).is_err());
+    }
+}
+
+/// C ABI for native Apple UI. Returned memory must be released with luma_free.
+#[no_mangle]
+pub unsafe extern "C" fn luma_request(
+    token: *const std::ffi::c_char,
+    operation: *const std::ffi::c_char,
+    argument: *const std::ffi::c_char,
+) -> *mut std::ffi::c_char {
+    if token.is_null() || operation.is_null() || argument.is_null() {
+        return std::ptr::null_mut();
+    }
+    let read = |p| std::ffi::CStr::from_ptr(p).to_str().ok();
+    let result = match (read(token), read(operation), read(argument)) {
+        (Some(t), Some(o), Some(a)) => dispatch(t, o, a),
+        _ => json!({"ok":false,"error":"Invalid UTF-8"}).to_string(),
+    };
+    std::ffi::CString::new(result)
+        .map(|v| v.into_raw())
+        .unwrap_or(std::ptr::null_mut())
+}
+#[no_mangle]
+pub unsafe extern "C" fn luma_free(value: *mut std::ffi::c_char) {
+    if !value.is_null() {
+        drop(std::ffi::CString::from_raw(value));
+    }
+}
+
+#[cfg(test)]
+mod ffi_tests {
+    #[test]
+    fn apple_bridge_returns_owned_json_and_handles_null() {
+        use std::ffi::{CStr, CString};
+        let t = CString::new("invalid token").unwrap();
+        let o = CString::new("account").unwrap();
+        let a = CString::new("").unwrap();
+        unsafe {
+            let result = super::luma_request(t.as_ptr(), o.as_ptr(), a.as_ptr());
+            assert!(!result.is_null());
+            let reply: serde_json::Value =
+                serde_json::from_slice(CStr::from_ptr(result).to_bytes()).unwrap();
+            assert_eq!(reply["ok"], false);
+            super::luma_free(result);
+            assert!(super::luma_request(std::ptr::null(), o.as_ptr(), a.as_ptr()).is_null());
+            super::luma_free(std::ptr::null_mut());
+        }
     }
 }

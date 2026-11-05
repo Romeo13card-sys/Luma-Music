@@ -16,6 +16,9 @@ class MainActivity : Activity() {
     private lateinit var body: LinearLayout
     private lateinit var status: TextView
     private var mini: TextView? = null
+    private var miniArtist: TextView? = null
+    private var miniToggle: TextView? = null
+    private val trackMarkers = mutableListOf<Triple<List<Song>, Int, TextView>>()
     private var playerTitle: TextView? = null
     private var playerSubtitle: TextView? = null
     private var playButton: TextView? = null
@@ -130,11 +133,11 @@ class MainActivity : Activity() {
     }
 
     private fun action(label: String, accent: Boolean = false, click: () -> Unit) =
-        text(label, 16f, if (accent) Color.rgb(16, 47, 45) else white, true).apply {
+        text(label, 16f, if (accent) Color.rgb(25, 25, 25) else white, true).apply {
             gravity = Gravity.CENTER
             minHeight = dp(48)
             setPadding(dp(16), dp(10), dp(16), dp(10))
-            background = surface(dp(24).toFloat(), accent)
+            background = surface(dp(14).toFloat(), accent)
             isClickable = true
             isFocusable = true
             contentDescription = label
@@ -149,7 +152,7 @@ class MainActivity : Activity() {
     private fun panel(target: LinearLayout): LinearLayout =
         column().apply {
             setPadding(dp(18), dp(14), dp(18), dp(14))
-            background = surface(dp(28).toFloat())
+            background = surface(dp(18).toFloat())
             target.addView(this, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(12) })
         }
 
@@ -157,6 +160,9 @@ class MainActivity : Activity() {
         AppThemes.active = palette
         creditScreen = false
         mini = null
+        miniArtist = null
+        miniToggle = null
+        trackMarkers.clear()
         body = column()
         status = text("")
         generation++
@@ -465,12 +471,19 @@ class MainActivity : Activity() {
         body = column()
         scroll.addView(body)
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
-        mini = action("Выберите трек") { fullPlayer() }
-        root.addView(mini)
+        val miniBar = row().apply { background = surface(dp(14).toFloat()); setPadding(dp(12),dp(4),dp(4),dp(4)) }
+        val miniLabels = column().apply { isClickable=true; isFocusable=true; setOnClickListener { fullPlayer() } }
+        mini = text("Выберите трек",15f,white,true).apply { maxLines=1; ellipsize=android.text.TextUtils.TruncateAt.END }
+        miniArtist = text("Открыть плеер",12f,muted).apply { maxLines=1; ellipsize=android.text.TextUtils.TruncateAt.END }
+        miniLabels.addView(mini);miniLabels.addView(miniArtist)
+        miniBar.addView(miniLabels,LinearLayout.LayoutParams(0,-2,1f))
+        miniToggle=action("▶") { PlaybackService.command(this,"toggle");refreshPlayer() }
+        miniBar.addView(miniToggle,LinearLayout.LayoutParams(dp(52),dp(52)))
+        root.addView(miniBar)
         gap(root, 8)
         val nav =
             row().apply {
-                background = surface(dp(28).toFloat())
+                background = surface(dp(18).toFloat())
                 setPadding(dp(4), dp(4), dp(4), dp(4))
             }
         listOf("Главная", "Поиск", "Медиатека").forEach { name ->
@@ -490,64 +503,36 @@ class MainActivity : Activity() {
     }
 
     private fun home() {
-        gap(body, 18)
-        body.addView(text("Звучит по-вашему", 32f, white, true))
-        body.addView(text("Ваш ритм. Ваш момент.", 16f, muted))
-        gap(body, 16)
-        val hero = panel(body)
-        val art = AlbumArt(this)
-        hero.addView(art, LinearLayout.LayoutParams(-1, dp(190)))
-        gap(hero)
-        hero.addView(
-            text(if (demo) "Почувствуйте интерфейс" else "Ваша коллекция", 25f, white, true)
-        )
-        hero.addView(
-            text(
-                if (demo) "Стеклянные панели и локальный тестовый звук. Это не каталог Яндекса."
-                else "Любимые треки, плейлисты и музыка с устройства.",
-                14f,
-                muted,
-            )
-        )
-        hero.addView(
-            action(if (demo) "Слушать тестовый звук" else "Открыть избранное", true) {
-                if (demo) playDemo() else showTracks("Избранное", "likes")
+        gap(body,16)
+        body.addView(text("Главная",32f,white,true))
+        body.addView(text(if(demo) "Демо · музыка с устройства" else "Музыка для вас",14f,muted))
+        gap(body,16)
+        val wave=panel(body)
+        wave.addView(text(if(demo) "Попробуйте Luma" else "Моя волна",30f,white,true))
+        wave.addView(text(if(demo) "Локальный звук, без аккаунта и сети." else "Нажмите — и слушайте персональный поток.",14f,muted))
+        gap(wave,12)
+        wave.addView(action(if(demo) "Слушать демо" else "Включить волну",true) {
+            if(demo) playDemo() else request("wave") {
+                val songs=(it as JSONArray).songs()
+                if(songs.isEmpty()) {status.text="Волна пока недоступна";return@request}
+                PlaybackService.queue=songs;PlaybackService.command(this,"wave",0);fullPlayer()
             }
-        )
-        if (!demo) {
-            val wave = panel(body)
-            wave.addView(text("Моя волна", 28f, white, true))
-            wave.addView(
-                text("Персональный поток Яндекс Музыки. Нужны аккаунт и подписка.", 14f, muted)
-            )
-            wave.addView(
-                action("Запустить Мою волну", true) {
-                    request("wave") {
-                        val songs = (it as JSONArray).songs()
-                        if (songs.isEmpty()) {
-                            status.text = "Волна пока недоступна"
-                            return@request
-                        }
-                        PlaybackService.queue = songs
-                        PlaybackService.command(this, "wave", 0)
-                        fullPlayer()
-                    }
-                }
-            )
+        })
+        if(PlaybackService.queue.isNotEmpty()) {
+            val current=PlaybackService.queue.getOrNull(PlaybackService.index)
+            val resume=panel(body)
+            resume.addView(text("Продолжить слушать",20f,white,true))
+            resume.addView(text(current?.title ?: "Сохранённая очередь",16f,white))
+            resume.addView(action("Открыть очередь · ${PlaybackService.queue.size} треков") {fullPlayer()})
         }
-        if (PlaybackService.queue.isNotEmpty()) {
-            body.addView(action("Продолжить последнюю очередь") { fullPlayer() })
-            gap(body)
-        }
-        val local = panel(body)
-        local.addView(text("На устройстве", 22f, white, true))
-        local.addView(text("Откройте свой аудиофайл — без загрузки на сервер.", 14f, muted))
-        local.addView(action("Выбрать файл") { openFile() })
-        if (!demo) {
-            body.addView(action("Выйти из аккаунта") { logout() })
-            gap(body)
-        }
-        body.addView(text(getString(R.string.author_credit), 13f, muted))
+        body.addView(text("Ваша музыка",22f,white,true));gap(body,8)
+        body.addView(action("Избранное") {if(demo) playDemo() else showTracks("Избранное","likes")})
+        gap(body,8)
+        body.addView(action("Музыка с устройства") {openFile()})
+        gap(body,8)
+        body.addView(action("Медиатека и плейлисты") {shell("Медиатека")})
+        gap(body,20)
+        body.addView(text("Luma Music · made by Romeo13card",12f,muted))
     }
 
     private fun search() {
@@ -631,6 +616,7 @@ class MainActivity : Activity() {
         target.addView(host)
         fun showPage(start: Int) {
             host.removeAllViews()
+            trackMarkers.clear()
             songs.drop(start).take(renderPolicy.pageSize).forEachIndexed { offset, song ->
                 val i = start + offset
                 val item =
@@ -638,12 +624,11 @@ class MainActivity : Activity() {
                         setPadding(dp(12), dp(8), dp(12), dp(8))
                         background = surface(dp(20).toFloat())
                     }
-                item.addView(
-                    text(String.format(java.util.Locale.ROOT, "%02d", i + 1), 13f, mint),
-                    LinearLayout.LayoutParams(dp(36), -2),
-                )
+                val marker=text((i+1).toString(),13f,muted)
+                trackMarkers.add(Triple(songs,i,marker))
+                item.addView(marker,LinearLayout.LayoutParams(dp(36),-2))
                 val labels = column()
-                labels.addView(text(song.title, 16f, white, true))
+                labels.addView(text(song.title, 16f, white, true).apply { maxLines=2; ellipsize=android.text.TextUtils.TruncateAt.END })
                 labels.addView(text(song.artist, 13f, muted))
                 item.addView(labels, LinearLayout.LayoutParams(0, -2, 1f))
                 item.addView(text(if (song.available) "▶" else "—", 18f, mint))
@@ -676,7 +661,8 @@ class MainActivity : Activity() {
             )
             host.addView(navigation)
         }
-        showPage(0)
+        val first=if(songs === PlaybackService.queue && PlaybackService.index>=0) (PlaybackService.index/renderPolicy.pageSize)*renderPolicy.pageSize else 0
+        showPage(first)
     }
 
     private fun fullPlayer() {
@@ -691,7 +677,7 @@ class MainActivity : Activity() {
         scroll.addView(body)
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         gap(body, 20)
-        body.addView(AlbumArt(this), LinearLayout.LayoutParams(-1, dp(270)))
+        body.addView(AlbumArt(this), LinearLayout.LayoutParams(-1, dp(220)))
         gap(body, 24)
         playerTitle = text("", 27f, white, true)
         body.addView(playerTitle)
@@ -741,6 +727,15 @@ class MainActivity : Activity() {
             LinearLayout.LayoutParams(0, dp(64), 1f),
         )
         body.addView(controls)
+        val jumps=row()
+        fun jump(delta:Int) {
+            val service=PlaybackService.instance ?: return
+            service.seek((service.position().toLong()+delta).coerceIn(0,service.duration().toLong()).toInt())
+            refreshPlayer()
+        }
+        jumps.addView(action("−10 с") {jump(-10000)},LinearLayout.LayoutParams(0,-2,1f))
+        jumps.addView(action("+10 с") {jump(10000)},LinearLayout.LayoutParams(0,-2,1f))
+        body.addView(jumps)
         gap(body)
         body.addView(
             action("Перемешивание: ${if(PlaybackService.shuffle) "вкл" else "выкл"}") {
@@ -760,7 +755,8 @@ class MainActivity : Activity() {
         gap(body, 8)
         body.addView(action("Текст песни · LrcLib") { showLyrics() })
         gap(body)
-        body.addView(text("Очередь", 22f, white, true))
+        body.addView(action("Очередь · к текущему треку") {fullPlayer()})
+        body.addView(action("Качество звука и таймер") {settings()})
         renderTracks(body, PlaybackService.queue)
         gap(body)
         body.addView(
@@ -806,9 +802,16 @@ class MainActivity : Activity() {
 
     private fun refreshPlayer() {
         val song = PlaybackService.queue.getOrNull(PlaybackService.index)
-        mini?.text =
-            if (song == null) "Открыть плеер  ↑"
-            else "${if(PlaybackService.playing) "♫" else "Ⅱ"}  ${song.title}  ↑"
+        mini?.text = song?.title ?: "Выберите трек"
+        miniArtist?.text = song?.artist ?: "Музыка появится здесь"
+        miniToggle?.text = if(PlaybackService.playing) "Ⅱ" else "▶"
+        miniToggle?.isEnabled = song != null
+        miniToggle?.contentDescription = if(PlaybackService.playing) "Приостановить" else "Воспроизвести"
+        trackMarkers.forEach { (songs,index,view) ->
+            val current=songs === PlaybackService.queue && index==PlaybackService.index
+            view.text=if(current) "●" else (index+1).toString()
+            view.setTextColor(if(current) mint else muted)
+        }
         playerTitle?.text = song?.title ?: "Выберите трек"
         playerSubtitle?.text = "${song?.artist.orEmpty()}\n${PlaybackService.message}"
         playButton?.text = if (PlaybackService.playing) "Ⅱ" else "▶"

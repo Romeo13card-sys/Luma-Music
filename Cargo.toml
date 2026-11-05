@@ -1,5 +1,6 @@
 [workspace]
-members = ["core"]
+members = ["core", "desktop"]
+default-members = ["core"]
 resolver = "2"
 
 [profile.release]

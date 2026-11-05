@@ -1,0 +1,20 @@
+name: LumaMusic
+options:
+  bundleIdPrefix: org.luma
+settings:
+  IPHONEOS_DEPLOYMENT_TARGET: '16.0'
+  SWIFT_VERSION: '5.0'
+targets:
+  LumaMusic:
+    type: application
+    platform: iOS
+    sources: [Luma]
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.luma.music
+      GENERATE_INFOPLIST_FILE: YES
+      INFOPLIST_KEY_UILaunchScreen_Generation: YES
+      INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+      SWIFT_OBJC_BRIDGING_HEADER: Luma/Luma-Bridging-Header.h
+      LIBRARY_SEARCH_PATHS: '$(inherited) $(PROJECT_DIR)/../target/aarch64-apple-ios-sim/release'
+      OTHER_LDFLAGS: '$(inherited) -lyamusic_core -framework Security -framework SystemConfiguration -lresolv -liconv'
+      CODE_SIGNING_ALLOWED: NO

@@ -1,20 +1,20 @@
 <resources>
     <style name="Theme.Luma.Dark" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans-serif</item>
-        <item name="android:colorAccent">#B6F4DD</item>
+        <item name="android:colorAccent">#FFE04A</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowLightNavigationBar">false</item>
-        <item name="android:statusBarColor">#09131A</item>
-        <item name="android:navigationBarColor">#09131A</item>
-        <item name="android:windowBackground">#09131A</item>
+        <item name="android:statusBarColor">#121212</item>
+        <item name="android:navigationBarColor">#121212</item>
+        <item name="android:windowBackground">#121212</item>
     </style>
     <style name="Theme.Luma.Light" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans-serif</item>
-        <item name="android:colorAccent">#165C50</item>
+        <item name="android:colorAccent">#7C5700</item>
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:windowLightNavigationBar">true</item>
-        <item name="android:windowBackground">#F2F7F6</item>
-        <item name="android:statusBarColor">#F2F7F6</item>
-        <item name="android:navigationBarColor">#F2F7F6</item>
+        <item name="android:windowBackground">#FAFAFA</item>
+        <item name="android:statusBarColor">#FAFAFA</item>
+        <item name="android:navigationBarColor">#FAFAFA</item>
     </style>
 </resources>
