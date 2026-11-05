@@ -1,3 +1,4 @@
+mod auth;
 mod lyrics;
 mod queue;
 mod storage;
@@ -375,6 +376,8 @@ pub fn core_dispatch(operation: &str, argument: &str) -> String {
         }
         let v: Value = serde_json::from_str(argument).map_err(|_| "Некорректный запрос ядра")?;
         match operation {
+            "auth_start" => auth::start(&v),
+            "auth_navigation" => auth::navigation(&v),
             "queue_next" => queue::next(&v),
             "upgrade_validate" => updates::validate_upgrade(&v),
             "daily_check_due" => Ok(json!(updates::daily_due(

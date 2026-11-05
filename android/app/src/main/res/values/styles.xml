@@ -1,5 +1,5 @@
 <resources>
-    <style name="Theme.Luma.LiquidGlass" parent="android:style/Theme.Material.NoActionBar">
+    <style name="Theme.Luma.Dark" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans-serif</item>
         <item name="android:colorAccent">#B6F4DD</item>
         <item name="android:windowLightStatusBar">false</item>
@@ -8,11 +8,13 @@
         <item name="android:navigationBarColor">#09131A</item>
         <item name="android:windowBackground">#09131A</item>
     </style>
-    <style name="Theme.Luma.LiquidGlass.Light" parent="android:style/Theme.Material.Light.NoActionBar">
+    <style name="Theme.Luma.Light" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans-serif</item>
         <item name="android:colorAccent">#165C50</item>
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:windowLightNavigationBar">true</item>
         <item name="android:windowBackground">#F2F7F6</item>
+        <item name="android:statusBarColor">#F2F7F6</item>
+        <item name="android:navigationBarColor">#F2F7F6</item>
     </style>
 </resources>

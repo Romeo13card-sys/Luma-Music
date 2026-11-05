@@ -78,8 +78,8 @@ class MainActivity : Activity() {
 
     override fun onCreate(state: Bundle?) {
         setTheme(
-            if (palette.light) R.style.Theme_Luma_LiquidGlass_Light
-            else R.style.Theme_Luma_LiquidGlass
+            if (palette.light) R.style.Theme_Luma_Light
+            else R.style.Theme_Luma_Dark
         )
         super.onCreate(state)
         // Public update feed no longer uses stored GitHub credentials.
@@ -134,7 +134,7 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER
             minHeight = dp(48)
             setPadding(dp(16), dp(10), dp(16), dp(10))
-            background = glass(dp(24).toFloat(), accent)
+            background = surface(dp(24).toFloat(), accent)
             isClickable = true
             isFocusable = true
             contentDescription = label
@@ -149,7 +149,7 @@ class MainActivity : Activity() {
     private fun panel(target: LinearLayout): LinearLayout =
         column().apply {
             setPadding(dp(18), dp(14), dp(18), dp(14))
-            background = glass(dp(28).toFloat())
+            background = surface(dp(28).toFloat())
             target.addView(this, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(12) })
         }
 
@@ -166,17 +166,7 @@ class MainActivity : Activity() {
         seek = null
         time = null
         val frame = FrameLayout(this)
-        val atmosphere = Atmosphere(this, renderPolicy.economy)
-        if (Build.VERSION.SDK_INT >= 31 && !renderPolicy.economy) {
-            atmosphere.setRenderEffect(
-                android.graphics.RenderEffect.createBlurEffect(
-                    8f,
-                    8f,
-                    android.graphics.Shader.TileMode.CLAMP,
-                )
-            )
-        }
-        frame.addView(atmosphere, FrameLayout.LayoutParams(-1, -1))
+        frame.setBackgroundColor(palette.background)
         root = column().apply { setPadding(dp(20), 0, dp(20), 0) }
         frame.addView(root, FrameLayout.LayoutParams(-1, -1))
         setContentView(frame)
@@ -242,10 +232,14 @@ class MainActivity : Activity() {
         status = text("", 13f, muted)
         status.accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
         body.addView(status)
-        body.addView(action("Войти через Яндекс", true) { browserLogin() })
+        body.addView(action("Открыть окно входа Яндекса", true) {
+            startActivityForResult(Intent(this, YandexLoginActivity::class.java), 12)
+        })
+        gap(body, 8)
+        body.addView(action("Браузер · свой OAuth-клиент") { browserLogin() })
         body.addView(
             text(
-                "Вход откроется на защищённой странице Яндекса в браузере. Пароль обрабатывает Яндекс.",
+                "Вход как в YAYMA: защищённая страница Яндекса в отдельном окне. Пароль обрабатывает Яндекс.",
                 13f,
                 muted,
             )
@@ -265,7 +259,7 @@ class MainActivity : Activity() {
                 setTextColor(white)
                 setHintTextColor(muted)
                 setSingleLine()
-                background = glass(dp(16).toFloat())
+                background = surface(dp(16).toFloat())
                 setPadding(dp(14), dp(14), dp(14), dp(14))
                 inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
                 importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
@@ -476,7 +470,7 @@ class MainActivity : Activity() {
         gap(root, 8)
         val nav =
             row().apply {
-                background = glass(dp(28).toFloat())
+                background = surface(dp(28).toFloat())
                 setPadding(dp(4), dp(4), dp(4), dp(4))
             }
         listOf("Главная", "Поиск", "Медиатека").forEach { name ->
@@ -564,7 +558,7 @@ class MainActivity : Activity() {
                 setHintTextColor(muted)
                 setTextColor(white)
                 setSingleLine()
-                background = glass()
+                background = surface()
                 setPadding(dp(16), dp(12), dp(16), dp(12))
             }
         body.addView(box)
@@ -642,7 +636,7 @@ class MainActivity : Activity() {
                 val item =
                     row().apply {
                         setPadding(dp(12), dp(8), dp(12), dp(8))
-                        background = glass(dp(20).toFloat())
+                        background = surface(dp(20).toFloat())
                     }
                 item.addView(
                     text(String.format(java.util.Locale.ROOT, "%02d", i + 1), 13f, mint),
@@ -844,8 +838,8 @@ class MainActivity : Activity() {
         val labels =
             arrayOf(
                 "Как в системе",
-                "Тёмная · Жидкое стекло",
-                "Светлая · Жидкое стекло",
+                "Тёмная",
+                "Светлая",
                 "OLED · Чёрная",
             )
         val modes = arrayOf("system", "dark", "light", "oled")
@@ -858,8 +852,8 @@ class MainActivity : Activity() {
                         index ->
                         preferences.edit().putString("theme_mode", modes[index]).apply()
                         setTheme(
-                            if (palette.light) R.style.Theme_Luma_LiquidGlass_Light
-                            else R.style.Theme_Luma_LiquidGlass
+                            if (palette.light) R.style.Theme_Luma_Light
+                            else R.style.Theme_Luma_Dark
                         )
                         dialog.dismiss()
                         settings()
@@ -968,7 +962,7 @@ class MainActivity : Activity() {
         storage.addView(text("Память и трафик", 22f, white, true))
         storage.addView(
             Switch(this).apply {
-                text = "Уменьшить эффекты"
+                text = "Экономичный интерфейс"
                 setTextColor(white)
                 minHeight = dp(54)
                 isChecked = preferences.getBoolean("reduce_effects", false)
@@ -1047,7 +1041,11 @@ class MainActivity : Activity() {
         )
         val account = panel(body)
         account.addView(text("Аккаунт", 22f, white, true))
-        account.addView(action("Настроить вход через Яндекс") { configureOAuth() })
+        account.addView(action("Вход / смена аккаунта Яндекса") {
+            startActivityForResult(Intent(this, YandexLoginActivity::class.java), 12)
+        })
+        gap(account, 8)
+        account.addView(action("Свой OAuth-клиент для браузера") { configureOAuth() })
         gap(account, 8)
         account.addView(
             action(if (demo) "Войти" else "Выйти из аккаунта") { if (demo) login() else logout() }
@@ -1056,7 +1054,7 @@ class MainActivity : Activity() {
         about.addView(text(getString(R.string.app_name), 22f, white, true))
         about.addView(
             text(
-                "Жидкое стекло · ${if(renderPolicy.economy) "экономичный режим" else "обычный режим"}",
+                "Оформление · ${if(renderPolicy.economy) "экономичный режим" else "обычный режим"}",
                 14f,
                 muted,
             )
@@ -1072,6 +1070,10 @@ class MainActivity : Activity() {
         about.addView(text("Тема: $selectedTheme · сейчас $effectiveTheme", 14f, muted))
         about.addView(text(getString(R.string.author_credit), 18f, mint, true))
         gap(about, 8)
+        about.addView(action("Telegram · Romeo13card") { openAuthorLink("https://t.me/romeo_13card") })
+        gap(about, 8)
+        about.addView(action("Поддержать автора") { openAuthorLink("https://dalink.to/romeo_13card_fan") })
+        gap(about, 8)
         about.addView(action("Открытый исходный код и лицензия") {
             val license = assets.open("licenses/GPL-3.0.txt").bufferedReader().use { it.readText() }
             val view = ScrollView(this).apply {
@@ -1084,6 +1086,11 @@ class MainActivity : Activity() {
                     startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/Romeo13card-sys/Luma-Music")))
                 }.show()
         })
+    }
+
+    private fun openAuthorLink(url: String) {
+        try { startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url))) }
+        catch (_: ActivityNotFoundException) { status.text = "Не найдено приложение для открытия ссылки" }
     }
 
     private fun checkUpdates(manual: Boolean = true) {
@@ -1233,6 +1240,17 @@ class MainActivity : Activity() {
     @Deprecated("Platform document picker")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 12 && resultCode == RESULT_OK) {
+            val credential = TokenStore(this).load().orEmpty()
+            if (credential.isNotEmpty()) {
+                stopService(Intent(this, PlaybackService::class.java))
+                PlaybackService.forgetQueue(this)
+                token = credential
+                demo = false
+                shell("Главная")
+            }
+            return
+        }
         if (requestCode == 11 && resultCode == RESULT_OK)
             data?.data?.let { uri ->
                 val version = generation
