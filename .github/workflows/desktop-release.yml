@@ -39,14 +39,17 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev libxkbcommon-dev libwayland-dev libgl1-mesa-dev libgl1-mesa-dri xvfb
+      - if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - if: runner.os == 'Windows'
+        run: python scripts/configure-msvc-linkers.py x86_64-pc-windows-msvc
       - name: Desktop tests
         shell: bash
         run: |
           set -o pipefail
           cargo test --locked -p yamusic-core -p luma-desktop 2>&1 | tee desktop-tests.log
-      - if: runner.os == 'Windows'
-        shell: bash
-        run: echo 'RUSTFLAGS=-C target-feature=+crt-static' >> "$GITHUB_ENV"
       - name: Build desktop release
         shell: bash
         run: |
@@ -96,14 +99,13 @@ jobs:
           components: rust-src
       - uses: ilammy/msvc-dev-cmd@v1
         with:
-          arch: ${{ matrix.arch }}
+          arch: x64
+      - run: python scripts/configure-msvc-linkers.py ${{ matrix.target }} --legacy
       - uses: Swatinem/rust-cache@v2
         with:
           key: legacy-${{ matrix.target }}
       - name: Build legacy Windows std and application
         shell: bash
-        env:
-          RUSTFLAGS: '-C target-feature=+crt-static -C link-arg=/SUBSYSTEM:WINDOWS,6.01'
         run: |
           set -o pipefail
           cargo +nightly-2025-09-18 build -Z build-std=std,panic_abort --release --locked -p luma-desktop --target ${{ matrix.target }} 2>&1 | tee build-legacy.log
