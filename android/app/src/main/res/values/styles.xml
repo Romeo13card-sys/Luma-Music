@@ -1,0 +1,11 @@
+<resources>
+    <style name="Theme.Music.NorthernGlass" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:colorAccent">#B6F4DD</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:statusBarColor">#09131A</item>
+        <item name="android:navigationBarColor">#09131A</item>
+        <item name="android:windowBackground">#09131A</item>
+    </style>
+</resources>

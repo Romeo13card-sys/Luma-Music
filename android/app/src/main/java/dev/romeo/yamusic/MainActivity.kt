@@ -258,7 +258,7 @@ class MainActivity : Activity() {
     }
     private fun settings() {
         AlertDialog.Builder(this).setTitle("Музыка · Rust 0.2")
-            .setMessage("Лёгкий стеклянный интерфейс без постоянного размытия.\n\nНеофициальный клиент Яндекс Музыки. Токен защищён Android Keystore.\n\nДоступность треков зависит от подписки и региона.")
+            .setMessage("Тема: ${getString(R.string.theme_name)}.\n\nЛёгкий стеклянный интерфейс без постоянного размытия.\n\nНеофициальный клиент Яндекс Музыки. Токен защищён Android Keystore.\n\nДоступность треков зависит от подписки и региона.")
             .setPositiveButton("Закрыть",null).setNeutralButton(if(demo) "Войти" else "Выйти") { _,_ ->
                 stopService(Intent(this,PlaybackService::class.java));PlaybackService.queue=emptyList();PlaybackService.index=-1
                 TokenStore(this).clear();token="";demo=false;login()
