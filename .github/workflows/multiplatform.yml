@@ -21,12 +21,11 @@ jobs:
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev libxkbcommon-dev libwayland-dev libgl1-mesa-dev
       - run: cargo build --release --locked -p luma-desktop
+      - run: python scripts/package-desktop.py
       - uses: actions/upload-artifact@v4
         with:
           name: Luma-Music-desktop-preview-${{ runner.os }}-${{ runner.arch }}
-          path: |
-            target/release/luma-desktop
-            target/release/luma-desktop.exe
+          path: Luma-Music-desktop-preview.zip
           if-no-files-found: error
   iphone-simulator:
     runs-on: macos-latest
@@ -42,8 +41,9 @@ jobs:
       - working-directory: ios
         run: |
           xcodegen generate
-          xcodebuild -project LumaMusic.xcodeproj -scheme LumaMusic -sdk iphonesimulator -configuration Release -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
+          xcodebuild -project LumaMusic.xcodeproj -scheme LumaMusic -sdk iphonesimulator -configuration Release -derivedDataPath build CODE_SIGNING_ALLOWED=NO ARCHS=arm64 ONLY_ACTIVE_ARCH=NO build
+      - run: ditto -c -k --sequesterRsrc --keepParent ios/build/Build/Products/Release-iphonesimulator/LumaMusic.app ios/Luma-Music-iPhone-simulator-preview.zip
       - uses: actions/upload-artifact@v4
         with:
           name: Luma-Music-iPhone-simulator-preview
-          path: ios/build/Build/Products/Release-iphonesimulator/LumaMusic.app
+          path: ios/Luma-Music-iPhone-simulator-preview.zip

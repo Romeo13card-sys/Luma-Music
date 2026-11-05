@@ -89,7 +89,7 @@ Build Tools 36.0.0, NDK 27.2.12479018. Gradle Wrapper 8.13 проверяет SH
 
 ```sh
 rustup target add armv7-linux-androideabi aarch64-linux-android i686-linux-android x86_64-linux-android
-cargo test --workspace --locked
+cargo test -p yamusic-core --locked
 python3 -m unittest discover -s scripts -p 'test_*.py'
 export ANDROID_HOME=/path/to/android-sdk
 ./scripts/build-android.sh

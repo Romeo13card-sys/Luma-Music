@@ -730,7 +730,9 @@ class MainActivity : Activity() {
         val jumps=row()
         fun jump(delta:Int) {
             val service=PlaybackService.instance ?: return
-            service.seek((service.position().toLong()+delta).coerceIn(0,service.duration().toLong()).toInt())
+            val duration=service.duration().toLong()
+            if(duration<=0) {status.text="Перемотка для этого потока пока недоступна";return}
+            service.seek((service.position().toLong()+delta).coerceIn(0,duration).toInt())
             refreshPlayer()
         }
         jumps.addView(action("−10 с") {jump(-10000)},LinearLayout.LayoutParams(0,-2,1f))
