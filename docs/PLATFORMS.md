@@ -8,7 +8,7 @@
 | Windows-10-11-x64-Portable | Rust 1.90, обычный x64 MSVC target, статический CRT. Запуск `--self-check` на build-host Windows |
 | Windows-7-8-8.1-x64-Portable-experimental | Отдельный `x86_64-win7-windows-msvc`, nightly-2025-09-18, build-std, статический CRT, subsystem 6.01 |
 | Windows-7-8-8.1-x86-Portable-experimental | То же для `i686-win7-windows-msvc`, 32 бита |
-| Linux-x64 | Ubuntu 22.04, glibc 2.35+, ALSA, X11/Wayland и OpenGL. Графический smoke-test через Xvfb/Mesa |
+| Linux-x64 | Ubuntu 22.04, glibc 2.35+, ALSA, libxkbcommon-x11, X11/Wayland и OpenGL. Графический smoke-test через Xvfb/Mesa |
 | macOS-x64 / macOS-arm64 | `.app`, deployment target macOS 11.0, ad-hoc-подпись. Developer ID/notarization отсутствуют |
 
 Для старых Windows нужны Windows 7 SP1/8/8.1 с обновлениями системы и драйвером
@@ -64,8 +64,10 @@ Sink заменяется без ожидания завершения стар�
 `cargo test --locked -p yamusic-core -p luma-desktop`
 `cargo build --release --locked -p luma-desktop`
 
-Linux development packages: libasound2-dev, libxkbcommon-dev, libwayland-dev,
+Linux development packages: libasound2-dev, libxkbcommon-dev, libxkbcommon-x11-dev, libwayland-dev,
 libgl1-mesa-dev. Для запуска нужны ALSA/OpenGL/графическая сессия.
+Для запуска в X11 нужна `libxkbcommon-x11.so.0` (пакет `libxkbcommon-x11-0`);
+одного `libxkbcommon0` недостаточно.
 Windows: MSVC Build Tools/SDK. Для legacy — rust-src и build-std как в workflow.
 Apple: Xcode Command Line Tools, macOS SDK. `scripts/package-desktop.py`
 проверяет версию/target исполняемого файла, создаёт архив с лицензией, исходным
