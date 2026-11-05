@@ -31,7 +31,11 @@ for job in jobs:
     if job['conclusion'] != 'failure' or not job['name'].startswith('desktop ('):
         continue
     # The completed job endpoint is available even when another matrix job is running.
-    log = gh('api', f'repos/{repo}/actions/jobs/{job["id"]}/logs')
+    try:
+        log = gh('api', f'repos/{repo}/actions/jobs/{job["id"]}/logs')
+    except subprocess.CalledProcessError:
+        print('::warning::Completed job log unavailable; continuing artifact recovery', flush=True)
+        continue
     lines = re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', log).splitlines()
     pattern = r'error:|LLVM ERROR|panicked|Aborted|core dumped|malloc|No space left|out of memory|double free|corrupted'
     selected = [line for line in lines if re.search(pattern, line, re.I)][-6:]
