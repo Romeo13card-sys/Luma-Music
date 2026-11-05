@@ -155,7 +155,8 @@ class MainActivity : Activity() {
         body = column()
         scroll.addView(body)
         gap(body, 36)
-        body.addView(text("M U S I C   /   R U S T", 12f, mint, true))
+        body.addView(text(getString(R.string.app_name), 18f, mint, true))
+        body.addView(text(getString(R.string.author_credit), 12f, muted))
         gap(body, 20)
         body.addView(text("Музыка.\nВ новом свете.", 40f, white, true))
         gap(body, 8)
@@ -302,7 +303,10 @@ class MainActivity : Activity() {
         backdrop()
         window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
         val header = row()
-        header.addView(text("MUSIC", 18f, white, true), LinearLayout.LayoutParams(0, -2, 1f))
+        header.addView(
+            text(getString(R.string.app_name), 18f, white, true),
+            LinearLayout.LayoutParams(0, -2, 1f),
+        )
         header.addView(action(if (demo) "Демо" else "Аккаунт") { settings() })
         root.addView(header)
         status = text(if (demo) "ДЕМОРЕЖИМ · БЕЗ ПОДКЛЮЧЕНИЯ К ЯНДЕКСУ" else "", 11f, mint)
@@ -364,7 +368,7 @@ class MainActivity : Activity() {
         local.addView(text("На устройстве", 22f, white, true))
         local.addView(text("Откройте свой аудиофайл — без загрузки на сервер.", 14f, muted))
         local.addView(action("Выбрать файл") { openFile() })
-        body.addView(text("Создано для музыки", 13f, muted))
+        body.addView(text(getString(R.string.author_credit), 13f, muted))
     }
 
     private fun search() {
@@ -573,9 +577,9 @@ class MainActivity : Activity() {
 
     private fun settings() {
         AlertDialog.Builder(this)
-            .setTitle("Музыка · Rust 0.2")
+            .setTitle(getString(R.string.app_name))
             .setMessage(
-                "Тема: ${getString(R.string.theme_name)}.\n\nЛёгкий стеклянный интерфейс без постоянного размытия.\n\nНеофициальный клиент Яндекс Музыки. Токен защищён Android Keystore.\n\nДоступность треков зависит от подписки и региона."
+                "${getString(R.string.author_credit)}\n\nТема: ${getString(R.string.theme_name)}.\n\nЛёгкий стеклянный интерфейс без постоянного размытия.\n\nНеофициальный клиент Яндекс Музыки. Токен защищён Android Keystore.\n\nДоступность треков зависит от подписки и региона."
             )
             .setPositiveButton("Закрыть", null)
             .setNeutralButton(if (demo) "Войти" else "Выйти") { _, _ ->
@@ -637,7 +641,7 @@ class MainActivity : Activity() {
             listOf(
                 Song(
                     "demo",
-                    "Glass · тестовый звук",
+                    "Luma · тестовый звук",
                     "Локальный синтезатор · 8 секунд",
                     uri = android.net.Uri.fromFile(file).toString(),
                 )

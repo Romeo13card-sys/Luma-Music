@@ -12,8 +12,8 @@ android {
         applicationId = "dev.romeo.yamusic"
         minSdk = 30
         targetSdk = 37
-        versionCode = 2
-        versionName = "0.2.0-test"
+        versionCode = 3
+        versionName = "0.2.1-test"
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
     }
     splits {

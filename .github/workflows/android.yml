@@ -1,4 +1,4 @@
-name: Android test APK
+name: Luma Music test APK
 
 on:
   push:
@@ -50,6 +50,10 @@ jobs:
         run: cargo test --workspace --locked
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: '13114758'
+          packages: 'platform-tools'
+          log-accepted-android-sdk-licenses: false
       - name: Install Android build dependencies
         run: sdkmanager "platforms;android-37.0" "build-tools;36.0.0" "ndk;27.2.12479018" "platform-tools"
       - name: Build optimized native libraries and test APKs
@@ -70,7 +74,7 @@ jobs:
       - name: Upload test APKs
         uses: actions/upload-artifact@v4
         with:
-          name: music-rust-glass-test-${{ github.run_number }}
+          name: luma-music-test-${{ github.run_number }}
           path: |
             android/app/build/outputs/apk/debug/*.apk
             android/app/build/outputs/apk/debug/SHA256SUMS.txt
@@ -95,7 +99,7 @@ jobs:
       - name: Download verified APKs
         uses: actions/download-artifact@v4
         with:
-          name: music-rust-glass-test-${{ github.run_number }}
+          name: luma-music-test-${{ github.run_number }}
           path: release
       - name: Publish GitHub prerelease
         env:
@@ -106,7 +110,8 @@ jobs:
         run: |
           set -euo pipefail
           cat > notes.md <<'NOTES'
-          Тестовая версия «Северное стекло» для Android 11+.
+          Luma Music — тестовая версия «Жидкое стекло» для Android 11+.
+          made by Romeo_13card
 
           Для телефона ARM64 выберите app-arm64-v8a-debug.apk.
           Без аккаунта можно открыть деморежим и локальный тестовый звук.
@@ -114,5 +119,5 @@ jobs:
           Это APK с отладочной подписью. Работа настоящего аккаунта и полный диапазон Android 11–17 ещё не проверены. Для OAuth-входа через браузер нужен собственный Client ID. «Моя волна» и офлайн-загрузка каталога пока не реализованы.
           NOTES
           gh release create "$RELEASE_TAG" release/*.apk release/SHA256SUMS.txt \
-            --prerelease --verify-tag --title "Музыка · Rust — Северное стекло ($RELEASE_TAG)" \
+            --prerelease --verify-tag --title "Luma Music — Жидкое стекло ($RELEASE_TAG)" \
             --notes-file notes.md

@@ -304,7 +304,7 @@ class PlaybackService : Service() {
             )
         return Notification.Builder(this, "playback")
             .setSmallIcon(android.R.drawable.ic_media_play)
-            .setContentTitle(song?.title ?: "Музыка · Rust")
+            .setContentTitle(song?.title ?: getString(R.string.app_name))
             .setContentText(song?.artist ?: message)
             .setContentIntent(open)
             .setVisibility(Notification.VISIBILITY_PUBLIC)

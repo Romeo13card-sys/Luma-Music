@@ -14,6 +14,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "YaMusicRust"
+rootProject.name = "LumaMusic"
 
 include(":app")

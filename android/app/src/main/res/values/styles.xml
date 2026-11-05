@@ -1,5 +1,5 @@
 <resources>
-    <style name="Theme.Music.NorthernGlass" parent="android:style/Theme.Material.NoActionBar">
+    <style name="Theme.Luma.LiquidGlass" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans-serif</item>
         <item name="android:colorAccent">#B6F4DD</item>
         <item name="android:windowLightStatusBar">false</item>

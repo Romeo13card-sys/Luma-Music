@@ -38,7 +38,7 @@ tap('Слушать тестовый звук')
 time.sleep(1)
 # Verify a real active session, rather than only an open activity or service PID.
 sessions = adb('shell', 'dumpsys', 'media_session').decode(errors='replace')
-assert 'dev.romeo.yamusic' in sessions and 'Glass · тестовый звук' in sessions, sessions
+assert 'dev.romeo.yamusic' in sessions and 'Luma · тестовый звук' in sessions, sessions
 assert 'state=3' in sessions, 'Demo audio did not reach PLAYING'
 adb('shell', 'input', 'keyevent', '3')
 sessions = adb('shell', 'dumpsys', 'media_session').decode(errors='replace')

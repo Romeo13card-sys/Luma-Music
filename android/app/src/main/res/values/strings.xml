@@ -1,4 +1,5 @@
 <resources>
-    <string name="app_name">Музыка · Rust</string>
-    <string name="theme_name">Северное стекло</string>
+    <string name="app_name">Luma Music</string>
+    <string name="theme_name">Жидкое стекло</string>
+    <string name="author_credit">made by Romeo_13card</string>
 </resources>
