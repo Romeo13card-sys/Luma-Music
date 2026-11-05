@@ -1,0 +1,332 @@
+use reqwest::blocking::Client;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use std::time::Duration;
+
+const API: &str = "https://api.music.yandex.net";
+type Result<T> = std::result::Result<T, String>;
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct Track {
+    pub id: String,
+    pub title: String,
+    pub artists: String,
+    pub available: bool,
+}
+
+fn track(value: &Value) -> Option<Track> {
+    let id = match &value["id"] {
+        Value::String(s) => s.clone(),
+        Value::Number(n) => n.to_string(),
+        _ => return None,
+    };
+    Some(Track {
+        id,
+        title: value["title"].as_str().unwrap_or("Без названия").into(),
+        artists: value["artists"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v["name"].as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            })
+            .unwrap_or_default(),
+        available: value["available"].as_bool().unwrap_or(false),
+    })
+}
+
+pub struct MusicClient {
+    client: Client,
+    token: String,
+}
+impl MusicClient {
+    pub fn new(token: &str) -> Result<Self> {
+        if token.trim().is_empty() || token.chars().any(char::is_whitespace) {
+            return Err("Введите OAuth-токен без пробелов".into());
+        }
+        let client = Client::builder()
+            .connect_timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(30))
+            .user_agent("YaMusicRust/0.1")
+            .build()
+            .map_err(|_| "Не удалось создать HTTP-клиент")?;
+        Ok(Self {
+            client,
+            token: token.into(),
+        })
+    }
+    fn get(&self, path: &str, query: &[(&str, &str)]) -> Result<Value> {
+        let response = self
+            .client
+            .get(format!("{API}{path}"))
+            .header("Authorization", format!("OAuth {}", self.token))
+            .query(query)
+            .send()
+            .map_err(|_| "Ошибка сети. Проверьте подключение")?;
+        match response.status().as_u16() {
+            401 | 403 => return Err("Доступ отклонён: проверьте токен и подписку".into()),
+            200 => {}
+            status => return Err(format!("Сервис вернул HTTP {status}")),
+        }
+        let body: Value = response
+            .json()
+            .map_err(|_| "Неизвестный формат ответа сервиса")?;
+        if body.get("error").is_some() {
+            return Err("Яндекс Музыка отклонила запрос".into());
+        }
+        body.get("result")
+            .cloned()
+            .ok_or_else(|| "В ответе отсутствует result".into())
+    }
+    pub fn account(&self) -> Result<Value> {
+        let value = self.get("/account/status", &[])?;
+        let account = &value["account"];
+        if account["uid"].is_null() {
+            return Err("Не удалось подтвердить аккаунт".into());
+        }
+        Ok(
+            json!({"uid": account["uid"], "name": account["displayName"].as_str()
+            .or(account["login"].as_str()).unwrap_or("Аккаунт Яндекса")}),
+        )
+    }
+    pub fn search(&self, text: &str) -> Result<Vec<Track>> {
+        if text.trim().is_empty() {
+            return Ok(vec![]);
+        }
+        let value = self.get(
+            "/search",
+            &[("text", text), ("type", "track"), ("page", "0")],
+        )?;
+        if value["tracks"].is_null() {
+            return Ok(vec![]);
+        }
+        let results = value["tracks"]["results"]
+            .as_array()
+            .ok_or("Сервис не вернул список треков")?;
+        Ok(results.iter().filter_map(track).collect())
+    }
+    pub fn library(&self) -> Result<Value> {
+        let account = self.account()?;
+        let uid = account["uid"]
+            .as_u64()
+            .map(|v| v.to_string())
+            .or_else(|| account["uid"].as_str().map(String::from))
+            .ok_or("Некорректный аккаунт")?;
+        self.get(&format!("/users/{uid}/playlists/list"), &[])
+    }
+    pub fn playlist(&self, argument: &str) -> Result<Vec<Track>> {
+        let parts: Vec<_> = argument.split(':').collect();
+        if parts.len() != 2
+            || parts
+                .iter()
+                .any(|s| s.is_empty() || !s.bytes().all(|c| c.is_ascii_digit()))
+        {
+            return Err("Некорректный плейлист".into());
+        }
+        let value = self.get(&format!("/users/{}/playlists/{}", parts[0], parts[1]), &[])?;
+        let items = value["tracks"].as_array().ok_or("Нет списка треков")?;
+        Ok(items.iter().filter_map(|v| track(&v["track"])).collect())
+    }
+    pub fn likes(&self) -> Result<Vec<Track>> {
+        let account = self.account()?;
+        let uid = account["uid"]
+            .as_u64()
+            .map(|v| v.to_string())
+            .or_else(|| account["uid"].as_str().map(String::from))
+            .ok_or("Некорректный аккаунт")?;
+        let value = self.get(&format!("/users/{uid}/likes/tracks"), &[])?;
+        let items = value["library"]["tracks"]
+            .as_array()
+            .ok_or("Нет списка избранного")?;
+        let ids = items
+            .iter()
+            .take(100)
+            .filter_map(|v| {
+                v["id"]
+                    .as_str()
+                    .map(String::from)
+                    .or_else(|| v["id"].as_u64().map(|id| id.to_string()))
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let value = self.get("/tracks", &[("track-ids", &ids)])?;
+        Ok(value
+            .as_array()
+            .ok_or("Нет данных треков")?
+            .iter()
+            .filter_map(track)
+            .collect())
+    }
+    pub fn stream(&self, id: &str) -> Result<String> {
+        if id.is_empty() || !id.bytes().all(|b| b.is_ascii_digit()) {
+            return Err("Некорректный идентификатор трека".into());
+        }
+        let value = self.get(&format!("/tracks/{id}/download-info"), &[])?;
+        let info = value
+            .as_array()
+            .and_then(|items| {
+                items
+                    .iter()
+                    .filter(|v| v["codec"] == "mp3" && v["transport"] == "raw")
+                    .max_by_key(|v| v["bitrateInKbps"].as_u64().unwrap_or(0))
+            })
+            .ok_or("Для трека нет доступного MP3-потока")?;
+        let url = info["downloadInfoUrl"]
+            .as_str()
+            .ok_or("Отсутствует адрес потока")?;
+        validate_download_url(url)?;
+        let response = self
+            .client
+            .get(url)
+            .send()
+            .map_err(|_| "Не удалось получить адрес аудио")?
+            .error_for_status()
+            .map_err(|_| "Сервис отклонил получение аудио")?;
+        let xml = response
+            .text()
+            .map_err(|_| "Не удалось прочитать данные аудио")?;
+        let info: Download =
+            quick_xml::de::from_str(&xml).map_err(|_| "Неизвестный формат данных аудио")?;
+        info.signed_url()
+    }
+}
+
+fn validate_download_url(raw: &str) -> Result<()> {
+    let url = reqwest::Url::parse(raw).map_err(|_| "Некорректный адрес аудио")?;
+    let host = url.host_str().unwrap_or("");
+    if url.scheme() != "https"
+        || !(host.ends_with(".yandex.net") || host.ends_with(".yandex.ru"))
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.port().is_some()
+    {
+        return Err("Недоверенный адрес аудио".into());
+    }
+    Ok(())
+}
+#[derive(Deserialize)]
+struct Download {
+    host: String,
+    path: String,
+    ts: String,
+    s: String,
+}
+impl Download {
+    fn signed_url(&self) -> Result<String> {
+        if !self.path.starts_with('/')
+            || !self.ts.bytes().all(|c| c.is_ascii_digit())
+            || self.ts.is_empty()
+        {
+            return Err("Некорректные параметры аудио".into());
+        }
+        validate_download_url(&format!("https://{}/", self.host))?;
+        let sign = md5::compute(format!(
+            "XGRlBW9FXlekgbPrRHuSiA{}{}",
+            &self.path[1..],
+            self.s
+        ));
+        Ok(format!(
+            "https://{}/get-mp3/{:x}/{}{}",
+            self.host, sign, self.ts, self.path
+        ))
+    }
+}
+
+pub fn dispatch(token: &str, operation: &str, argument: &str) -> String {
+    let result = (|| {
+        let client = MusicClient::new(token)?;
+        match operation {
+            "account" => client.account(),
+            "search" => client.search(argument).map(|tracks| json!(tracks)),
+            "library" => client.library(),
+            "playlist" => client.playlist(argument).map(|v| json!(v)),
+            "likes" => client.likes().map(|v| json!(v)),
+            "stream" => client.stream(argument).map(|url| json!(url)),
+            _ => Err("Неизвестная операция".into()),
+        }
+    })();
+    match result {
+        Ok(data) => json!({"ok":true,"data":data}).to_string(),
+        Err(error) => json!({"ok":false,"error":error}).to_string(),
+    }
+}
+
+#[cfg(target_os = "android")]
+#[no_mangle]
+pub extern "system" fn Java_dev_romeo_yamusic_Native_request(
+    mut env: jni::JNIEnv,
+    _class: jni::objects::JObject,
+    token: jni::objects::JString,
+    operation: jni::objects::JString,
+    argument: jni::objects::JString,
+) -> jni::sys::jstring {
+    let result = (|| {
+        let token: String = env.get_string(&token).ok()?.into();
+        let operation: String = env.get_string(&operation).ok()?.into();
+        let argument: String = env.get_string(&argument).ok()?.into();
+        Some(dispatch(&token, &operation, &argument))
+    })()
+    .unwrap_or_else(|| json!({"ok":false,"error":"Ошибка JNI"}).to_string());
+    env.new_string(result)
+        .map(|s| s.into_raw())
+        .unwrap_or(std::ptr::null_mut())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn parses_search_tracks_with_multiple_artists() {
+        let result = track(
+            &json!({"id":42,"title":"Трек","artists":[{"name":"А"},{"name":"Б"}],"available":true}),
+        )
+        .unwrap();
+        assert_eq!(result.id, "42");
+        assert_eq!(result.artists, "А, Б");
+        assert!(result.available);
+        assert!(track(&json!({"title":"Без ID"})).is_none());
+    }
+    #[test]
+    fn rejects_credentials_and_external_audio_hosts() {
+        for url in [
+            "http://a.yandex.net/x",
+            "https://evil.test/x",
+            "https://yandex.net.evil.test/x",
+            "https://user@a.yandex.net/x",
+            "https://a.yandex.net:8080/x",
+        ] {
+            assert!(validate_download_url(url).is_err());
+        }
+        assert!(validate_download_url("https://storage.mds.yandex.net/x").is_ok());
+    }
+    #[test]
+    fn signs_download_metadata() {
+        let xml = "<download-info><host>test.yandex.net</host><path>/abc.mp3</path><ts>123</ts><s>salt</s></download-info>";
+        let data: Download = quick_xml::de::from_str(xml).unwrap();
+        let hash = format!("{:x}", md5::compute("XGRlBW9FXlekgbPrRHuSiAabc.mp3salt"));
+        assert_eq!(
+            data.signed_url().unwrap(),
+            format!("https://test.yandex.net/get-mp3/{hash}/123/abc.mp3")
+        );
+    }
+    #[test]
+    fn invalid_token_returns_safe_error() {
+        let result: Value = serde_json::from_str(&dispatch("bad\ntoken", "account", "")).unwrap();
+        assert_eq!(result["ok"], false);
+        assert!(!result.to_string().contains("bad"));
+    }
+    #[test]
+    fn playlist_rejects_path_injection_before_network() {
+        let client = MusicClient::new("test-token").unwrap();
+        for invalid in ["", "1", "1:2:3", "../users:1", "1:2?x=1", "1:"] {
+            assert_eq!(
+                client.playlist(invalid).unwrap_err(),
+                "Некорректный плейлист"
+            );
+        }
+    }
+}
