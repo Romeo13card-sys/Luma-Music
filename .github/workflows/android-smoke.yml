@@ -1,0 +1,41 @@
+name: Android RC integration
+on:
+  push:
+    branches: ['verify-android/**']
+permissions:
+  contents: read
+jobs:
+  android-11:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: '13114758'
+          packages: 'platform-tools build-tools;36.0.0'
+          log-accepted-android-sdk-licenses: false
+      - name: Enable KVM
+        run: test -e /dev/kvm && sudo chmod a+rw /dev/kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          target: google_apis
+          arch: x86_64
+          ram-size: 2048M
+          disable-animations: true
+          emulator-boot-timeout: 600
+          script: python3 scripts/run-android-integration.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Android-RC8-integration
+          path: android-integration/*
+          if-no-files-found: ignore

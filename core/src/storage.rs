@@ -7,6 +7,9 @@ type Result<T> = std::result::Result<T, String>;
 
 fn valid_setting(key: &str, value: &Value) -> bool {
     match key {
+        "language" => value
+            .as_str()
+            .is_some_and(|s| s == "system" || crate::localization::supported(s)),
         "theme_mode" => matches!(value.as_str(), Some("system" | "dark" | "light" | "oled")),
         "quality_wifi" | "quality_mobile" => matches!(value.as_i64(), Some(128 | 192 | 320)),
         "reduce_effects" | "unmetered_only" | "haptics" | "shuffle" | "repeat" | "test_updates"
@@ -18,7 +21,7 @@ fn valid_setting(key: &str, value: &Value) -> bool {
     }
 }
 pub fn defaults() -> Value {
-    json!({"theme_mode":"system","quality_wifi":320,"quality_mobile":128,
+    json!({"language":"system","theme_mode":"system","quality_wifi":320,"quality_mobile":128,
         "reduce_effects":false,"unmetered_only":false,"haptics":true,"shuffle":false,
         "repeat":false,"test_updates":true,"auto_update_check":true,"last_update_check":0,
         "font_size":100,"pause_on_unplug":true})
@@ -199,6 +202,35 @@ mod tests {
             serde_json::from_str(dispatch(&p, "queue_load", "{}").unwrap().as_str().unwrap())
                 .unwrap();
         assert!(v["songs"].as_array().unwrap().is_empty());
+    }
+    #[test]
+    fn language_survives_reopen_and_invalid_patch_is_atomic() {
+        let tmp = Temp::new();
+        let path = tmp.path();
+        dispatch(
+            &path,
+            "settings_patch",
+            r#"{"language":"ar","theme_mode":"oled"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            dispatch(&path, "settings_load", "{}").unwrap()["language"],
+            "ar"
+        );
+        assert!(dispatch(
+            &path,
+            "settings_patch",
+            r#"{"language":"../../secret","theme_mode":"light"}"#
+        )
+        .is_err());
+        assert_eq!(
+            dispatch(&path, "settings_load", "{}").unwrap()["theme_mode"],
+            "oled"
+        );
+        assert_eq!(
+            dispatch(&path, "settings_reset", "{}").unwrap()["language"],
+            "system"
+        );
     }
     #[test]
     fn newer_database_is_never_downgraded() {

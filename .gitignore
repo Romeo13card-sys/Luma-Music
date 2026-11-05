@@ -21,3 +21,6 @@ __pycache__/
 /Luma-Music-desktop-preview.zip
 /ios/build/
 /ios/*.xcodeproj/
+
+.smoke-input/
+android-integration/

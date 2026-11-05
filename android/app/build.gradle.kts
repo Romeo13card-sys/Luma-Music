@@ -32,11 +32,15 @@ android {
             "Invalid LUMA_YANDEX_CLIENT_ID"
         }
         buildConfigField("String", "YANDEX_CLIENT_ID", "\"$oauthClient\"")
+        val sourceCommit = System.getenv("LUMA_SOURCE_COMMIT") ?: System.getenv("GITHUB_SHA") ?: "local"
+        require(sourceCommit == "local" || sourceCommit.matches(Regex("[a-f0-9]{40}")))
+        buildConfigField("String", "SOURCE_COMMIT", "\"$sourceCommit\"")
         applicationId = "org.luma.music"
+        testInstrumentationRunner = "org.luma.music.RC8Instrumentation"
         minSdk = 30
         targetSdk = 36
-        versionCode = 16
-        versionName = "0.5.0-rc.7"
+        versionCode = 17
+        versionName = "0.5.0-rc.8"
         ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64") }
     }
     splits {

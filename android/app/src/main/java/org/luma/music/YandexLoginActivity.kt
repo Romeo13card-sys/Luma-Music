@@ -31,6 +31,11 @@ class YandexLoginActivity : Activity() {
     )
     private fun dp(n: Int) = (n * resources.displayMetrics.density).toInt()
 
+    override fun attachBaseContext(base: android.content.Context) {
+        super.attachBaseContext(L10n.wrap(base))
+    }
+    private fun t(source: String, vararg args: Any) = L10n.text(this, source, *args)
+
     override fun onCreate(state: Bundle?) {
         setTheme(if (colors.light) R.style.Theme_Luma_Light else R.style.Theme_Luma_Dark)
         super.onCreate(state)
@@ -41,16 +46,16 @@ class YandexLoginActivity : Activity() {
             setPadding(dp(12), dp(12), dp(12), dp(12))
             fitsSystemWindows = true
         }
-        val title = TextView(this).apply { text = "Вход через Яндекс"; textSize = 22f; setTextColor(colors.text) }
+        val title = LumaTextView(this).apply { text = "Вход через Яндекс"; textSize = 22f; setTextColor(colors.text) }
         content.addView(title)
-        message = TextView(this).apply {
+        message = LumaTextView(this).apply {
             text = "Пароль вводится только на сайте Яндекса"
             setTextColor(colors.muted)
             setPadding(0, dp(8), 0, dp(8))
         }
         content.addView(message)
         val actions = LinearLayout(this)
-        fun button(label: String, action: () -> Unit) = Button(this).apply {
+        fun button(label: String, action: () -> Unit) = LumaButton(this).apply {
             text = label; setOnClickListener { action() }
         }
         actions.addView(button("Закрыть") { finish() }, LinearLayout.LayoutParams(0, -2, 1f))

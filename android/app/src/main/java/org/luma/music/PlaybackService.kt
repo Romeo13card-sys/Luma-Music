@@ -483,7 +483,7 @@ class PlaybackService : Service() {
         return Notification.Builder(this, "playback")
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentTitle(song?.title ?: getString(R.string.app_name))
-            .setContentText(song?.artist ?: message)
+            .setContentText(song?.artist ?: L10n.text(this,message))
             .setContentIntent(open)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setOngoing(playing)
@@ -491,7 +491,7 @@ class PlaybackService : Service() {
             .addAction(
                 Notification.Action.Builder(
                         android.R.drawable.ic_media_previous,
-                        "Назад",
+                        L10n.text(this,"Назад"),
                         action("previous"),
                     )
                     .build()
@@ -500,7 +500,7 @@ class PlaybackService : Service() {
                 Notification.Action.Builder(
                         if (playing) android.R.drawable.ic_media_pause
                         else android.R.drawable.ic_media_play,
-                        if (playing) "Пауза" else "Играть",
+                        L10n.text(this,if (playing) "Пауза" else "Играть"),
                         action("toggle"),
                     )
                     .build()
@@ -508,7 +508,7 @@ class PlaybackService : Service() {
             .addAction(
                 Notification.Action.Builder(
                         android.R.drawable.ic_media_next,
-                        "Далее",
+                        L10n.text(this,"Далее"),
                         action("next"),
                     )
                     .build()

@@ -1,4 +1,6 @@
 mod auth;
+mod diagnostics;
+pub mod localization;
 mod lyrics;
 mod queue;
 mod storage;
@@ -447,6 +449,10 @@ pub fn core_dispatch(operation: &str, argument: &str) -> String {
             "auth_start" => auth::start(&v),
             "auth_navigation" => auth::navigation(&v),
             "settings_defaults" => Ok(storage::defaults()),
+            "support_report" => diagnostics::report(&v),
+            "locale_resolve" => Ok(localization::info(&v)),
+            "locale_catalog" => localization::catalog(&v),
+            "languages" => Ok(localization::list()),
             "queue_next" => queue::next(&v),
             "upgrade_validate" => updates::validate_upgrade(&v),
             "daily_check_due" => Ok(json!(updates::daily_due(
@@ -455,6 +461,10 @@ pub fn core_dispatch(operation: &str, argument: &str) -> String {
             ))),
             "update_check" => update_transport::check(&v),
             "lyrics" => lyrics::fetch(&v),
+            "lyrics_import" => lyrics::import(&v),
+            "lyrics_cached" => lyrics::cached(&v),
+            "lyrics_cursor" => lyrics::cursor(&v),
+            "lyrics_release" => lyrics::release(&v),
             "version_compare" => Ok(json!(updates::compare(
                 v["candidate"].as_str().unwrap_or(""),
                 v["installed"].as_str().unwrap_or("")

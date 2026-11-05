@@ -29,7 +29,6 @@ class MainActivity : Activity() {
     private var creditScreen = false
     private var settingsSection = ""
     private var pendingUpdate: java.io.File? = null
-    private var lyricsDialog: AlertDialog? = null
     private var checkingUpdates = false
     private val hardwarePolicy by lazy {
         val manager = getSystemService(android.app.ActivityManager::class.java)
@@ -80,6 +79,11 @@ class MainActivity : Activity() {
     private val mint
         get() = palette.accent
 
+    override fun attachBaseContext(base: android.content.Context) {
+        super.attachBaseContext(L10n.wrap(base))
+    }
+    private fun t(source: String, vararg args: Any) = L10n.text(this, source, *args)
+
     override fun onCreate(state: Bundle?) {
         setTheme(
             if (palette.light) R.style.Theme_Luma_Light
@@ -101,7 +105,7 @@ class MainActivity : Activity() {
         token = TokenStore(this).load().orEmpty()
         demo = state?.getBoolean("demo", false) ?: false
         page = state?.getString("page") ?: "Главная"
-        if (token.isEmpty() && !demo) login() else shell(page)
+        if (token.isEmpty() && !demo) login() else shell(page,state?.getBoolean("settings",false)!=true)
         if (state?.getBoolean("settings", false) == true) settings(state.getString("settings_section").orEmpty())
         handleOAuth(intent)
         if (
@@ -112,8 +116,9 @@ class MainActivity : Activity() {
             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1)
     }
 
-    private fun text(value: String, size: Float = 16f, color: Int = white, bold: Boolean = false) =
-        TextView(this).apply {
+    private fun text(value: String, size: Float = 16f, color: Int = white, bold: Boolean = false, raw: Boolean = false) =
+        LumaTextView(this).apply {
+            localize = !raw
             text = value
             textSize = size * preferences.getInt("font_size", 100) / 100f
             setTextColor(color)
@@ -141,7 +146,7 @@ class MainActivity : Activity() {
             background = surface(dp(14).toFloat(), accent)
             isClickable = true
             isFocusable = true
-            contentDescription = label
+            contentDescription = t(label)
             setOnClickListener {
                 if (preferences.getBoolean("haptics", true)) {
                     performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
@@ -262,7 +267,7 @@ class MainActivity : Activity() {
         card.addView(text("Личный OAuth-токен", 13f, mint, true))
         val input =
             EditText(this).apply {
-                hint = "Вставьте токен"
+                hint = t("Вставьте токен")
                 setTextColor(white)
                 setHintTextColor(muted)
                 setSingleLine()
@@ -275,7 +280,7 @@ class MainActivity : Activity() {
         card.addView(input)
         val show =
             CheckBox(this).apply {
-                text = "Показать токен"
+                text = t("Показать токен")
                 setTextColor(muted)
                 setOnCheckedChangeListener { _, checked ->
                     val cursor = input.selectionStart
@@ -367,11 +372,11 @@ class MainActivity : Activity() {
         val prefs = getSharedPreferences("oauth", MODE_PRIVATE)
         val input =
             EditText(this).apply {
-                hint = "Client ID OAuth-приложения"
+                hint = t("Client ID OAuth-приложения")
                 setSingleLine()
                 setText(prefs.getString("client", ""))
             }
-        AlertDialog.Builder(this)
+        LumaDialog(this)
             .setTitle("Вход через Яндекс")
             .setMessage(
                 "Введите Client ID вашего OAuth-приложения с доступом к Яндекс Музыке. В нём должен быть зарегистрирован Redirect URI: yamusicrust://oauth. Client ID не является паролем."
@@ -474,8 +479,8 @@ class MainActivity : Activity() {
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         val miniBar = row().apply { background = surface(dp(14).toFloat()); setPadding(dp(12),dp(4),dp(4),dp(4)) }
         val miniLabels = column().apply { isClickable=true; isFocusable=true; setOnClickListener { fullPlayer() } }
-        mini = text("Выберите трек",15f,white,true).apply { maxLines=1; ellipsize=android.text.TextUtils.TruncateAt.END }
-        miniArtist = text("Открыть плеер",12f,muted).apply { maxLines=1; ellipsize=android.text.TextUtils.TruncateAt.END }
+        mini = text(t("Выберите трек"),15f,white,true,raw=true).apply { maxLines=1; ellipsize=android.text.TextUtils.TruncateAt.END }
+        miniArtist = text(t("Открыть плеер"),12f,muted,raw=true).apply { maxLines=1; ellipsize=android.text.TextUtils.TruncateAt.END }
         miniLabels.addView(mini);miniLabels.addView(miniArtist)
         miniBar.addView(miniLabels,LinearLayout.LayoutParams(0,-2,1f))
         miniToggle=action("▶") { PlaybackService.command(this,"toggle");refreshPlayer() }
@@ -523,11 +528,11 @@ class MainActivity : Activity() {
             val current=PlaybackService.queue.getOrNull(PlaybackService.index)
             val resume=panel(body)
             resume.addView(text("Продолжить слушать",20f,white,true))
-            resume.addView(text(current?.title ?: "Сохранённая очередь",16f,white))
-            resume.addView(action("Открыть очередь · ${PlaybackService.queue.size} треков") {fullPlayer()})
+            resume.addView(text(current?.title ?: t("Сохранённая очередь"),16f,white,raw=true))
+            resume.addView(action(t("Открыть очередь · %1\$d треков",PlaybackService.queue.size)) {fullPlayer()})
         }
         body.addView(text("Ваша музыка",22f,white,true));gap(body,8)
-        body.addView(action("Избранное") {if(demo) playDemo() else showTracks("Избранное","likes")})
+        body.addView(action("Избранное") {if(demo) playDemo() else showTracks(t("Избранное"),"likes")})
         gap(body,8)
         body.addView(action("Музыка с устройства") {openFile()})
         gap(body,8)
@@ -540,7 +545,7 @@ class MainActivity : Activity() {
         body.addView(text("Найдите своё", 32f, white, true))
         val box =
             EditText(this).apply {
-                hint = "Трек или исполнитель"
+                hint = t("Трек или исполнитель")
                 setHintTextColor(muted)
                 setTextColor(white)
                 setSingleLine()
@@ -573,7 +578,7 @@ class MainActivity : Activity() {
         gap(body)
         body.addView(
             action("Избранное · последние 100") {
-                if (demo) playDemo() else showTracks("Избранное", "likes")
+                if (demo) playDemo() else showTracks(t("Избранное"), "likes")
             }
         )
         gap(body)
@@ -604,7 +609,7 @@ class MainActivity : Activity() {
         shell("Медиатека", false)
         generation++
         body.removeAllViews()
-        body.addView(text(title, 30f, white, true))
+        body.addView(text(title, 30f, white, true,raw=true))
         request(op, arg) { renderTracks(body, (it as JSONArray).songs()) }
     }
 
@@ -629,8 +634,8 @@ class MainActivity : Activity() {
                 trackMarkers.add(Triple(songs,i,marker))
                 item.addView(marker,LinearLayout.LayoutParams(dp(36),-2))
                 val labels = column()
-                labels.addView(text(song.title, 16f, white, true).apply { maxLines=2; ellipsize=android.text.TextUtils.TruncateAt.END })
-                labels.addView(text(song.artist, 13f, muted))
+                labels.addView(text(song.title, 16f, white, true, raw=true).apply { maxLines=2; ellipsize=android.text.TextUtils.TruncateAt.END })
+                labels.addView(text(song.artist, 13f, muted, raw=true))
                 item.addView(labels, LinearLayout.LayoutParams(0, -2, 1f))
                 item.addView(text(if (song.available) "▶" else "—", 18f, mint))
                 item.isEnabled = song.available
@@ -655,7 +660,7 @@ class MainActivity : Activity() {
                 )
             host.addView(
                 text(
-                    "${start+1}–${minOf(start+renderPolicy.pageSize,songs.size)} из ${songs.size}",
+                    t("%1\$d–%2\$d из %3\$d",start+1,minOf(start+renderPolicy.pageSize,songs.size),songs.size),
                     12f,
                     muted,
                 )
@@ -680,9 +685,9 @@ class MainActivity : Activity() {
         gap(body, 20)
         body.addView(AlbumArt(this), LinearLayout.LayoutParams(-1, dp(220)))
         gap(body, 24)
-        playerTitle = text("", 27f, white, true)
+        playerTitle = text("", 27f, white, true,raw=true)
         body.addView(playerTitle)
-        playerSubtitle = text("", 16f, muted)
+        playerSubtitle = text("", 16f, muted,raw=true)
         body.addView(playerSubtitle)
         seek =
             SeekBar(this).apply {
@@ -741,7 +746,7 @@ class MainActivity : Activity() {
         body.addView(jumps)
         gap(body)
         body.addView(
-            action("Перемешивание: ${if(PlaybackService.shuffle) "вкл" else "выкл"}") {
+            action(t("Перемешивание: %1\$s",t(if(PlaybackService.shuffle) "вкл" else "выкл"))) {
                 PlaybackService.shuffle = !PlaybackService.shuffle
                 preferences.edit().putBoolean("shuffle", PlaybackService.shuffle).apply()
                 fullPlayer()
@@ -749,7 +754,7 @@ class MainActivity : Activity() {
         )
         gap(body, 8)
         body.addView(
-            action("Повтор трека: ${if(PlaybackService.repeat) "вкл" else "выкл"}") {
+            action(t("Повтор трека: %1\$s",t(if(PlaybackService.repeat) "вкл" else "выкл"))) {
                 PlaybackService.repeat = !PlaybackService.repeat
                 preferences.edit().putBoolean("repeat", PlaybackService.repeat).apply()
                 fullPlayer()
@@ -774,50 +779,31 @@ class MainActivity : Activity() {
     }
 
     private fun showLyrics() {
-        val song = PlaybackService.queue.getOrNull(PlaybackService.index) ?: return
-        AlertDialog.Builder(this).setTitle("Текст песни")
-            .setMessage("Найти текст в LrcLib? Сервис получит название трека и исполнителя.")
+        if (PlaybackService.queue.getOrNull(PlaybackService.index) == null) return
+        LumaDialog(this).setTitle("Текст песни")
+            .setMessage("Найти текст в LrcLib? Пока экран текста открыт, сервис получит названия треков и исполнителей.")
             .setNegativeButton("Отмена", null)
-            .setPositiveButton("Найти") { _, _ ->
-                val version = generation
-                lyricsDialog?.dismiss()
-                val loading = AlertDialog.Builder(this).setTitle("Текст песни").setMessage("Ищем в LrcLib…").setNegativeButton("Отмена", null).show()
-                lyricsDialog = loading
-                executor.execute {
-                    val result = runCatching {
-                        NativeCore.call("lyrics", JSONObject().put("title", song.title).put("artist", song.artist).toString()) as JSONObject
-                    }
-                    runOnUiThread {
-                        val dismissed = !loading.isShowing
-                        if (!destroyed) loading.dismiss()
-                        if (destroyed || dismissed || version != generation) return@runOnUiThread
-                        val content = result.getOrNull()?.optString("text")
-                            ?: result.exceptionOrNull()?.message ?: "Текст не найден"
-                        val scroll = ScrollView(this).apply {
-                            addView(text(content, 18f, white))
-                            setPadding(dp(16), dp(8), dp(16), dp(8))
-                        }
-                        AlertDialog.Builder(this).setTitle("${song.title} · LrcLib")
-                            .setView(scroll).setPositiveButton("Закрыть", null).show()
-                    }
-                }
-            }.show()
+            .setNeutralButton("LRC / TXT") { _, _ ->
+                startActivity(Intent(this,LyricsActivity::class.java).putExtra("localOnly",true))
+            }
+            .setPositiveButton("Найти") { _, _ -> startActivity(Intent(this, LyricsActivity::class.java)) }
+            .show()
     }
 
     private fun refreshPlayer() {
         val song = PlaybackService.queue.getOrNull(PlaybackService.index)
-        mini?.text = song?.title ?: "Выберите трек"
-        miniArtist?.text = song?.artist ?: "Музыка появится здесь"
+        mini?.text = song?.title ?: t("Выберите трек")
+        miniArtist?.text = song?.artist ?: t("Музыка появится здесь")
         miniToggle?.text = if(PlaybackService.playing) "Ⅱ" else "▶"
         miniToggle?.isEnabled = song != null
-        miniToggle?.contentDescription = if(PlaybackService.playing) "Приостановить" else "Воспроизвести"
+        miniToggle?.contentDescription = t(if(PlaybackService.playing) "Приостановить" else "Воспроизвести")
         trackMarkers.forEach { (songs,index,view) ->
             val current=songs === PlaybackService.queue && index==PlaybackService.index
             view.text=if(current) "●" else (index+1).toString()
             view.setTextColor(if(current) mint else muted)
         }
-        playerTitle?.text = song?.title ?: "Выберите трек"
-        playerSubtitle?.text = "${song?.artist.orEmpty()}\n${PlaybackService.message}"
+        playerTitle?.text = song?.title ?: t("Выберите трек")
+        playerSubtitle?.text = "${song?.artist.orEmpty()}\n${t(PlaybackService.message)}"
         playButton?.text = if (PlaybackService.playing) "Ⅱ" else "▶"
         val service = PlaybackService.instance
         if (!dragging) {
@@ -835,7 +821,7 @@ class MainActivity : Activity() {
             setPadding(dp(4), dp(8), dp(4), dp(8))
             isClickable = true
             isFocusable = true
-            contentDescription = "$title. $summary"
+            contentDescription = t(title)+". "+t(summary)
             setOnClickListener { onClick() }
         }
         val labels = column()
@@ -849,7 +835,7 @@ class MainActivity : Activity() {
     private fun settingSwitch(parent: LinearLayout, title: String, summary: String, key: String, default: Boolean,
                               changed: (Boolean) -> Unit = {}) {
         parent.addView(Switch(this).apply {
-            text = title
+            text = t(title)
             textSize = 16f * preferences.getInt("font_size", 100) / 100f
             setTextColor(white)
             minHeight = dp(52)
@@ -894,13 +880,13 @@ class MainActivity : Activity() {
                 val qualityKey = if (metered) "quality_mobile" else "quality_wifi"
                 val selected = preferences.getInt(qualityKey, if (metered) 128 else 320)
                 val state = if (network.activeNetwork == null) "Нет подключённой сети" else
-                    "${if (metered) "Сеть с лимитом" else "Сеть без лимита"} · до $selected кбит/с"
+                    t("%1\$s · до %2\$d кбит/с",t(if(metered) "Сеть с лимитом" else "Безлимитная сеть"),selected)
                 body.addView(text(state, 15f, mint, true))
                 val sound = group("Качество MP3")
                 fun quality(title: String, key: String, default: Int, detail: String) {
-                    settingRow(sound, "$title · до ${preferences.getInt(key, default)} кбит/с", detail) {
+                    settingRow(sound, t("%1\$s · до %2\$d кбит/с",t(title),preferences.getInt(key, default)), detail) {
                         val values = intArrayOf(128,192,320)
-                        AlertDialog.Builder(this).setTitle(title)
+                        LumaDialog(this).setTitle(title)
                             .setSingleChoiceItems(arrayOf("Экономия · 128 кбит/с", "Баланс · 192 кбит/с", "Высокое · 320 кбит/с"),
                                 values.indexOf(preferences.getInt(key, default)).coerceAtLeast(0)) { dialog, index ->
                                 preferences.edit().putInt(key, values[index]).apply()
@@ -922,14 +908,27 @@ class MainActivity : Activity() {
             "appearance" -> {
                 val appearance = group("Ваш интерфейс")
                 settingRow(appearance, "Тема", labels[modes.indexOf(mode).coerceAtLeast(0)]) {
-                    AlertDialog.Builder(this).setTitle("Тема оформления")
+                    LumaDialog(this).setTitle("Тема оформления")
                         .setSingleChoiceItems(labels, modes.indexOf(mode).coerceAtLeast(0)) { dialog,index ->
                             preferences.edit().putString("theme_mode", modes[index]).apply();dialog.dismiss();themed()
                         }.setNegativeButton("Отмена",null).show()
                 }
-                settingRow(appearance, "Размер текста Luma", "${preferences.getInt("font_size",100)}% · вместе с системным размером текста") {
+                settingRow(appearance,"Язык приложения",L10n.name(this)) {
+                    val languages=NativeCore.call("languages","{}") as JSONArray
+                    val codes=listOf("system")+(0 until languages.length()).map {languages.getJSONObject(it).getString("code")}
+                    val names=arrayOf(t("Как в системе"))+(0 until languages.length()).map {
+                        val item=languages.getJSONObject(it)
+                        item.getString("name")+if(item.optBoolean("preview")) " · "+t("Предварительный перевод") else ""
+                    }
+                    LumaDialog(this).setTitle("Язык приложения").setSingleChoiceItems(names,
+                        codes.indexOf(preferences.getString("language","system")).coerceAtLeast(0)) {dialog,index ->
+                        preferences.edit().putString("language",codes[index]).apply()
+                        dialog.dismiss();recreate()
+                    }.setNegativeButton("Отмена",null).show()
+                }
+                settingRow(appearance, "Размер текста Luma", t("%1\$d%% · вместе с системным размером текста",preferences.getInt("font_size",100))) {
                     val sizes=intArrayOf(90,100,115,130)
-                    AlertDialog.Builder(this).setTitle("Размер текста")
+                    LumaDialog(this).setTitle("Размер текста")
                         .setSingleChoiceItems(arrayOf("Компактный · 90%","Обычный · 100%","Крупный · 115%","Очень крупный · 130%"),sizes.indexOf(preferences.getInt("font_size",100)).coerceAtLeast(0)) { dialog,index ->
                             preferences.edit().putInt("font_size",sizes[index]).apply();dialog.dismiss();settings("appearance")
                         }.setNegativeButton("Отмена",null).show()
@@ -937,7 +936,7 @@ class MainActivity : Activity() {
                 settingSwitch(appearance,"Вибрация кнопок","Лёгкий тактильный отклик при нажатии.","haptics",true)
                 val performance=group("Быстродействие")
                 settingSwitch(performance,"Экономичный интерфейс","Меньше строк на странице и реже обновляется плеер. На малом объёме ОЗУ режим включается автоматически.","reduce_effects",false) {settings("appearance")}
-                performance.addView(text("Сейчас: ${if(renderPolicy.economy) "экономичный" else "обычный"} профиль · ${renderPolicy.pageSize} треков на странице. Анимации фона и размытие не используются.",13f,muted))
+                performance.addView(text(t("Сейчас: %1\$s профиль · %2\$d треков на странице. Анимации фона и размытие не используются.",t(if(renderPolicy.economy) "экономичный" else "обычный"),renderPolicy.pageSize),13f,muted))
             }
             "player" -> {
                 val player=group("Поведение плеера")
@@ -945,11 +944,11 @@ class MainActivity : Activity() {
                 settingSwitch(player,"Повтор трека","Повторять текущую композицию после окончания.","repeat",false) {PlaybackService.repeat=it}
                 settingSwitch(player,"Пауза без наушников","Останавливать звук при отключении проводных или Bluetooth-наушников.","pause_on_unplug",true)
                 val remaining=PlaybackService.instance?.sleepMinutesRemaining() ?: 0
-                settingRow(player,"Таймер сна",if(remaining>0) "Осталось около $remaining мин" else "Выключен") {
+                settingRow(player,"Таймер сна",if(remaining>0) t("Осталось около %1\$d мин",remaining) else "Выключен") {
                     val service=PlaybackService.instance
                     if(service==null) {status.text="Сначала запустите трек";return@settingRow}
                     val minutes=intArrayOf(0,15,30,60,90)
-                    AlertDialog.Builder(this).setTitle("Таймер сна")
+                    LumaDialog(this).setTitle("Таймер сна")
                         .setItems(arrayOf("Выключить","15 минут","30 минут","60 минут","90 минут")) { _,index ->
                             service.setSleepTimer(minutes[index]);settings("player")
                         }.show()
@@ -962,10 +961,10 @@ class MainActivity : Activity() {
                 val storage=group("Место на устройстве")
                 val files=java.io.File(cacheDir,"updates").listFiles()?.filter {it.isFile && it.name in setOf("update.apk","update.part")}.orEmpty()
                 val bytes=files.sumOf {it.length()}
-                storage.addView(text("Скачанные обновления: ${String.format(java.util.Locale.ROOT,"%.1f",bytes/1048576.0)} МиБ",16f,white))
-                storage.addView(text("Свободно: ${String.format(java.util.Locale.ROOT,"%.1f",android.os.StatFs(filesDir.path).availableBytes/1073741824.0)} ГиБ",14f,muted))
+                storage.addView(text(t("Скачанные обновления: %1\$s МиБ",String.format(java.util.Locale.ROOT,"%.1f",bytes/1048576.0)),16f,white))
+                storage.addView(text(t("Свободно: %1\$s ГиБ",String.format(java.util.Locale.ROOT,"%.1f",android.os.StatFs(filesDir.path).availableBytes/1073741824.0)),14f,muted))
                 settingRow(storage,"Удалить файлы обновлений","Скачанные APK и незавершённая загрузка. Аккаунт и очередь сохранятся.") {
-                    AlertDialog.Builder(this).setTitle("Удалить скачанные обновления?").setNegativeButton("Отмена",null)
+                    LumaDialog(this).setTitle("Удалить скачанные обновления?").setNegativeButton("Отмена",null)
                         .setPositiveButton("Удалить") { _,_ ->
                             val version=generation
                             executor.execute {
@@ -983,14 +982,14 @@ class MainActivity : Activity() {
                 val update=group("Luma $current")
                 val preview=preferences.getBoolean("test_updates",true)
                 settingRow(update,"Канал обновлений",if(preview) "Предварительные · включая RC" else "Только стабильные выпуски") {
-                    AlertDialog.Builder(this).setTitle("Канал обновлений")
+                    LumaDialog(this).setTitle("Канал обновлений")
                         .setSingleChoiceItems(arrayOf("Только стабильные","Предварительные и стабильные"),if(preview) 1 else 0) {dialog,index ->
                             preferences.edit().putBoolean("test_updates",index==1).apply();dialog.dismiss();settings("updates")
                         }.setNegativeButton("Отмена",null).show()
                 }
                 settingSwitch(update,"Проверять при запуске","Не чаще раза в сутки. Скачивание и установка требуют вашего действия.","auto_update_check",true)
                 val last=preferences.getLong("last_update_check",0)
-                update.addView(text(if(last<=0) "Проверка ещё не запускалась" else "Последняя попытка: ${java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT,java.text.DateFormat.SHORT).format(java.util.Date(last))}",13f,muted))
+                update.addView(text(if(last<=0) "Проверка ещё не запускалась" else t("Последняя попытка: %1\$s",java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT,java.text.DateFormat.SHORT).format(java.util.Date(last))),13f,muted))
                 update.addView(action("Проверить обновления",true) {checkUpdates()})
                 gap(update,8)
                 update.addView(action("Установить APK из файла") {
@@ -1007,51 +1006,7 @@ class MainActivity : Activity() {
                 if(token.isNotBlank()) account.addView(action("Выйти из аккаунта") {logout()})
                 account.addView(text("Токен хранится зашифрованным на этом устройстве. Для каталога и прослушивания нужна действующая подписка.",13f,muted))
             }
-            "about" -> {
-        val about = panel(body)
-        about.addView(text(getString(R.string.app_name), 22f, white, true))
-        about.addView(
-            text(
-                "Оформление · ${if(renderPolicy.economy) "экономичный режим" else "обычный режим"}",
-                14f,
-                muted,
-            )
-        )
-        val memory = android.app.ActivityManager.MemoryInfo()
-        getSystemService(android.app.ActivityManager::class.java).getMemoryInfo(memory)
-        val selectedTheme = labels[modes.indexOf(mode).coerceAtLeast(0)]
-        val effectiveTheme = if (palette.oled) "OLED" else if (palette.light) "Светлая" else "Тёмная"
-        about.addView(text("Версия: $current", 14f, muted))
-        about.addView(text("Телефон: ${Build.MANUFACTURER} ${Build.MODEL}", 14f, muted))
-        about.addView(text("Android ${Build.VERSION.RELEASE} · API ${Build.VERSION.SDK_INT}", 14f, muted))
-        about.addView(text("ОЗУ: ${String.format(java.util.Locale.ROOT, "%.1f", memory.totalMem / 1073741824.0)} ГиБ · ${Build.SUPPORTED_ABIS.firstOrNull().orEmpty()}", 14f, muted))
-        about.addView(text("Тема: $selectedTheme · сейчас $effectiveTheme", 14f, muted))
-        about.addView(text(getString(R.string.author_credit), 18f, mint, true))
-        gap(about, 8)
-        about.addView(action("Telegram · Romeo13card") { openAuthorLink("https://t.me/romeo_13card") })
-        gap(about, 8)
-        about.addView(action("Поддержать автора") { openAuthorLink("https://dalink.to/romeo_13card_fan") })
-        gap(about, 8)
-        about.addView(action("Открытый исходный код и лицензия") {
-            val license = assets.open("licenses/GPL-3.0.txt").bufferedReader().use { it.readText() }
-            val view = ScrollView(this).apply {
-                addView(text("Основа: YAYMA — DarkPlayOff и участники; YaMusic — Vyfor.\nИзменения Luma — Romeo13card. Без гарантий.\n\n$license", 13f, white))
-                setPadding(dp(16), dp(8), dp(16), dp(8))
-            }
-            AlertDialog.Builder(this).setTitle("GPL-3.0 · YAYMA / Luma")
-                .setView(view).setNegativeButton("Закрыть", null)
-                .setPositiveButton("Исходники") { _, _ ->
-                    startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/Romeo13card-sys/Luma-Music")))
-                }.show()
-        })
-                gap(body,8)
-                body.addView(action("Скопировать сведения для поддержки") {
-                    val network=getSystemService(android.net.ConnectivityManager::class.java)
-                    val report="Luma $current\nAndroid ${Build.VERSION.RELEASE} / API ${Build.VERSION.SDK_INT}\n${Build.MANUFACTURER} ${Build.MODEL}\nABI: ${Build.SUPPORTED_ABIS.joinToString()}\nТема: ${mode ?: "system"}\nЭкономичный профиль: ${renderPolicy.economy}\nКачество безлимитной сети: ${preferences.getInt("quality_wifi",320)}\nКачество сети с лимитом: ${preferences.getInt("quality_mobile",128)}\nТарифицируемая сеть: ${network.isActiveNetworkMetered}"
-                    getSystemService(android.content.ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Luma · сведения",report))
-                    status.text="Сведения скопированы. Токенов и адресов аудио в них нет."
-                })
-            }
+            "about" -> showAbout(current)
             else -> {
                 val categories=listOf(
                     Triple("sound","Звук и сеть","Качество MP3, лимиты трафика, повторный запуск трека"),
@@ -1072,14 +1027,14 @@ class MainActivity : Activity() {
                     "about" to "telegram телеграм донат поддержка телефон android api ram озу"
                 )
                 val search=EditText(this).apply {
-                    hint="Найти настройку";setTextColor(white);setHintTextColor(muted);setSingleLine()
+                    hint = t("Найти настройку");setTextColor(white);setHintTextColor(muted);setSingleLine()
                     background=surface(dp(14).toFloat());setPadding(dp(14),dp(8),dp(14),dp(8))
                 }
                 body.addView(search)
                 val rows=panel(body)
                 fun filter(query:String) {
                     rows.removeAllViews()
-                    val found=categories.filter {(id,title,summary)->("$title $summary ${keywords[id].orEmpty()}").contains(query.trim(),ignoreCase=true)}
+                    val found=categories.filter {(id,title,summary)->("${t(title)} ${t(summary)} $title $summary ${keywords[id].orEmpty()}").contains(query.trim(),ignoreCase=true)}
                     found.forEach {(id,title,summary)->settingRow(rows,title,summary) {
                         (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).hideSoftInputFromWindow(search.windowToken,0)
                         settings(id)
@@ -1093,19 +1048,75 @@ class MainActivity : Activity() {
                 })
                 filter("")
                 body.addView(action("Сбросить настройки") {
-                    AlertDialog.Builder(this).setTitle("Вернуть настройки по умолчанию?")
+                    LumaDialog(this).setTitle("Вернуть настройки по умолчанию?")
                         .setMessage("Тема, качество и поведение плеера будут сброшены. Аккаунт, очередь и ваши файлы сохранятся.")
                         .setNegativeButton("Отмена",null).setPositiveButton("Сбросить") {_,_->
                             preferences.reset {saved->if(!destroyed && creditScreen) status.text=if(saved) "Настройки сброшены" else "Не удалось сохранить сброс. Проверьте свободное место."}
                             PlaybackService.shuffle=false;PlaybackService.repeat=false
                             PlaybackService.instance?.setSleepTimer(0)
-                            setTheme(if(palette.light) R.style.Theme_Luma_Light else R.style.Theme_Luma_Dark)
-                            settings()
+                            recreate()
                         }.show()
                 })
                 body.addView(text("Luma Music · $current",12f,muted))
             }
         }
+    }
+
+    private fun showAbout(version: String) {
+        val hero = panel(body)
+        hero.addView(text("Luma Music", 32f, white, true))
+        hero.addView(text("Музыка в вашем ритме", 16f, muted))
+        hero.addView(text(getString(R.string.author_credit), 18f, mint, true))
+        fun group(label: String) = panel(body).also { it.addView(text(label,21f,white,true)) }
+        fun info(parent: LinearLayout, label: String, value: String) {
+            parent.addView(text(label,12f,muted))
+            parent.addView(text(value,16f,white,raw=true))
+        }
+        val app=group("Приложение")
+        info(app,"Версия",version)
+        info(app,"Канал обновлений","Release candidate")
+        info(app,"Сборка",BuildConfig.SOURCE_COMMIT.take(8))
+        info(app,"Пакет",packageName)
+        val appearance=group("Оформление")
+        val mode=preferences.getString("theme_mode","system").orEmpty()
+        val selected=when(mode) {"light"->"Светлая";"dark"->"Тёмная";"oled"->"OLED · Чёрная";else->"Как в системе"}
+        val effective=if(palette.oled) "OLED" else if(palette.light) "Светлая" else "Тёмная"
+        info(appearance,"Выбранная тема",t(selected))
+        info(appearance,"Активная тема",t(effective))
+        info(appearance,"Язык приложения",L10n.name(this))
+        if(L10n.preview(this)) appearance.addView(text("Предварительный перевод. Часть пояснений показана на английском.",13f,muted))
+        val device=group("Устройство")
+        val memory=android.app.ActivityManager.MemoryInfo()
+        getSystemService(android.app.ActivityManager::class.java).getMemoryInfo(memory)
+        info(device,"Модель",Build.MANUFACTURER+" "+Build.MODEL)
+        info(device,"Система","Android "+Build.VERSION.RELEASE+" · API "+Build.VERSION.SDK_INT)
+        info(device,"Архитектуры",Build.SUPPORTED_ABIS.joinToString())
+        info(device,"Оперативная память",String.format(java.util.Locale.ROOT,"%.1f GiB",memory.totalMem/1073741824.0))
+        info(device,"Профиль интерфейса",t(if(renderPolicy.economy) "Экономичный" else "Обычный"))
+        val links=group("Связь и поддержка")
+        settingRow(links,"Страница релизов","GitHub Releases") {openAuthorLink("https://github.com/Romeo13card-sys/Luma-Music/releases")}
+        settingRow(links,"Сообщить об ошибке","GitHub Issues") {openAuthorLink("https://github.com/Romeo13card-sys/Luma-Music/issues")}
+        settingRow(links,"Исходный код","GPL-3.0 · Rust / Kotlin") {openAuthorLink("https://github.com/Romeo13card-sys/Luma-Music")}
+        settingRow(links,"Telegram · Romeo13card","t.me/romeo_13card") {openAuthorLink("https://t.me/romeo_13card")}
+        settingRow(links,"Поддержать автора","dalink.to/romeo_13card_fan") {openAuthorLink("https://dalink.to/romeo_13card_fan")}
+        settingRow(links,"Поддерживаемые платформы","Android · Windows · Linux · macOS") {openAuthorLink("https://github.com/Romeo13card-sys/Luma-Music/blob/main/docs/PLATFORMS.md")}
+        links.addView(action("Скопировать сведения для поддержки") {
+            val data=JSONObject().put("version",version).put("build",BuildConfig.SOURCE_COMMIT)
+                .put("android",Build.VERSION.RELEASE).put("api",Build.VERSION.SDK_INT)
+                .put("device",Build.MANUFACTURER+" "+Build.MODEL).put("abis",Build.SUPPORTED_ABIS.joinToString())
+                .put("theme",mode).put("language",L10n.code(this)).put("economy",renderPolicy.economy)
+            val report=NativeCore.call("support_report",data.toString()) as String
+            getSystemService(android.content.ClipboardManager::class.java)
+                .setPrimaryClip(ClipData.newPlainText("Luma Music",report))
+            status.text="Сведения скопированы. Токенов и адресов аудио в них нет."
+        })
+        val legal=group("Лицензии и авторство")
+        legal.addView(text("YAYMA — DarkPlayOff · YaMusic — Vyfor\nLuma — Romeo13card\nGPL-3.0",14f,muted,raw=true))
+        legal.addView(action("Открыть лицензию") {
+            val license=assets.open("licenses/GPL-3.0.txt").bufferedReader().use {it.readText()}
+            val scroll=ScrollView(this).apply {addView(text(license,13f,white,raw=true));setPadding(dp(16),dp(8),dp(16),dp(8))}
+            LumaDialog(this).setTitle("GPL-3.0 · YAYMA / Luma").setView(scroll).setPositiveButton("Закрыть",null).show()
+        })
     }
 
     private fun openAuthorLink(url: String) {
@@ -1135,8 +1146,8 @@ class MainActivity : Activity() {
                         if (manual) status.text = "Нового выпуска в выбранном канале нет"
                         return@runOnUiThread
                     }
-                    status.text = "Найден ${release.tag}"
-                    AlertDialog.Builder(this)
+                    status.text = t("Найден %1\$s",release.tag)
+                    LumaDialog(this)
                         .setTitle(release.tag)
                         .setMessage(release.notes)
                         .setNegativeButton("Позже", null)
@@ -1147,7 +1158,7 @@ class MainActivity : Activity() {
                                         updater.download(release) { percent ->
                                             runOnUiThread {
                                                 if (!destroyed && version == generation)
-                                                    status.text = "Загрузка: $percent%"
+                                                    status.text = t("Загрузка: %1\$d%%",percent)
                                             }
                                         }
                                     runOnUiThread {
@@ -1178,7 +1189,7 @@ class MainActivity : Activity() {
             GitHubUpdater(this).validate(file)
             if (!packageManager.canRequestPackageInstalls()) {
                 pendingUpdate = file
-                AlertDialog.Builder(this)
+                LumaDialog(this)
                     .setTitle("Разрешение установки")
                     .setMessage(
                         "Разрешите Luma Music установку обновлений в системных настройках, затем вернитесь в приложение."
@@ -1235,7 +1246,7 @@ class MainActivity : Activity() {
     }
 
     private fun logout() {
-        AlertDialog.Builder(this)
+        LumaDialog(this)
             .setTitle("Выйти из аккаунта?")
             .setMessage("Воспроизведение остановится, сохранённая очередь будет очищена.")
             .setNegativeButton("Отмена", null)
@@ -1371,8 +1382,6 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
-        lyricsDialog?.dismiss()
-        lyricsDialog = null
         destroyed = true
         executor.shutdownNow()
         super.onDestroy()
