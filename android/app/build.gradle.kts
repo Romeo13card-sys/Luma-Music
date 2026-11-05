@@ -8,12 +8,35 @@ android {
     namespace = "org.luma.music"
     compileSdk = 36
     buildToolsVersion = "36.0.0"
+    buildFeatures { buildConfig = true }
+    signingConfigs {
+        create("persistent") {
+            val keyPath = System.getenv("LUMA_KEYSTORE_PATH")
+            if (!keyPath.isNullOrBlank()) {
+                storeFile = file(keyPath)
+                storePassword = System.getenv("LUMA_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("LUMA_KEY_ALIAS")
+                keyPassword = System.getenv("LUMA_KEY_PASSWORD")
+            }
+        }
+    }
+    buildTypes {
+        getByName("debug") {
+            if (!System.getenv("LUMA_KEYSTORE_PATH").isNullOrBlank())
+                signingConfig = signingConfigs.getByName("persistent")
+        }
+    }
     defaultConfig {
+        val oauthClient = (System.getenv("LUMA_YANDEX_CLIENT_ID") ?: "").trim()
+        require(oauthClient.isEmpty() || oauthClient.matches(Regex("[A-Za-z0-9_-]{8,128}"))) {
+            "Invalid LUMA_YANDEX_CLIENT_ID"
+        }
+        buildConfigField("String", "YANDEX_CLIENT_ID", "\"$oauthClient\"")
         applicationId = "org.luma.music"
         minSdk = 30
         targetSdk = 36
-        versionCode = 6
-        versionName = "0.3.1-test"
+        versionCode = 7
+        versionName = "0.4.0-test"
         ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64") }
     }
     splits {

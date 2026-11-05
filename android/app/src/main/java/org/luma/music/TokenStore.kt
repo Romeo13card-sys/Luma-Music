@@ -10,9 +10,9 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-class TokenStore(context: Context) {
-    private val prefs = context.getSharedPreferences("auth", Context.MODE_PRIVATE)
-    private val alias = "yamusic.oauth"
+class TokenStore(context: Context, namespace: String = "auth") {
+    private val prefs = context.getSharedPreferences(namespace, Context.MODE_PRIVATE)
+    private val alias = if (namespace == "auth") "yamusic.oauth" else "luma.$namespace"
 
     private fun key(): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }

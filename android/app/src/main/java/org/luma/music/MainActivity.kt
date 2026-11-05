@@ -24,6 +24,7 @@ class MainActivity : Activity() {
     private var dragging = false
     private var page = "Главная"
     private var creditScreen = false
+    private var pendingUpdate: java.io.File? = null
     private val renderPolicy by lazy {
         val manager = getSystemService(android.app.ActivityManager::class.java)
         val memory = android.app.ActivityManager.MemoryInfo()
@@ -202,7 +203,24 @@ class MainActivity : Activity() {
             text("Войдите в Яндекс Музыку, чтобы открыть свою коллекцию и Мою волну.", 15f, muted)
         )
         gap(body, 18)
+        status = text("", 13f, muted)
+        status.accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+        body.addView(status)
+        body.addView(action("Войти через Яндекс", true) { browserLogin() })
+        body.addView(
+            text(
+                "Вход откроется на защищённой странице Яндекса в браузере. Пароль обрабатывает Яндекс.",
+                13f,
+                muted,
+            )
+        )
+        val alternative = action("Другой способ: OAuth-токен") {}
+        body.addView(alternative)
         val card = panel(body)
+        card.visibility = View.GONE
+        alternative.setOnClickListener {
+            card.visibility = if (card.visibility == View.GONE) View.VISIBLE else View.GONE
+        }
         card.addView(text("Вход в аккаунт", 24f, white, true))
         card.addView(text("Личный OAuth-токен", 13f, mint, true))
         val input =
@@ -231,14 +249,13 @@ class MainActivity : Activity() {
                 }
             }
         card.addView(show)
-        status =
+        val tokenNotice =
             text(
                 "Токен шифруется на устройстве через Android Keystore. Пароль Яндекса не нужен.",
                 13f,
                 muted,
             )
-        status.accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
-        card.addView(status)
+        card.addView(tokenNotice)
         lateinit var submit: TextView
         fun connect() {
             if (!submit.isEnabled) return
@@ -281,15 +298,7 @@ class MainActivity : Activity() {
                 true
             } else false
         }
-        gap(body)
-        body.addView(action("Войти через браузер") { browserLogin() })
-        body.addView(
-            text(
-                "Для браузерного входа нужен Client ID вашего OAuth-приложения Яндекса.",
-                12f,
-                muted,
-            )
-        )
+
         gap(body)
         body.addView(
             action("Попробовать без аккаунта") {
@@ -307,6 +316,17 @@ class MainActivity : Activity() {
     }
 
     private fun browserLogin() {
+        val prefs = getSharedPreferences("oauth", MODE_PRIVATE)
+        val client =
+            prefs.getString("client", null).orEmpty().ifBlank { BuildConfig.YANDEX_CLIENT_ID }
+        if (client.isNotBlank()) {
+            launchOAuth(client)
+            return
+        }
+        configureOAuth()
+    }
+
+    private fun configureOAuth() {
         val prefs = getSharedPreferences("oauth", MODE_PRIVATE)
         val input =
             EditText(this).apply {
@@ -327,28 +347,32 @@ class MainActivity : Activity() {
                     status.text = "Некорректный Client ID"
                     return@setPositiveButton
                 }
-                val state = java.util.UUID.randomUUID().toString()
-                prefs
-                    .edit()
-                    .putString("client", client)
-                    .putString("state", state)
-                    .putLong("created", System.currentTimeMillis())
-                    .apply()
-                val uri =
-                    android.net.Uri.parse("https://oauth.yandex.ru/authorize")
-                        .buildUpon()
-                        .appendQueryParameter("response_type", "token")
-                        .appendQueryParameter("client_id", client)
-                        .appendQueryParameter("redirect_uri", "yamusicrust://oauth")
-                        .appendQueryParameter("state", state)
-                        .build()
-                try {
-                    startActivity(Intent(Intent.ACTION_VIEW, uri))
-                } catch (_: Exception) {
-                    status.text = "Не найден браузер"
-                }
+                prefs.edit().putString("client", client).apply()
+                launchOAuth(client)
             }
             .show()
+    }
+
+    private fun launchOAuth(client: String) {
+        val state = java.util.UUID.randomUUID().toString()
+        getSharedPreferences("oauth", MODE_PRIVATE)
+            .edit()
+            .putString("state", state)
+            .putLong("created", System.currentTimeMillis())
+            .apply()
+        val uri =
+            android.net.Uri.parse("https://oauth.yandex.ru/authorize")
+                .buildUpon()
+                .appendQueryParameter("response_type", "token")
+                .appendQueryParameter("client_id", client)
+                .appendQueryParameter("redirect_uri", "yamusicrust://oauth")
+                .appendQueryParameter("state", state)
+                .build()
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, uri))
+        } catch (_: Exception) {
+            status.text = "Не найден браузер"
+        }
     }
 
     private fun handleOAuth(incoming: Intent?) {
@@ -614,7 +638,11 @@ class MainActivity : Activity() {
                     LinearLayout.LayoutParams(0, -2, 1f),
                 )
             host.addView(
-                text("${start+1}–${minOf(start+renderPolicy.pageSize,songs.size)} из ${songs.size}", 12f, muted)
+                text(
+                    "${start+1}–${minOf(start+renderPolicy.pageSize,songs.size)} из ${songs.size}",
+                    12f,
+                    muted,
+                )
             )
             host.addView(navigation)
         }
@@ -734,10 +762,212 @@ class MainActivity : Activity() {
     private fun settings() {
         backdrop()
         creditScreen = true
-        root.addView(
-            text("made by Romeo13card", 24f, mint, true).apply { gravity = Gravity.CENTER },
-            LinearLayout.LayoutParams(-1, 0, 1f),
+        root.addView(text("Настройки", 30f, white, true))
+        val scroll = ScrollView(this)
+        body = column()
+        scroll.addView(body)
+        root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        status = text("", 13f, muted)
+        body.addView(status)
+        val player = panel(body)
+        player.addView(text("Плеер", 22f, white, true))
+        fun toggle(title: String, key: String, checked: Boolean, changed: (Boolean) -> Unit = {}) {
+            player.addView(
+                Switch(this).apply {
+                    text = title
+                    setTextColor(white)
+                    minHeight = dp(54)
+                    isChecked = checked
+                    setOnCheckedChangeListener { _, enabled ->
+                        preferences.edit().putBoolean(key, enabled).apply()
+                        changed(enabled)
+                    }
+                }
+            )
+        }
+        toggle("Вибрация кнопок", "haptics", preferences.getBoolean("haptics", true))
+        toggle("Перемешивание", "shuffle", PlaybackService.shuffle) { PlaybackService.shuffle = it }
+        toggle("Повтор трека", "repeat", PlaybackService.repeat) { PlaybackService.repeat = it }
+        val update = panel(body)
+        update.addView(text("Обновления", 22f, white, true))
+        val current = packageManager.getPackageInfo(packageName, 0).versionName
+        update.addView(text("Установлена версия $current", 14f, muted))
+        update.addView(
+            Switch(this).apply {
+                text = "Тестовые выпуски"
+                setTextColor(white)
+                minHeight = dp(54)
+                isChecked = preferences.getBoolean("test_updates", true)
+                setOnCheckedChangeListener { _, checked ->
+                    preferences.edit().putBoolean("test_updates", checked).apply()
+                }
+            }
         )
+        update.addView(action("Проверить обновления", true) { checkUpdates() })
+        gap(update, 8)
+        update.addView(action("Доступ к приватным выпускам") { githubAccess() })
+        gap(update, 8)
+        update.addView(
+            action("Установить скачанный APK") {
+                startActivityForResult(
+                    Intent(Intent.ACTION_OPEN_DOCUMENT)
+                        .setType("application/vnd.android.package-archive")
+                        .addCategory(Intent.CATEGORY_OPENABLE),
+                    11,
+                )
+            }
+        )
+        val account = panel(body)
+        account.addView(text("Аккаунт", 22f, white, true))
+        account.addView(action("Настроить вход через Яндекс") { configureOAuth() })
+        gap(account, 8)
+        account.addView(
+            action(if (demo) "Войти" else "Выйти из аккаунта") { if (demo) login() else logout() }
+        )
+        val about = panel(body)
+        about.addView(text(getString(R.string.app_name), 22f, white, true))
+        about.addView(
+            text(
+                "Жидкое стекло · ${if(renderPolicy.economy) "экономичный режим" else "обычный режим"}",
+                14f,
+                muted,
+            )
+        )
+        about.addView(text(getString(R.string.author_credit), 18f, mint, true))
+    }
+
+    private fun githubAccess() {
+        val input =
+            EditText(this).apply {
+                hint = "Личный GitHub token: Contents read"
+                setSingleLine()
+                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+                importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+            }
+        val wasSecure = window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0
+        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        val dialog =
+            AlertDialog.Builder(this)
+                .setTitle("Приватный GitHub")
+                .setMessage(
+                    "Для приватного Luma-Music нужен ваш личный fine-grained token с доступом только на чтение Contents этого репозитория. Он шифруется Android Keystore и отправляется только api.github.com. Не отправляйте его в чат."
+                )
+                .setView(input)
+                .setNegativeButton("Отмена", null)
+                .setNeutralButton("Удалить") { _, _ -> TokenStore(this, "github_auth").clear() }
+                .setPositiveButton("Сохранить") { _, _ ->
+                    val value = input.text.toString().trim()
+                    if (value.isNotBlank() && !value.matches(Regex("[A-Za-z0-9_]{10,255}"))) {
+                        status.text = "Некорректный формат GitHub токена"
+                    } else if (value.isNotBlank())
+                        try {
+                            TokenStore(this, "github_auth").save(value)
+                            status.text = "Доступ сохранён"
+                        } catch (_: Exception) {
+                            status.text = "Не удалось сохранить доступ"
+                        }
+                    input.text.clear()
+                }
+                .create()
+        dialog.setOnDismissListener {
+            input.text.clear()
+            if (!wasSecure) window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        }
+        dialog.show()
+    }
+
+    private fun checkUpdates() {
+        val version = generation
+        status.text = "Проверяем GitHub…"
+        executor.execute {
+            try {
+                val updater = GitHubUpdater(this)
+                val release = updater.check(preferences.getBoolean("test_updates", true))
+                runOnUiThread {
+                    if (destroyed || version != generation) return@runOnUiThread
+                    if (release == null) {
+                        status.text = "Нового выпуска в выбранном канале нет"
+                        return@runOnUiThread
+                    }
+                    status.text = "Найден ${release.tag}"
+                    AlertDialog.Builder(this)
+                        .setTitle(release.tag)
+                        .setMessage(release.notes)
+                        .setNegativeButton("Позже", null)
+                        .setPositiveButton("Скачать") { _, _ ->
+                            executor.execute {
+                                try {
+                                    val file =
+                                        updater.download(release) { percent ->
+                                            runOnUiThread {
+                                                if (!destroyed && version == generation)
+                                                    status.text = "Загрузка: $percent%"
+                                            }
+                                        }
+                                    runOnUiThread {
+                                        if (!destroyed && version == generation) installUpdate(file)
+                                    }
+                                } catch (e: Exception) {
+                                    runOnUiThread {
+                                        if (!destroyed && version == generation)
+                                            status.text = e.message ?: "Ошибка обновления"
+                                    }
+                                }
+                            }
+                        }
+                        .show()
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    if (!destroyed && version == generation)
+                        status.text = e.message ?: "Ошибка проверки"
+                }
+            }
+        }
+    }
+
+    private fun installUpdate(file: java.io.File) {
+        try {
+            GitHubUpdater(this).validate(file)
+            if (!packageManager.canRequestPackageInstalls()) {
+                pendingUpdate = file
+                AlertDialog.Builder(this)
+                    .setTitle("Разрешение установки")
+                    .setMessage(
+                        "Разрешите Luma Music установку обновлений в системных настройках, затем вернитесь в приложение."
+                    )
+                    .setNegativeButton("Отмена") { _, _ -> pendingUpdate = null }
+                    .setPositiveButton("Открыть") { _, _ ->
+                        startActivity(
+                            Intent(
+                                android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                android.net.Uri.parse("package:$packageName"),
+                            )
+                        )
+                    }
+                    .show()
+                return
+            }
+            val uri = android.net.Uri.parse("content://$packageName.updates/update.apk")
+            val intent =
+                Intent(Intent.ACTION_VIEW)
+                    .setDataAndType(uri, "application/vnd.android.package-archive")
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    .apply { clipData = ClipData.newRawUri("Luma update", uri) }
+            startActivity(intent)
+        } catch (e: Exception) {
+            status.text = e.message ?: "Установка недоступна"
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        pendingUpdate?.let { file ->
+            if (packageManager.canRequestPackageInstalls()) {
+                pendingUpdate = null
+                installUpdate(file)
+            }
+        }
     }
 
     // Legacy Android 11/12 only; API 33+ uses the native dispatcher registered in onCreate.
@@ -782,6 +1012,39 @@ class MainActivity : Activity() {
     @Deprecated("Platform document picker")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 11 && resultCode == RESULT_OK)
+            data?.data?.let { uri ->
+                val version = generation
+                status.text = "Проверка APK…"
+                executor.execute {
+                    try {
+                        val folder = java.io.File(cacheDir, "updates").apply { mkdirs() }
+                        val file = java.io.File(folder, "update.apk")
+                        contentResolver.openInputStream(uri)?.use { input ->
+                            file.outputStream().use { output ->
+                                val bytes = ByteArray(32768)
+                                var count = 0L
+                                while (true) {
+                                    val n = input.read(bytes)
+                                    if (n < 0) break
+                                    count += n
+                                    require(count <= UpdatePolicy.MAX_APK) { "APK слишком большой" }
+                                    output.write(bytes, 0, n)
+                                }
+                            }
+                        } ?: error("Не удалось открыть файл")
+                        GitHubUpdater(this).validate(file)
+                        runOnUiThread {
+                            if (!destroyed && version == generation) installUpdate(file)
+                        }
+                    } catch (e: Exception) {
+                        runOnUiThread {
+                            if (!destroyed && version == generation)
+                                status.text = e.message ?: "Ошибка APK"
+                        }
+                    }
+                }
+            }
         if (requestCode == 10 && resultCode == RESULT_OK)
             data?.data?.let { uri ->
                 try {

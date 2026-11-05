@@ -9,3 +9,10 @@
 __pycache__/
 
 /android/.kotlin/
+
+# Signing material must never be committed
+*.keystore
+*.jks
+*.p12
+*.pfx
+.signing/
