@@ -8,20 +8,7 @@ concurrency:
   group: desktop-release-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  cleanup:
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      actions: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - env:
-          GH_TOKEN: ${{ github.token }}
-        run: python scripts/cancel-obsolete-desktop-runs.py
   desktop:
-    needs: cleanup
     strategy:
       fail-fast: false
       matrix:
@@ -75,7 +62,8 @@ jobs:
         run: |
           set -o pipefail
           cargo build --release --locked -p luma-desktop 2>&1 | tee desktop-build.log
-      - if: runner.os == 'Linux'
+      - name: Linux window launch check
+        if: runner.os == 'Linux'
         env:
           LIBGL_ALWAYS_SOFTWARE: '1'
         shell: bash
@@ -94,7 +82,6 @@ jobs:
           path: dist/*
           if-no-files-found: error
   legacy:
-    needs: cleanup
     strategy:
       fail-fast: false
       matrix:
@@ -147,6 +134,10 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
           pattern: release-*
@@ -157,16 +148,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_BRANCH: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          tag="${RELEASE_BRANCH#publish-desktop/}"
-          gh release upload "$tag" release/*.zip release/*.sha256
+        run: python3 scripts/publish-desktop-assets.py
   publish-legacy:
     needs: legacy
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
           pattern: legacy-*
@@ -177,7 +169,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_BRANCH: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          tag="${RELEASE_BRANCH#publish-desktop/}"
-          gh release upload "$tag" release/*.zip release/*.sha256
+        run: python3 scripts/publish-desktop-assets.py

@@ -36,11 +36,11 @@ def main():
     if not re.fullmatch(r'[a-f0-9]{40}', source):
         raise SystemExit('Invalid source commit')
     output = root/'dist'; output.mkdir(exist_ok=True)
-    suffix = '-experimental' if args.legacy else ''
+    suffix = ('-Portable' if platform.startswith('Windows') else '') + ('-experimental' if args.legacy else '')
     filename = f'Luma-Music-{version}-{platform}-{arch}{suffix}.zip'
     recipe = subprocess.check_output(['git','rev-parse','HEAD'], cwd=root, text=True).strip()
     metadata = dict(version=version, platform=platform, arch=arch, source=source, build_recipe=recipe, binary=identity,
-                    legacy_experimental=args.legacy, runtime_test='--self-check on build host; real devices required')
+                    legacy_experimental=args.legacy, distribution='portable' if platform.startswith('Windows') else 'archive', runtime_test='--self-check on build host; real devices required')
     with tempfile.TemporaryDirectory() as temp:
         stage = Path(temp)
         if platform == 'macOS':
@@ -54,6 +54,8 @@ def main():
             subprocess.run(['codesign','--verify',str(app)], check=True)
         else:
             executable = stage/binary.name; shutil.copyfile(binary, executable); executable.chmod(0o755)
+        if platform.startswith('Windows'):
+            (stage/'START-HERE.txt').write_text('Luma Music Portable\n\nExtract the entire ZIP, then run luma-desktop.exe. No installation or administrator rights are required.\nThe OAuth token stays in session memory; audio uses temporary files deleted on normal exit.\nLegacy builds are experimental and need real Windows 7 SP1/8/8.1 testing.\nSee docs/PLATFORMS.md and LICENSE.\n')
         for name in ('LICENSE','NOTICE','docs/PLATFORMS.md'):
             target=stage/name;target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(root/name,target)
         (stage/'build-info.json').write_text(json.dumps(metadata, indent=2)+'\n')
