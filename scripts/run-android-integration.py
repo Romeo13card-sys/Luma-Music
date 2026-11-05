@@ -1,5 +1,5 @@
 """Verify an owner-signed payload, then exercise upgrade and offline Android UI."""
-import hashlib,json,os,re,subprocess,sys
+import hashlib,json,os,re,subprocess,sys,zipfile
 from pathlib import Path
 
 payload=Path('.smoke-input')
@@ -11,6 +11,12 @@ def run(*args,timeout=180):
     if r.returncode:raise RuntimeError(r.stdout.decode(errors='replace')[-3000:]+'\n'+r.stderr.decode(errors='replace')[-3000:])
     return r.stdout.decode(errors='replace')
 try:
+    source=json.loads((payload/'source.json').read_text())['commit']
+    assert re.fullmatch(r'[a-f0-9]{40}',source),'Invalid compiled source identity'
+    run('git','merge-base','--is-ancestor',source,'HEAD')
+    run('git','diff','--quiet',source,'HEAD','--','android','core','locales','vendor','Cargo.toml','Cargo.lock','scripts/build-android.sh')
+    with zipfile.ZipFile(payload/'RC8.apk') as apk:
+        assert any(source.encode() in apk.read(n) for n in apk.namelist() if n.endswith('.dex')),'APK build identity differs from payload source'
     sums=json.loads((payload/'SHA256.json').read_text())
     assert set(sums)=={'RC7.apk','RC8.apk','instrumentation.apk'}
     for name,digest in sums.items():
