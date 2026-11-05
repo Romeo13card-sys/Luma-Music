@@ -12,22 +12,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-22.04
-            platform: Linux
-            arch: x64
-          - os: windows-latest
-            platform: Windows-10-11
-            arch: x64
-          - os: macos-15-intel
-            platform: macOS
-            arch: x64
-          - os: macos-latest
-            platform: macOS
-            arch: arm64
+        include: ${{ fromJSON(startsWith(github.ref_name, 'publish-desktop/linux/') && '[{"os":"ubuntu-22.04","platform":"Linux","arch":"x64"}]' || '[{"os":"ubuntu-22.04","platform":"Linux","arch":"x64"},{"os":"windows-latest","platform":"Windows-10-11","arch":"x64"},{"os":"macos-15-intel","platform":"macOS","arch":"x64"},{"os":"macos-latest","platform":"macOS","arch":"arm64"}]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     env:
+      CARGO_BUILD_JOBS: '2'
       MACOSX_DEPLOYMENT_TARGET: '11.0'
       CARGO_TARGET_DIR: target/native-${{ matrix.os }}-${{ matrix.arch }}
     steps:
@@ -42,7 +31,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.90.0
       - uses: Swatinem/rust-cache@v2
         with:
-          key: release-${{ matrix.os }}-${{ matrix.arch }}
+          key: release-v2-${{ matrix.os }}-${{ matrix.arch }}
           workspaces: . -> target/native-${{ matrix.os }}-${{ matrix.arch }}
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev libxkbcommon-dev libwayland-dev libgl1-mesa-dev libgl1-mesa-dri xvfb
@@ -70,11 +59,15 @@ jobs:
         run: |
           set -o pipefail
           timeout 30s xvfb-run -a "$CARGO_TARGET_DIR/release/luma-desktop" --ui-smoke 2>&1 | tee desktop-smoke.log
-      - if: failure()
-        run: |
-          python scripts/ci-build-summary.py desktop-tests.log
-          python scripts/ci-build-summary.py desktop-build.log
-          python scripts/ci-build-summary.py desktop-smoke.log
+      - name: Compiler failure diagnostics
+        if: failure()
+        run: python scripts/ci-build-summary.py desktop-build.log
+      - name: GUI failure diagnostics
+        if: failure()
+        run: python scripts/ci-build-summary.py desktop-smoke.log
+      - name: Test failure diagnostics
+        if: failure()
+        run: python scripts/ci-build-summary.py desktop-tests.log
       - run: python scripts/package-desktop.py --binary ${{ env.CARGO_TARGET_DIR }}/release/luma-desktop${{ runner.os == 'Windows' && '.exe' || '' }} --platform ${{ matrix.platform }} --arch ${{ matrix.arch }}
       - uses: actions/upload-artifact@v4
         with:
@@ -82,6 +75,7 @@ jobs:
           path: dist/*
           if-no-files-found: error
   legacy:
+    if: ${{ !startsWith(github.ref_name, 'publish-desktop/linux/') }}
     strategy:
       fail-fast: false
       matrix:
@@ -129,6 +123,7 @@ jobs:
           path: dist/*
           if-no-files-found: error
   publish:
+    if: ${{ always() && !cancelled() }}
     needs: desktop
     runs-on: ubuntu-24.04
     permissions:

@@ -15,8 +15,8 @@ if path.is_file():
     # GitHub truncates long public annotations. Include concise failure lines
     # and the log's end even when no error pattern matches.
     important=[line for line in lines if re.search(
-        r'error|panic|abort|failed|fatal|not found|core dumped|terminated|finished', line, re.I)]
-    selected=list(dict.fromkeys(important[-6:]+lines[-6:]))[-12:]
+        r'error(?:\[|:)|fatal:|panicked|aborted|core dumped|malloc|No space left|out of memory|double free|corrupted', line, re.I)]
+    selected=list(dict.fromkeys(important[-3:]+lines[-6:]))[-12:]
     for line in selected:
         escaped=line[-880:].replace('%','%25').replace('\r','%0D').replace('\n','%0A')
         print('::error title='+path.name+'::'+escaped)
