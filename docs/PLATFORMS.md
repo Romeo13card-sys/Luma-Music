@@ -5,9 +5,9 @@
 
 | Архив | Сборка и условия |
 | --- | --- |
-| Windows-10-11-x64 | Rust 1.90, обычный x64 MSVC target, статический CRT. Запуск `--self-check` на build-host Windows |
-| Windows-7-8-8.1-x64-experimental | Отдельный `x86_64-win7-windows-msvc`, nightly-2025-09-18, build-std, статический CRT, subsystem 6.01 |
-| Windows-7-8-8.1-x86-experimental | То же для `i686-win7-windows-msvc`, 32 бита |
+| Windows-10-11-x64-Portable | Rust 1.90, обычный x64 MSVC target, статический CRT. Запуск `--self-check` на build-host Windows |
+| Windows-7-8-8.1-x64-Portable-experimental | Отдельный `x86_64-win7-windows-msvc`, nightly-2025-09-18, build-std, статический CRT, subsystem 6.01 |
+| Windows-7-8-8.1-x86-Portable-experimental | То же для `i686-win7-windows-msvc`, 32 бита |
 | Linux-x64 | Ubuntu 22.04, glibc 2.35+, ALSA, X11/Wayland и OpenGL. Графический smoke-test через Xvfb/Mesa |
 | macOS-x64 / macOS-arm64 | `.app`, deployment target macOS 11.0, ad-hoc-подпись. Developer ID/notarization отсутствуют |
 
@@ -20,6 +20,20 @@ CI проверяет подсистему PE и известные несовм
 API и **не замена запуску на настоящих Windows 7, 8 и 8.1**. Legacy-архивы
 помечены experimental до такой проверки; ошибки сборки/аудита блокируют их публикацию.
 Windows 10/11 и macOS тоже требуют пользовательской проверки графики и аудио.
+
+## Windows Portable
+
+Скачайте ZIP для своей системы, распакуйте целиком в отдельную папку и запустите
+`luma-desktop.exe`. Установка и права администратора не требуются; папку можно
+перенести на флешку. Статический CRT позволяет обойтись без отдельной установки
+Visual C++ Redistributable. В архиве есть `START-HERE.txt`, лицензии и сведения
+о сборке; рядом опубликована SHA-256. Нужны системные драйверы графики/звука.
+
+Текущий desktop хранит OAuth-токен только в памяти сеанса. Временные аудиофайлы
+создаются в системном временном каталоге и удаляются при нормальном закрытии;
+аварийное завершение может оставить их там. Перенос папки не переносит аккаунт.
+Для обновления закройте приложение и распакуйте новый архив в отдельную папку.
+Portable не означает автоматическое desktop OTA — оно пока не реализовано.
 
 ## Что умеет desktop
 
@@ -57,7 +71,7 @@ Apple: Xcode Command Line Tools, macOS SDK. `scripts/package-desktop.py`
 проверяет версию/target исполняемого файла, создаёт архив с лицензией, исходным
 commit и SHA-256; macOS получает `.app` и ad-hoc-подпись.
 
-Workflow `Desktop release` запускается только owner-push ветки `publish-desktop/v...`
+Workflow `Desktop release` запускается только owner-push ветки `publish-desktop/**/v...`
 с теми же исходниками приложения/зависимостей/лицензий, что опубликованный тег.
 Исправления build recipe допускаются отдельно и записываются в build-info.json. Он создаёт обычные и legacy
 архивы в отдельных jobs и прикрепляет их к существующему Release без перезаписи.
