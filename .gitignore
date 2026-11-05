@@ -7,3 +7,5 @@
 .idea/
 
 __pycache__/
+
+/android/.kotlin/

@@ -20,14 +20,14 @@ def package(source: Path, destination: Path) -> Path:
     for entry in entries:
         abi_filters = [f['value'] for f in entry.get('filters', []) if f['filterType'] == 'ABI']
         abi = abi_filters[0] if len(abi_filters) == 1 else 'universal'
-        if len(abi_filters) > 1 or abi not in {'arm64-v8a', 'x86_64', 'universal'} or abi in planned:
+        if len(abi_filters) > 1 or abi not in {'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64', 'universal'} or abi in planned:
             raise ValueError('Unexpected or duplicate APK architecture')
         apk = (source / entry['outputFile']).resolve()
         if not apk.is_relative_to(source.resolve()) or not apk.is_file():
             raise ValueError('APK missing or outside build directory')
         planned[abi] = apk
-    if set(planned) != {'arm64-v8a', 'x86_64', 'universal'}:
-        raise ValueError('Expected ARM64, x86_64 and universal APKs')
+    if set(planned) != {'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64', 'universal'}:
+        raise ValueError('Expected four architectures and universal APKs')
     output = destination / version
     output.mkdir(parents=True, exist_ok=True)
     sums = []

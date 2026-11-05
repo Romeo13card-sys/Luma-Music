@@ -14,7 +14,7 @@ class PackagingTests(unittest.TestCase):
         source = root / 'input'
         source.mkdir()
         entries = []
-        for abi in ['arm64-v8a', 'x86_64', 'universal']:
+        for abi in ['armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64', 'universal']:
             name = f'app-{abi}-debug.apk'
             (source / name).write_bytes(abi.encode())
             entries.append({'versionName': '0.2.2-test', 'outputFile': name,
@@ -28,7 +28,7 @@ class PackagingTests(unittest.TestCase):
             root = Path(tmp)
             source, _ = self.fixture(root)
             output = module.package(source, root / 'dist')
-            self.assertEqual(len(list(output.glob('Luma-Music-0.2.2-test-*.apk'))), 3)
+            self.assertEqual(len(list(output.glob('Luma-Music-0.2.2-test-*.apk'))), 5)
             for line in (output / 'SHA256SUMS.txt').read_text().splitlines():
                 digest, name = line.split('  ')
                 self.assertEqual(digest, hashlib.sha256((output / name).read_bytes()).hexdigest())

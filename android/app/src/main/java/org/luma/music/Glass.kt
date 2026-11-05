@@ -18,6 +18,7 @@ fun glass(radius: Float = 28f, accent: Boolean = false): GradientDrawable =
                     strokeWidth = 1.5f
                 }
             private val rimBounds = RectF()
+            private val sheen = Paint(Paint.ANTI_ALIAS_FLAG)
 
             override fun onBoundsChange(bounds: Rect) {
                 super.onBoundsChange(bounds)
@@ -27,6 +28,16 @@ fun glass(radius: Float = 28f, accent: Boolean = false): GradientDrawable =
                     bounds.right - .75f,
                     bounds.bottom - .75f,
                 )
+                sheen.shader =
+                    LinearGradient(
+                        bounds.left.toFloat(),
+                        bounds.top.toFloat(),
+                        bounds.left.toFloat(),
+                        bounds.bottom.toFloat(),
+                        intArrayOf(0x28FFFFFF, 0x02FFFFFF, 0x00FFFFFF),
+                        floatArrayOf(0f, .35f, 1f),
+                        Shader.TileMode.CLAMP,
+                    )
                 rim.shader =
                     LinearGradient(
                         bounds.left.toFloat(),
@@ -41,6 +52,7 @@ fun glass(radius: Float = 28f, accent: Boolean = false): GradientDrawable =
 
             override fun draw(canvas: Canvas) {
                 super.draw(canvas)
+                canvas.drawRoundRect(rimBounds, radius, radius, sheen)
                 canvas.drawRoundRect(rimBounds, radius, radius, rim)
             }
         }
@@ -49,9 +61,11 @@ fun glass(radius: Float = 28f, accent: Boolean = false): GradientDrawable =
             setStroke(1, if (accent) 0x70FFFFFF else 0x38FFFFFF)
         }
 
-class Atmosphere(context: Context) : View(context) {
+class Atmosphere(context: Context, private val economy: Boolean = false) : View(context) {
     private val first = Paint(Paint.ANTI_ALIAS_FLAG)
     private val second = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val lens = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val lensBounds = RectF()
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         first.shader =
@@ -60,6 +74,17 @@ class Atmosphere(context: Context) : View(context) {
                 h * .15f,
                 w * .95f,
                 intArrayOf(0xFF254F59.toInt(), 0x00254F59),
+                null,
+                Shader.TileMode.CLAMP,
+            )
+        lensBounds.set(w * .32f, h * .02f, w * 1.18f, h * .42f)
+        lens.shader =
+            LinearGradient(
+                0f,
+                0f,
+                w.toFloat(),
+                h * .4f,
+                intArrayOf(0x30E0FFF4, 0x048BD8CC, 0x2088BBFF),
                 null,
                 Shader.TileMode.CLAMP,
             )
@@ -78,6 +103,7 @@ class Atmosphere(context: Context) : View(context) {
         canvas.drawColor(Color.rgb(9, 19, 26))
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), first)
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), second)
+        if (!economy) canvas.drawOval(lensBounds, lens)
     }
 }
 

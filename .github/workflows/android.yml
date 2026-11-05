@@ -34,7 +34,7 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@1.90.0
         with:
-          targets: aarch64-linux-android,x86_64-linux-android
+          targets: armv7-linux-androideabi,aarch64-linux-android,i686-linux-android,x86_64-linux-android
           components: rustfmt
       - name: Cache Rust build
         uses: actions/cache@v4
@@ -57,7 +57,7 @@ jobs:
           packages: 'platform-tools'
           log-accepted-android-sdk-licenses: false
       - name: Install Android build dependencies
-        run: sdkmanager "platforms;android-37.0" "build-tools;36.0.0" "ndk;27.2.12479018" "platform-tools"
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;27.2.12479018" "platform-tools"
       - name: Build optimized native libraries and test APKs
         run: bash scripts/build-android.sh
       - name: Android Lint
@@ -118,12 +118,13 @@ jobs:
           Luma Music — тестовая версия «Жидкое стекло» для Android 11+.
           made by Romeo13card
 
-          Новый экран настроек: вибрация, повтор и перемешивание сохраняются между запусками.
+          Новое окно входа. В настройках только made by Romeo13card.
+          SDK 36, четыре архитектуры, автоматический экономичный режим для устройств с небольшим объёмом ОЗУ.
 
           Для телефона ARM64 выберите Luma-Music-*-arm64-v8a.apk.
           Без аккаунта можно открыть деморежим и локальный тестовый звук.
 
-          Это APK с отладочной подписью. Работа настоящего аккаунта и полный диапазон Android 11–17 ещё не проверены. Для OAuth-входа через браузер нужен собственный Client ID. «Моя волна» добавлена экспериментально; требуется проверка на аккаунте. Офлайн-загрузка каталога пока не реализована.
+          Это APK с отладочной подписью. Работа настоящего аккаунта и полный диапазон Android 11–16 ещё не проверены. Для OAuth-входа через браузер нужен собственный Client ID. «Моя волна» добавлена экспериментально; требуется проверка на аккаунте. Офлайн-загрузка каталога пока не реализована.
           Новый идентификатор org.luma.music: устанавливается отдельно от предыдущих версий.
           NOTES
           gh release create "$RELEASE_TAG" release/*.apk release/SHA256SUMS.txt \

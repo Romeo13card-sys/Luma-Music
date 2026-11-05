@@ -15,7 +15,7 @@ class MainActivity : Activity() {
     private lateinit var root: LinearLayout
     private lateinit var body: LinearLayout
     private lateinit var status: TextView
-    private lateinit var mini: TextView
+    private var mini: TextView? = null
     private var playerTitle: TextView? = null
     private var playerSubtitle: TextView? = null
     private var playButton: TextView? = null
@@ -23,6 +23,13 @@ class MainActivity : Activity() {
     private var seek: SeekBar? = null
     private var dragging = false
     private var page = "Главная"
+    private var creditScreen = false
+    private val renderPolicy by lazy {
+        val manager = getSystemService(android.app.ActivityManager::class.java)
+        val memory = android.app.ActivityManager.MemoryInfo()
+        manager.getMemoryInfo(memory)
+        RenderPolicy.choose(manager.isLowRamDevice, memory.totalMem, manager.memoryClass)
+    }
     private var token = ""
     private var demo = false
     private var generation = 0
@@ -35,7 +42,7 @@ class MainActivity : Activity() {
             override fun run() {
                 if (!visible) return
                 refreshPlayer()
-                handler.postDelayed(this, 500)
+                handler.postDelayed(this, renderPolicy.uiIntervalMs)
             }
         }
 
@@ -49,6 +56,13 @@ class MainActivity : Activity() {
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
+        if (Build.VERSION.SDK_INT >= 33) {
+            onBackInvokedDispatcher.registerOnBackInvokedCallback(
+                android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT
+            ) {
+                navigateBack()
+            }
+        }
         PlaybackService.shuffle = preferences.getBoolean("shuffle", false)
         PlaybackService.repeat = preferences.getBoolean("repeat", false)
         PlaybackService.restore(this)
@@ -109,6 +123,10 @@ class MainActivity : Activity() {
         }
 
     private fun backdrop() {
+        creditScreen = false
+        mini = null
+        body = column()
+        status = text("")
         generation++
         playerTitle = null
         playerSubtitle = null
@@ -116,7 +134,17 @@ class MainActivity : Activity() {
         seek = null
         time = null
         val frame = FrameLayout(this)
-        frame.addView(Atmosphere(this), FrameLayout.LayoutParams(-1, -1))
+        val atmosphere = Atmosphere(this, renderPolicy.economy)
+        if (Build.VERSION.SDK_INT >= 31 && !renderPolicy.economy) {
+            atmosphere.setRenderEffect(
+                android.graphics.RenderEffect.createBlurEffect(
+                    8f,
+                    8f,
+                    android.graphics.Shader.TileMode.CLAMP,
+                )
+            )
+        }
+        frame.addView(atmosphere, FrameLayout.LayoutParams(-1, -1))
         root = column().apply { setPadding(dp(20), 0, dp(20), 0) }
         frame.addView(root, FrameLayout.LayoutParams(-1, -1))
         setContentView(frame)
@@ -133,7 +161,12 @@ class MainActivity : Activity() {
         root.requestApplyInsets()
     }
 
-    private fun request(op: String, arg: String = "", done: (Any) -> Unit) {
+    private fun request(
+        op: String,
+        arg: String = "",
+        finished: (() -> Unit)? = null,
+        done: (Any) -> Unit,
+    ) {
         val version = generation
         val credential = token
         status.text = "Загрузка…"
@@ -146,6 +179,7 @@ class MainActivity : Activity() {
                 }
             runOnUiThread {
                 if (destroyed || version != generation) return@runOnUiThread
+                finished?.invoke()
                 if (result.optBoolean("ok")) {
                     status.text = ""
                     done(result.get("data"))
@@ -157,50 +191,105 @@ class MainActivity : Activity() {
     private fun login() {
         backdrop()
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        val scroll = ScrollView(this)
+        val scroll = ScrollView(this).apply { isFillViewport = true }
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         body = column()
         scroll.addView(body)
-        gap(body, 36)
+        gap(body, 24)
         body.addView(text(getString(R.string.app_name), 18f, mint, true))
-        body.addView(text(getString(R.string.author_credit), 12f, muted))
-        gap(body, 20)
-        body.addView(text("Музыка.\nВ новом свете.", 40f, white, true))
-        gap(body, 8)
-        body.addView(text("Ваш аккаунт Яндекс Музыки.\nЛёгкий плеер. Ничего лишнего.", 17f, muted))
-        gap(body, 28)
+        body.addView(text("Ваша музыка.\nВаш момент.", 36f, white, true))
+        body.addView(
+            text("Войдите в Яндекс Музыку, чтобы открыть свою коллекцию и Мою волну.", 15f, muted)
+        )
+        gap(body, 18)
         val card = panel(body)
-        card.addView(text("Добро пожаловать", 22f, white, true))
+        card.addView(text("Вход в аккаунт", 24f, white, true))
+        card.addView(text("Личный OAuth-токен", 13f, mint, true))
         val input =
             EditText(this).apply {
-                hint = "OAuth-токен"
-                setHintTextColor(muted)
+                hint = "Вставьте токен"
                 setTextColor(white)
+                setHintTextColor(muted)
                 setSingleLine()
+                background = glass(dp(16).toFloat())
+                setPadding(dp(14), dp(14), dp(14), dp(14))
                 inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
                 importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+                imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE
             }
         card.addView(input)
-        status = text("Токен хранится зашифрованным через Android Keystore.", 13f, muted)
-        card.addView(status)
-        card.addView(
-            action("Подключить аккаунт", true) {
-                token = input.text.toString().trim()
-                generation++
-                request("account") {
-                    try {
-                        TokenStore(this).save(token)
-                        input.text.clear()
-                        demo = false
-                        shell("Главная")
-                    } catch (_: Exception) {
-                        status.text = "Не удалось сохранить токен"
-                    }
+        val show =
+            CheckBox(this).apply {
+                text = "Показать токен"
+                setTextColor(muted)
+                setOnCheckedChangeListener { _, checked ->
+                    val cursor = input.selectionStart
+                    input.transformationMethod =
+                        if (checked) null
+                        else android.text.method.PasswordTransformationMethod.getInstance()
+                    input.setSelection(cursor.coerceAtLeast(0).coerceAtMost(input.length()))
                 }
             }
-        )
+        card.addView(show)
+        status =
+            text(
+                "Токен шифруется на устройстве через Android Keystore. Пароль Яндекса не нужен.",
+                13f,
+                muted,
+            )
+        status.accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+        card.addView(status)
+        lateinit var submit: TextView
+        fun connect() {
+            if (!submit.isEnabled) return
+            val candidate = input.text.toString().trim()
+            if (candidate.isEmpty()) {
+                status.text = "Сначала вставьте OAuth-токен"
+                input.requestFocus()
+                return
+            }
+            (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
+                .hideSoftInputFromWindow(input.windowToken, 0)
+            submit.isEnabled = false
+            submit.alpha = .55f
+            submit.text = "Проверяем аккаунт…"
+            token = candidate
+            generation++
+            request(
+                "account",
+                finished = {
+                    submit.isEnabled = true
+                    submit.alpha = 1f
+                    submit.text = "Войти"
+                },
+            ) {
+                try {
+                    TokenStore(this).save(token)
+                    input.text.clear()
+                    demo = false
+                    shell("Главная")
+                } catch (_: Exception) {
+                    status.text = "Не удалось защитить токен. Попробуйте ещё раз."
+                }
+            }
+        }
+        submit = action("Войти", true) { connect() }
+        card.addView(submit)
+        input.setOnEditorActionListener { _, id, _ ->
+            if (id == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) {
+                connect()
+                true
+            } else false
+        }
         gap(body)
         body.addView(action("Войти через браузер") { browserLogin() })
+        body.addView(
+            text(
+                "Для браузерного входа нужен Client ID вашего OAuth-приложения Яндекса.",
+                12f,
+                muted,
+            )
+        )
         gap(body)
         body.addView(
             action("Попробовать без аккаунта") {
@@ -210,7 +299,7 @@ class MainActivity : Activity() {
         )
         body.addView(
             text(
-                "Неофициальный клиент. Для каталога и прослушивания нужна подписка. Для входа через браузер нужен Client ID зарегистрированного OAuth-приложения Яндекса.",
+                "Неофициальный клиент. Для каталога и прослушивания нужна подписка Яндекс Музыки.",
                 12f,
                 muted,
             )
@@ -400,6 +489,10 @@ class MainActivity : Activity() {
         local.addView(text("На устройстве", 22f, white, true))
         local.addView(text("Откройте свой аудиофайл — без загрузки на сервер.", 14f, muted))
         local.addView(action("Выбрать файл") { openFile() })
+        if (!demo) {
+            body.addView(action("Выйти из аккаунта") { logout() })
+            gap(body)
+        }
         body.addView(text(getString(R.string.author_credit), 13f, muted))
     }
 
@@ -484,7 +577,7 @@ class MainActivity : Activity() {
         target.addView(host)
         fun showPage(start: Int) {
             host.removeAllViews()
-            songs.drop(start).take(40).forEachIndexed { offset, song ->
+            songs.drop(start).take(renderPolicy.pageSize).forEachIndexed { offset, song ->
                 val i = start + offset
                 val item =
                     row().apply {
@@ -512,16 +605,16 @@ class MainActivity : Activity() {
             val navigation = row()
             if (start > 0)
                 navigation.addView(
-                    action("‹ Назад") { showPage(maxOf(0, start - 40)) },
+                    action("‹ Назад") { showPage(maxOf(0, start - renderPolicy.pageSize)) },
                     LinearLayout.LayoutParams(0, -2, 1f),
                 )
-            if (start + 40 < songs.size)
+            if (start + renderPolicy.pageSize < songs.size)
                 navigation.addView(
-                    action("Ещё ›") { showPage(start + 40) },
+                    action("Ещё ›") { showPage(start + renderPolicy.pageSize) },
                     LinearLayout.LayoutParams(0, -2, 1f),
                 )
             host.addView(
-                text("${start+1}–${minOf(start+40,songs.size)} из ${songs.size}", 12f, muted)
+                text("${start+1}–${minOf(start+renderPolicy.pageSize,songs.size)} из ${songs.size}", 12f, muted)
             )
             host.addView(navigation)
         }
@@ -622,10 +715,9 @@ class MainActivity : Activity() {
 
     private fun refreshPlayer() {
         val song = PlaybackService.queue.getOrNull(PlaybackService.index)
-        if (::mini.isInitialized)
-            mini.text =
-                if (song == null) "Открыть плеер  ↑"
-                else "${if(PlaybackService.playing) "♫" else "Ⅱ"}  ${song.title}  ↑"
+        mini?.text =
+            if (song == null) "Открыть плеер  ↑"
+            else "${if(PlaybackService.playing) "♫" else "Ⅱ"}  ${song.title}  ↑"
         playerTitle?.text = song?.title ?: "Выберите трек"
         playerSubtitle?.text = "${song?.artist.orEmpty()}\n${PlaybackService.message}"
         playButton?.text = if (PlaybackService.playing) "Ⅱ" else "▶"
@@ -641,70 +733,41 @@ class MainActivity : Activity() {
 
     private fun settings() {
         backdrop()
-        root.addView(action("‹ Назад") { shell(page) })
-        val scroll = ScrollView(this)
-        body = column()
-        scroll.addView(body)
-        root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
-        body.addView(text("Настройки", 32f, white, true))
-        status = text("", 13f, muted)
-        body.addView(status)
-        val player = panel(body)
-        player.addView(text("Плеер", 22f, white, true))
-        fun toggle(title: String, value: Boolean, change: (Boolean) -> Unit) {
-            player.addView(
-                Switch(this).apply {
-                    text = title
-                    textSize = 16f
-                    setTextColor(white)
-                    minHeight = dp(56)
-                    isChecked = value
-                    setOnCheckedChangeListener { _, enabled -> change(enabled) }
-                }
-            )
-        }
-        toggle("Вибрация кнопок", preferences.getBoolean("haptics", true)) {
-            preferences.edit().putBoolean("haptics", it).apply()
-        }
-        toggle("Перемешивание", PlaybackService.shuffle) {
-            PlaybackService.shuffle = it
-            preferences.edit().putBoolean("shuffle", it).apply()
-        }
-        toggle("Повтор трека", PlaybackService.repeat) {
-            PlaybackService.repeat = it
-            preferences.edit().putBoolean("repeat", it).apply()
-        }
-        val about = panel(body)
-        about.addView(text(getString(R.string.app_name), 24f, white, true))
-        val version = packageManager.getPackageInfo(packageName, 0).versionName.orEmpty()
-        about.addView(text("Версия $version · Android ${Build.VERSION.RELEASE}", 14f, muted))
-        about.addView(text("Тема: ${getString(R.string.theme_name)}", 16f, white))
-        about.addView(text(getString(R.string.author_credit), 16f, mint, true))
-        about.addView(
-            text(
-                "Неофициальный клиент Яндекс Музыки. Токен защищён Android Keystore. Доступность треков зависит от подписки и региона.",
-                13f,
-                muted,
-            )
+        creditScreen = true
+        root.addView(
+            text("made by Romeo13card", 24f, mint, true).apply { gravity = Gravity.CENTER },
+            LinearLayout.LayoutParams(-1, 0, 1f),
         )
-        gap(body)
-        body.addView(
-            action(if (demo) "Подключить аккаунт" else "Выйти из аккаунта") {
-                AlertDialog.Builder(this)
-                    .setTitle(if (demo) "Перейти ко входу?" else "Выйти из аккаунта?")
-                    .setMessage("Воспроизведение будет остановлено.")
-                    .setNegativeButton("Отмена", null)
-                    .setPositiveButton("Продолжить") { _, _ ->
-                        stopService(Intent(this, PlaybackService::class.java))
-                        PlaybackService.forgetQueue(this)
-                        TokenStore(this).clear()
-                        token = ""
-                        demo = false
-                        login()
-                    }
-                    .show()
+    }
+
+    // Legacy Android 11/12 only; API 33+ uses the native dispatcher registered in onCreate.
+    @android.annotation.SuppressLint("GestureBackNavigation")
+    @Deprecated("Platform back navigation")
+    override fun onBackPressed() {
+        navigateBack()
+    }
+
+    private fun navigateBack() {
+        if (creditScreen) {
+            creditScreen = false
+            shell(page)
+        } else finish()
+    }
+
+    private fun logout() {
+        AlertDialog.Builder(this)
+            .setTitle("Выйти из аккаунта?")
+            .setMessage("Воспроизведение остановится, сохранённая очередь будет очищена.")
+            .setNegativeButton("Отмена", null)
+            .setPositiveButton("Выйти") { _, _ ->
+                stopService(Intent(this, PlaybackService::class.java))
+                PlaybackService.forgetQueue(this)
+                TokenStore(this).clear()
+                token = ""
+                demo = false
+                login()
             }
-        )
+            .show()
     }
 
     private fun openFile() {

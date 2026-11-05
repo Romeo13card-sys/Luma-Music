@@ -6,21 +6,21 @@ plugins {
 android {
     ndkVersion = "27.2.12479018"
     namespace = "org.luma.music"
-    compileSdkVersion("android-37.0")
+    compileSdk = 36
     buildToolsVersion = "36.0.0"
     defaultConfig {
         applicationId = "org.luma.music"
         minSdk = 30
-        targetSdk = 37
-        versionCode = 5
-        versionName = "0.3.0-test"
-        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
+        targetSdk = 36
+        versionCode = 6
+        versionName = "0.3.1-test"
+        ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64") }
     }
     splits {
         abi {
             isEnable = true
             reset()
-            include("arm64-v8a", "x86_64")
+            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
             isUniversalApk = true
         }
     }
