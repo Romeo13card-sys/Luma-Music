@@ -39,15 +39,31 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev libxkbcommon-dev libwayland-dev libgl1-mesa-dev libgl1-mesa-dri xvfb
-      - run: cargo test --locked -p yamusic-core -p luma-desktop
+      - name: Desktop tests
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo test --locked -p yamusic-core -p luma-desktop 2>&1 | tee desktop-tests.log
       - if: runner.os == 'Windows'
         shell: bash
         run: echo 'RUSTFLAGS=-C target-feature=+crt-static' >> "$GITHUB_ENV"
-      - run: cargo build --release --locked -p luma-desktop
+      - name: Build desktop release
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo build --release --locked -p luma-desktop 2>&1 | tee desktop-build.log
       - if: runner.os == 'Linux'
         env:
           LIBGL_ALWAYS_SOFTWARE: '1'
-        run: timeout 30s xvfb-run -a target/release/luma-desktop --ui-smoke
+        shell: bash
+        run: |
+          set -o pipefail
+          timeout 30s xvfb-run -a target/release/luma-desktop --ui-smoke 2>&1 | tee desktop-smoke.log
+      - if: failure()
+        run: |
+          python scripts/ci-build-summary.py desktop-tests.log
+          python scripts/ci-build-summary.py desktop-build.log
+          python scripts/ci-build-summary.py desktop-smoke.log
       - run: python scripts/package-desktop.py --platform ${{ matrix.platform }} --arch ${{ matrix.arch }}
       - uses: actions/upload-artifact@v4
         with:
