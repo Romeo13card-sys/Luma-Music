@@ -44,8 +44,12 @@ try:
     print('::notice title=Android RC8::Signed RC7 to RC8 upgrade, integration suite and process restart passed')
 except Exception as error:
     message=str(error)
+    crash=subprocess.run(['adb','logcat','-d','-b','crash','-t','60'],capture_output=True,timeout=20)
+    message+='\n'+crash.stdout.decode(errors='replace')
     (output/'failure.txt').write_text(message)
-    for line in message.splitlines()[-8:]:
+    lines=message.splitlines()
+    important=[line for line in lines if re.search(r'FAIL RC8|Caused by|org\.luma\.music|Exception:',line)]
+    for line in list(dict.fromkeys(important[:7]+lines[-1:])):
         value=line[-850:].replace('%','%25').replace('\r','%0D').replace('\n','%0A')
         print('::error title=Android RC integration::'+value)
     sys.exit(1)
