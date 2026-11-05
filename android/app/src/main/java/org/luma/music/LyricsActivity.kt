@@ -132,7 +132,7 @@ class LyricsActivity : Activity() {
         val song=song()
         serial++;val request=serial
         releaseDocument()
-        document=null;active=-1;words=0;lastPosition=-1
+        document=null;active=-1;words=0;lastPosition=-1;lastError=null
         adapter.notifyDataSetChanged();retry.visibility=View.GONE;followButton.visibility=View.GONE
         if(song==null) {key="";title.text=t("Текст песни");message.text="Сначала выберите трек";return}
         key=key(song);val requestedKey=key
@@ -167,6 +167,7 @@ class LyricsActivity : Activity() {
     private fun display(error:String?=null) {
         val doc=document
         message.text=if(doc?.optString("source")=="file") "LRC / TXT"
+            else if(doc==null && localOnly && error==null) "LRC / TXT · "+t("Открыть")
             else if(doc==null) error ?: "Текст не найден"
             else if(doc.getJSONArray("lines").length()==0) "LrcLib · текст без синхронизации"
             else if(doc.optBoolean("wordSync")) "LrcLib · синхронизация слов"
@@ -177,7 +178,7 @@ class LyricsActivity : Activity() {
         restoredList?.let {list.onRestoreInstanceState(it);restoredList=null}
     }
     private fun center() {
-        if(follow && active>=0) list.setSelectionFromTop(active,list.height/3)
+        if(follow) list.setSelectionFromTop(active.coerceAtLeast(0),list.height/3)
     }
     private val tick=object:Runnable {
         override fun run() {
@@ -281,7 +282,8 @@ class LyricsActivity : Activity() {
     }
     override fun onStart() {
         super.onStart();visible=true
-        if(document!=null || !loading) display(lastError)
+        if(song()?.let {key(it)}.orEmpty()!=key) {follow=true;load()}
+        else if(document!=null || !loading) display(lastError)
         handler.post(tick)
     }
     override fun onStop() {

@@ -122,7 +122,8 @@ class RC8Instrumentation:Instrumentation() {
         runOnMainSync {
             verify(arabic.resources.configuration.layoutDirection==View.LAYOUT_DIRECTION_RTL,"Arabic Activity is not RTL")
             arabic.javaClass.getDeclaredMethod("settings",String::class.java).apply {isAccessible=true}.invoke(arabic,"about")
-            arabic.window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)\n            val root=field(arabic,"root") as LinearLayout
+            arabic.window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            val root=field(arabic,"root") as LinearLayout
             fun texts(view:View):List<String> = if(view is TextView) listOf(view.text.toString())
                 else if(view is android.view.ViewGroup) (0 until view.childCount).flatMap {texts(view.getChildAt(it))} else emptyList()
             val labels=texts(root)
