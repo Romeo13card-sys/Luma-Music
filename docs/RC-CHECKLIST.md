@@ -1,6 +1,11 @@
-# Luma Music 0.5.0-rc.1
+# Luma Music 0.5.0-rc.2
 
 RC означает кандидата, не подтверждение полной готовности.
+
+В rc.2 исправлен вылет запуска из issue #1: настройка системных панелей вызывается
+после setContentView, когда PhoneWindow уже создал DecorView. В rc.1 обращение
+к window.insetsController до этого момента приводило к NullPointerException
+внутри Android; nullable-вызов Kotlin не защищал от исключения внутри getter.
 
 ## Реализованные разделы настроек
 

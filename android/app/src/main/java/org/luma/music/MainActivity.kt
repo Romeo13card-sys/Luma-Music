@@ -154,10 +154,6 @@ class MainActivity : Activity() {
 
     private fun backdrop() {
         AppThemes.active = palette
-        val bars =
-            android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or
-                android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
-        window.insetsController?.setSystemBarsAppearance(if (palette.light) bars else 0, bars)
         creditScreen = false
         mini = null
         body = column()
@@ -183,6 +179,11 @@ class MainActivity : Activity() {
         root = column().apply { setPadding(dp(20), 0, dp(20), 0) }
         frame.addView(root, FrameLayout.LayoutParams(-1, -1))
         setContentView(frame)
+        // PhoneWindow.getInsetsController() can throw until setContentView creates DecorView.
+        val bars =
+            android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or
+                android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+        window.insetsController?.setSystemBarsAppearance(if (palette.light) bars else 0, bars)
         root.setOnApplyWindowInsetsListener { v, inset ->
             val bars = inset.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.ime())
             v.setPadding(
