@@ -25,6 +25,7 @@ class MainActivity : Activity() {
     private var page = "Главная"
     private var creditScreen = false
     private var pendingUpdate: java.io.File? = null
+    private var checkingUpdates = false
     private val renderPolicy by lazy {
         val manager = getSystemService(android.app.ActivityManager::class.java)
         val memory = android.app.ActivityManager.MemoryInfo()
@@ -57,6 +58,8 @@ class MainActivity : Activity() {
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
+        // Public update feed no longer uses stored GitHub credentials.
+        TokenStore(this, "github_auth").clear()
         if (Build.VERSION.SDK_INT >= 33) {
             onBackInvokedDispatcher.registerOnBackInvokedCallback(
                 android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT
@@ -805,7 +808,17 @@ class MainActivity : Activity() {
         )
         update.addView(action("Проверить обновления", true) { checkUpdates() })
         gap(update, 8)
-        update.addView(action("Доступ к приватным выпускам") { githubAccess() })
+        update.addView(
+            Switch(this).apply {
+                text = "Проверять при запуске"
+                setTextColor(white)
+                minHeight = dp(54)
+                isChecked = preferences.getBoolean("auto_update_check", true)
+                setOnCheckedChangeListener { _, enabled ->
+                    preferences.edit().putBoolean("auto_update_check", enabled).apply()
+                }
+            }
+        )
         gap(update, 8)
         update.addView(
             action("Установить скачанный APK") {
@@ -836,57 +849,26 @@ class MainActivity : Activity() {
         about.addView(text(getString(R.string.author_credit), 18f, mint, true))
     }
 
-    private fun githubAccess() {
-        val input =
-            EditText(this).apply {
-                hint = "Личный GitHub token: Contents read"
-                setSingleLine()
-                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-                importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
-            }
-        val wasSecure = window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0
-        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        val dialog =
-            AlertDialog.Builder(this)
-                .setTitle("Приватный GitHub")
-                .setMessage(
-                    "Для приватного Luma-Music нужен ваш личный fine-grained token с доступом только на чтение Contents этого репозитория. Он шифруется Android Keystore и отправляется только api.github.com. Не отправляйте его в чат."
-                )
-                .setView(input)
-                .setNegativeButton("Отмена", null)
-                .setNeutralButton("Удалить") { _, _ -> TokenStore(this, "github_auth").clear() }
-                .setPositiveButton("Сохранить") { _, _ ->
-                    val value = input.text.toString().trim()
-                    if (value.isNotBlank() && !value.matches(Regex("[A-Za-z0-9_]{10,255}"))) {
-                        status.text = "Некорректный формат GitHub токена"
-                    } else if (value.isNotBlank())
-                        try {
-                            TokenStore(this, "github_auth").save(value)
-                            status.text = "Доступ сохранён"
-                        } catch (_: Exception) {
-                            status.text = "Не удалось сохранить доступ"
-                        }
-                    input.text.clear()
-                }
-                .create()
-        dialog.setOnDismissListener {
-            input.text.clear()
-            if (!wasSecure) window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        }
-        dialog.show()
-    }
-
-    private fun checkUpdates() {
+    private fun checkUpdates(manual: Boolean = true) {
+        if (checkingUpdates) return
+        val now = System.currentTimeMillis()
+        if (
+            !manual && !UpdatePolicy.dailyCheckDue(now, preferences.getLong("last_update_check", 0))
+        )
+            return
+        checkingUpdates = true
+        preferences.edit().putLong("last_update_check", now).apply()
         val version = generation
-        status.text = "Проверяем GitHub…"
+        if (manual) status.text = "Проверяем GitHub…"
         executor.execute {
             try {
                 val updater = GitHubUpdater(this)
                 val release = updater.check(preferences.getBoolean("test_updates", true))
                 runOnUiThread {
+                    checkingUpdates = false
                     if (destroyed || version != generation) return@runOnUiThread
                     if (release == null) {
-                        status.text = "Нового выпуска в выбранном канале нет"
+                        if (manual) status.text = "Нового выпуска в выбранном канале нет"
                         return@runOnUiThread
                     }
                     status.text = "Найден ${release.tag}"
@@ -919,7 +901,8 @@ class MainActivity : Activity() {
                 }
             } catch (e: Exception) {
                 runOnUiThread {
-                    if (!destroyed && version == generation)
+                    checkingUpdates = false
+                    if (manual && !destroyed && version == generation)
                         status.text = e.message ?: "Ошибка проверки"
                 }
             }
@@ -962,6 +945,7 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        if (preferences.getBoolean("auto_update_check", true)) checkUpdates(false)
         pendingUpdate?.let { file ->
             if (packageManager.canRequestPackageInstalls()) {
                 pendingUpdate = null

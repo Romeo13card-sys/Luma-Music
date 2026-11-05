@@ -5,6 +5,9 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 object UpdatePolicy {
+    fun dailyCheckDue(now: Long, previous: Long): Boolean =
+        previous <= 0 || now - previous !in 0 until 24L * 60 * 60 * 1000
+
     const val MAX_APK = 100L * 1024 * 1024
 
     fun baseVersionComparison(candidate: String, installed: String): Int? {

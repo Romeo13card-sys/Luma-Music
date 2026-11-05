@@ -18,9 +18,7 @@ class GitHubUpdater(private val context: Context) {
         val sums: JSONObject,
     )
 
-    private val repository = "Romeo13card-sys/Luma-Music"
-    private val secret
-        get() = TokenStore(context, "github_auth").load().orEmpty()
+    private val repository = "Romeo13card-sys/Luma-Music-Releases"
 
     private fun connection(raw: String, binary: Boolean): HttpURLConnection {
         var next = raw
@@ -37,8 +35,6 @@ class GitHubUpdater(private val context: Context) {
             )
             c.setRequestProperty("User-Agent", "Luma-Music-Updater")
             c.setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
-            if (url.host == "api.github.com" && secret.isNotBlank())
-                c.setRequestProperty("Authorization", "Bearer $secret")
             val code = c.responseCode
             if (code in listOf(301, 302, 303, 307, 308)) {
                 val target = c.getHeaderField("Location") ?: error("Пустой адрес перенаправления")
@@ -52,7 +48,7 @@ class GitHubUpdater(private val context: Context) {
                             401,
                             403,
                             404 ->
-                                "GitHub не предоставил доступ. Для приватного репозитория добавьте личный токен чтения Contents в настройках обновлений."
+                                "Публичный каталог выпусков недоступен. Возможно, он ещё не создан или GitHub ограничил запросы. Токен пользователя не требуется."
                             429 -> "GitHub ограничил запросы. Попробуйте позже."
                             else -> "GitHub вернул HTTP $code"
                         }

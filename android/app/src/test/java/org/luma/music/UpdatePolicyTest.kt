@@ -82,4 +82,12 @@ class UpdatePolicyTest {
         assertEquals(0, UpdatePolicy.baseVersionComparison("v0.4.0-test.1", "0.4.0-test"))
         assertNull(UpdatePolicy.baseVersionComparison("unexpected", "0.4.0-test"))
     }
+
+    @Test
+    fun automaticCheckIsDailyAndRecoversFromClockChanges() {
+        assertTrue(UpdatePolicy.dailyCheckDue(1000, 0))
+        assertFalse(UpdatePolicy.dailyCheckDue(1001, 1000))
+        assertTrue(UpdatePolicy.dailyCheckDue(1000 + 24L * 60 * 60 * 1000, 1000))
+        assertTrue(UpdatePolicy.dailyCheckDue(900, 1000))
+    }
 }
