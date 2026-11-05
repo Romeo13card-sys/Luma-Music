@@ -133,6 +133,10 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
           pattern: release-*
@@ -143,16 +147,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_BRANCH: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          tag="${RELEASE_BRANCH#publish-desktop/}"
-          gh release upload "$tag" release/*.zip release/*.sha256
+        run: python3 scripts/publish-desktop-assets.py
   publish-legacy:
     needs: legacy
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
           pattern: legacy-*
@@ -163,7 +168,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_BRANCH: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          tag="${RELEASE_BRANCH#publish-desktop/}"
-          gh release upload "$tag" release/*.zip release/*.sha256
+        run: python3 scripts/publish-desktop-assets.py
