@@ -7,6 +7,7 @@ import org.json.JSONObject
 /** Persist metadata only. No tokens, expiring stream URLs or wave feedback sessions. */
 class QueueStore(context: Context) {
     private val prefs = context.getSharedPreferences("queue_state", Context.MODE_PRIVATE)
+    private val database = NativeDatabase(context)
 
     data class Snapshot(val songs: List<Song>, val index: Int, val position: Int)
 
@@ -47,18 +48,27 @@ class QueueStore(context: Context) {
     }
 
     fun save(snapshot: Snapshot) {
-        prefs.edit().putString("state", encode(snapshot)).commit()
+        database.call("queue_save", encode(snapshot))
     }
 
-    fun load(): Snapshot? =
-        try {
-            decode(prefs.getString("state", null))
-        } catch (_: Exception) {
-            clear()
-            null
+    fun load(): Snapshot? = try {
+        val legacy = prefs.getString("state", null)
+        var saved = database.call("queue_load") as? String
+        if (legacy != null && saved == null) {
+            // Remove the old snapshot only after a successful Rust transaction.
+            database.call("queue_import", legacy)
+            saved = database.call("queue_load") as? String
         }
+        val decoded = decode(saved)
+        if (legacy != null && saved != null) prefs.edit().remove("state").commit()
+        decoded
+    } catch (_: Exception) {
+        // Preserve the legacy snapshot when migration fails.
+        null
+    }
 
     fun clear() {
-        prefs.edit().clear().commit()
+        database.call("queue_clear")
+        prefs.edit().remove("state").commit()
     }
 }

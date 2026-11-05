@@ -1,0 +1,13 @@
+Luma Music
+made by Romeo13card
+
+This development branch contains YAYMA source code by DarkPlayOff and contributors,
+https://github.com/DarkPlayOff/YAYMA, under GNU GPL version 3.
+Pinned upstream commit: 7b502c0c1e143c7847efb69773abb504abd61b20.
+The unmodified reference snapshot is in vendor/yayma; its original notices remain.
+YAYMA acknowledges YaMusic and yandex-music-rs by Vyfor and their contributors.
+
+Luma adaptations are separate from the original upstream files. This combined
+work is distributed under GPL-3.0 (see LICENSE), without warranty. Complete
+corresponding source, including build scripts and modifications, is provided in
+this repository. Dependency licenses and notices continue to apply.

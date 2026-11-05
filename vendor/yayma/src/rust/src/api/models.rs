@@ -1,0 +1,686 @@
+use crate::util::track::CleanId;
+use serde::{Deserialize, Serialize};
+pub use yandex_music::model::{album::Album, artist::Artist, playlist::Playlist, track::Track};
+
+pub const COVER_SIZE_SMALL: &str = "200x200";
+pub const COVER_SIZE_MEDIUM: &str = "600x600";
+pub const COVER_SIZE_LARGE: &str = "1000x1000";
+
+#[flutter_rust_bridge::frb(unignore)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct HotkeyBindingDto {
+    pub action: String,
+    pub enabled: bool,
+    /// A `keyboard_types::Code` variant name ("Space", "ArrowLeft", "KeyL").
+    pub key: String,
+    pub ctrl: bool,
+    pub alt: bool,
+    pub shift: bool,
+    pub meta: bool,
+}
+
+#[flutter_rust_bridge::frb(unignore)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct HotkeySettingsDto {
+    pub enabled: bool,
+    pub bindings: Vec<HotkeyBindingDto>,
+}
+
+#[flutter_rust_bridge::frb(unignore)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct HotkeyUpdateResultDto {
+    /// Updated settings on success.
+    pub settings: Option<HotkeySettingsDto>,
+    /// Action name that already owns the requested combo.
+    pub conflict_with: Option<String>,
+    /// True when the captured key usage cannot be mapped to a hotkey code.
+    pub invalid_key: bool,
+}
+
+#[flutter_rust_bridge::frb(unignore)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct InitialSettingsDto {
+    pub custom_titlebar: bool,
+    pub auto_hide_navbar: bool,
+    pub close_to_tray: bool,
+    pub vibe_animation_enabled: bool,
+    pub vibe_render_scale: f64,
+    pub blur_effects_enabled: bool,
+}
+
+impl Default for InitialSettingsDto {
+    fn default() -> Self {
+        Self {
+            custom_titlebar: true,
+            auto_hide_navbar: false,
+            close_to_tray: true,
+            vibe_animation_enabled: true,
+            vibe_render_scale: 0.50,
+            blur_effects_enabled: true,
+        }
+    }
+}
+
+pub fn format_cover(uri: Option<String>, size: &str) -> Option<String> {
+    uri.map(|mut s| {
+        if let Some(pos) = s.find("%%") {
+            s.replace_range(pos..pos + 2, size);
+        }
+        if s.starts_with("//") {
+            s.insert_str(0, "https:");
+            s
+        } else if !s.starts_with("http") {
+            s.insert_str(0, "https://");
+            s
+        } else {
+            s
+        }
+    })
+}
+
+#[flutter_rust_bridge::frb(ignore)]
+pub(crate) fn get_any_cover(t: &Track) -> Option<String> {
+    t.og_image
+        .as_ref()
+        .or(t.cover_uri.as_ref())
+        .or_else(|| {
+            t.albums
+                .first()
+                .and_then(|a| a.og_image.as_ref().or(a.cover_uri.as_ref()))
+        })
+        .cloned()
+}
+
+/// `cover.uri` is empty for playlists using an auto-generated "mosaic" cover
+/// (no custom art set), so fall back to `og_image`, which Yandex always
+/// populates with a rendered cover.
+#[flutter_rust_bridge::frb(ignore)]
+fn get_playlist_cover(playlist: &mut Playlist) -> Option<String> {
+    playlist.cover.uri.take().or_else(|| {
+        let og_image = std::mem::take(&mut playlist.og_image);
+        (!og_image.is_empty()).then_some(og_image)
+    })
+}
+
+#[flutter_rust_bridge::frb(unignore)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub enum AudioQuality {
+    Low, // lq
+    #[default]
+    Normal, // nq (192kbps)
+    High, // lossless (320kbps or FLAC)
+}
+
+#[flutter_rust_bridge::frb(unignore)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SearchResultsDto {
+    pub tracks: Vec<SimpleTrackDto>,
+    pub albums: Vec<SimpleAlbumDto>,
+    pub artists: Vec<SimpleArtistDto>,
+    pub playlists: Vec<SimplePlaylistDto>,
+}
+
+#[flutter_rust_bridge::frb(unignore)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TrackArtistDto {
+    pub id: String,
+    pub name: String,
+}
+
+#[flutter_rust_bridge::frb(ignore)]
+impl TrackArtistDto {
+    pub fn from_yandex(a: &yandex_music::model::artist::Artist) -> Self {
+        Self {
+            id: a.id.as_ref().map(|id| id.to_string()).unwrap_or_default(),
+            name: a.name.clone().unwrap_or_default(),
+        }
+    }
+}
+
+#[flutter_rust_bridge::frb(unignore)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SimpleTrackDto {
+    pub id: String,
+    pub title: String,
+    pub version: Option<String>,
+    pub artists: Vec<TrackArtistDto>,
+    pub album: Option<String>,
+    pub album_id: Option<String>,
+    pub duration_ms: u32,
+    pub cover_url: Option<String>,
+    pub is_liked: bool,
+    pub is_disliked: bool,
+}
+
+#[flutter_rust_bridge::frb(ignore)]
+impl SimpleTrackDto {
+    pub fn from_yandex<S: std::hash::BuildHasher>(
+        t: &Track,
+        liked_ids: &std::collections::HashSet<String, S>,
+        disliked_ids: &std::collections::HashSet<String, S>,
+    ) -> Self {
+        let track_id_base = t.id.to_base_id();
+        let (album_title, album_id) = t
+            .albums
+            .first()
+            .map(|a| (a.title.clone(), a.id.as_ref().map(|id| id.to_string())))
+            .unwrap_or((None, None));
+
+        Self {
+            id: t.id.clone(),
+            title: t.title.clone().unwrap_or_default(),
+            version: t.version.clone(),
+            artists: t.artists.iter().map(TrackArtistDto::from_yandex).collect(),
+            album: album_title,
+            album_id,
+            duration_ms: t.duration.map(|d| d.as_millis() as u32).unwrap_or(0),
+            cover_url: format_cover(get_any_cover(t), COVER_SIZE_MEDIUM),
+            is_liked: liked_ids.contains(track_id_base),
+            is_disliked: disliked_ids.contains(track_id_base),
+        }
+    }
+
+    pub fn from_yandex_owned<S: std::hash::BuildHasher>(
+        mut t: Track,
+        liked_ids: &std::collections::HashSet<String, S>,
+        disliked_ids: &std::collections::HashSet<String, S>,
+    ) -> Self {
+        let is_liked = liked_ids.contains(t.id.to_base_id());
+        let is_disliked = disliked_ids.contains(t.id.to_base_id());
+        let cover_url = format_cover(get_any_cover(&t), COVER_SIZE_MEDIUM);
+        let (album_title, album_id) = t
+            .albums
+            .first_mut()
+            .map(|a| (a.title.take(), a.id.take().map(|id| id.to_string())))
+            .unwrap_or((None, None));
+
+        Self {
+            id: t.id,
+            title: t.title.take().unwrap_or_default(),
+            version: t.version.take(),
+            artists: t
+                .artists
+                .into_iter()
+                .map(|mut a| TrackArtistDto {
+                    id: a.id.take().map(|id| id.to_string()).unwrap_or_default(),
+                    name: a.name.take().unwrap_or_default(),
+                })
+                .collect(),
+            album: album_title,
+            album_id,
+            duration_ms: t.duration.map(|d| d.as_millis() as u32).unwrap_or(0),
+            cover_url,
+            is_liked,
+            is_disliked,
+        }
+    }
+}
+
+#[flutter_rust_bridge::frb(unignore)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TrackDetailsDto {
+    pub id: String,
+    pub title: String,
+    pub artists: Vec<TrackArtistDto>,
+    pub album: Option<String>,
+    pub label: Option<String>,
+    pub music_authors: Vec<String>,
+    pub lyrics_authors: Vec<String>,
+    pub source_platforms: Vec<String>,
+}
+
+#[flutter_rust_bridge::frb(ignore)]
+impl TrackDetailsDto {
+    pub fn from_yandex(mut t: Track) -> Self {
+        let album_title = t.albums.first_mut().and_then(|a| a.title.take());
+
+        // In yandex-music-rs, the label is located in major.name
+        let label = t.major.take().map(|m| m.name);
+
+        // Authors are often listed as separate artists or via metadata,
+        // but in this simplified view, we take all artists
+        let music_authors = t.artists.iter().filter_map(|a| a.name.clone()).collect();
+
+        Self {
+            id: t.id,
+            title: t.title.take().unwrap_or_default(),
+            artists: t
+                .artists
+                .into_iter()
+                .map(|mut a| TrackArtistDto {
+                    id: a.id.take().map(|id| id.to_string()).unwrap_or_default(),
+                    name: a.name.take().unwrap_or_default(),
+                })
+                .collect(),
+            album: album_title,
+            label,
+            music_authors,
+            lyrics_authors: Vec::new(),
+            source_platforms: Vec::new(),
+        }
+    }
+}
+
+#[flutter_rust_bridge::frb(unignore)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum RepeatModeDto {
+    None,
+    All,
+    Single,
+}
+
+#[flutter_rust_bridge::frb(unignore)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PlaybackState {
+    pub is_playing: bool,
+    pub is_buffering: bool,
+    pub volume: u8,
+    pub is_muted: bool,
+    pub repeat_mode: RepeatModeDto,
+    pub is_shuffled: bool,
+    pub queue_count: u32,
+    pub queue_index: u32,
+    pub current_track: Option<SimpleTrackDto>,
+    pub current_wave_seeds: Vec<String>,
+    pub codec: Option<String>,
+}
+
+#[flutter_rust_bridge::frb(unignore)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PlaybackProgressDto {
+    pub position_ms: u32,
+    pub duration_ms: u32,
+}
+
+#[flutter_rust_bridge::frb(unignore)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AlbumDetailsDto {
+    pub id: String,
+    pub title: String,
+    pub artists: Vec<TrackArtistDto>,
+    pub year: Option<i32>,
+    pub cover_url: Option<String>,
+    pub tracks: Vec<SimpleTrackDto>,
+}
+
+#[flutter_rust_bridge::frb(ignore)]
+impl AlbumDetailsDto {
+    pub fn from_yandex<S: std::hash::BuildHasher>(
+        mut album: Album,
+        liked_ids: &std::collections::HashSet<String, S>,
+        disliked_ids: &std::collections::HashSet<String, S>,
+    ) -> Self {
+        let album_id = album.id.unwrap_or(0).to_string();
+        let album_title = album.title.take().unwrap_or_default();
+        let cover_url = format_cover(album.og_image.take(), "600x600");
+        let year = album.year.map(|y| y as i32);
+        let artists = album
+            .artists
+            .iter()
+            .map(TrackArtistDto::from_yandex)
+            .collect();
+
+        let tracks = album
+            .volumes
+            .into_iter()
+            .flatten()
+            .map(|t| {
+                let mut dto = SimpleTrackDto::from_yandex_owned(t, liked_ids, disliked_ids);
+                dto.album = Some(album_title.clone());
+                dto.album_id = Some(album_id.clone());
+                dto
+            })
+            .collect();
+
+        Self {
+            id: album_id,
+            title: album_title,
+            artists,
+            year,
+            cover_url,
+            tracks,
+        }
+    }
+}
+
+#[flutter_rust_bridge::frb(unignore)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ArtistDetailsDto {
+    pub id: String,
+    pub name: String,
+    pub cover_url: Option<String>,
+    pub tracks: Vec<SimpleTrackDto>,
+    pub total_tracks: u32,
+    pub albums: Vec<SimpleAlbumDto>,
+    pub likes_count: Option<u32>,
+    pub monthly_listeners: Option<u32>,
+}
+
+#[flutter_rust_bridge::frb(unignore)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SimpleAlbumDto {
+    pub id: String,
+    pub title: String,
+    pub artists: Vec<TrackArtistDto>,
+    pub year: Option<i32>,
+    pub cover_url: Option<String>,
+}
+
+#[flutter_rust_bridge::frb(ignore)]
+impl SimpleAlbumDto {
+    pub fn from_yandex(mut album: yandex_music::model::album::Album) -> Self {
+        Self {
+            id: album.id.unwrap_or(0).to_string(),
+            title: album.title.take().unwrap_or_default(),
+            artists: album
+                .artists
+                .iter()
+                .map(TrackArtistDto::from_yandex)
+                .collect(),
+            cover_url: format_cover(album.og_image.take(), "600x600"),
+            year: album.year.map(|y| y as i32),
+        }
+    }
+}
+
+#[flutter_rust_bridge::frb(unignore)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SimpleArtistDto {
+    pub id: String,
+    pub name: String,
+    pub cover_url: Option<String>,
+    pub likes_count: Option<u32>,
+    pub monthly_listeners: Option<u32>,
+}
+
+#[flutter_rust_bridge::frb(ignore)]
+impl SimpleArtistDto {
+    pub fn from_yandex(mut artist: Artist) -> Self {
+        Self {
+            id: artist.id.take().unwrap_or_default(),
+            name: artist.name.take().unwrap_or_default(),
+            cover_url: format_cover(artist.cover.and_then(|mut c| c.uri.take()), "600x600"),
+            likes_count: artist.likes_count,
+            monthly_listeners: artist.ratings.map(|r| r.month),
+        }
+    }
+}
+
+#[flutter_rust_bridge::frb(unignore)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PlaylistDetailsDto {
+    pub kind: u32,
+    pub uid: i64,
+    pub title: String,
+    pub cover_url: Option<String>,
+    pub tracks: Vec<SimpleTrackDto>,
+    pub track_count: u32,
+    pub is_public: bool,
+}
+
+#[flutter_rust_bridge::frb(ignore)]
+impl PlaylistDetailsDto {
+    pub fn from_yandex(mut playlist: Playlist) -> Self {
+        let cover_url = format_cover(get_playlist_cover(&mut playlist), "600x600");
+        let title = std::mem::take(&mut playlist.title);
+        let track_count = playlist.track_count;
+        let is_public = format!("{:?}", playlist.visibility)
+            .to_lowercase()
+            .contains("public");
+
+        Self {
+            kind: playlist.kind,
+            uid: playlist.uid as i64,
+            title,
+            cover_url,
+            tracks: Vec::new(),
+            track_count,
+            is_public,
+        }
+    }
+}
+
+#[flutter_rust_bridge::frb(unignore)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SimplePlaylistDto {
+    pub kind: u32,
+    pub uid: i64,
+    pub title: String,
+    pub cover_url: Option<String>,
+    pub track_count: u32,
+    pub is_public: bool,
+}
+
+#[flutter_rust_bridge::frb(ignore)]
+impl SimplePlaylistDto {
+    pub fn from_yandex(mut playlist: Playlist) -> Self {
+        let is_public = format!("{:?}", playlist.visibility)
+            .to_lowercase()
+            .contains("public");
+        Self {
+            kind: playlist.kind,
+            uid: playlist.uid as i64,
+            title: std::mem::take(&mut playlist.title),
+            cover_url: format_cover(get_playlist_cover(&mut playlist), "600x600"),
+            track_count: playlist.track_count,
+            is_public,
+        }
+    }
+}
+
+#[flutter_rust_bridge::frb(unignore)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SavedStateDto {
+    pub track_id: String,
+    pub position_ms: u32,
+    pub is_playing: bool,
+}
+
+#[flutter_rust_bridge::frb(unignore)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct StationCategoryDto {
+    pub title: String,
+    pub items: Vec<StationItemDto>,
+}
+
+#[flutter_rust_bridge::frb(unignore)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct StationItemDto {
+    pub label: String,
+    pub seed: String,
+}
+
+#[flutter_rust_bridge::frb(unignore)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct LyricsProviderSettingDto {
+    pub id: String,
+    pub name: String,
+    pub enabled: bool,
+}
+
+#[flutter_rust_bridge::frb(unignore)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct LyricsWordDto {
+    pub text: String,
+    pub start_ms: i64,
+    pub end_ms: i64,
+}
+
+#[flutter_rust_bridge::frb(unignore)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct LyricsLineDto {
+    pub start_ms: i64,
+    pub text: String,
+    pub words: Vec<LyricsWordDto>,
+}
+
+#[flutter_rust_bridge::frb(unignore)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct LyricsResultDto {
+    pub lines: Vec<LyricsLineDto>,
+    pub provider_name: String,
+}
+
+#[flutter_rust_bridge::frb(unignore)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UserAccountDto {
+    pub uid: i64,
+    pub login: String,
+    pub full_name: Option<String>,
+    pub display_name: Option<String>,
+    pub has_plus: bool,
+    pub avatar_url: Option<String>,
+}
+
+#[flutter_rust_bridge::frb(ignore)]
+impl UserAccountDto {
+    pub fn from_yandex(
+        status: yandex_music::model::account::status::AccountStatus,
+        avatar_url: Option<String>,
+    ) -> Self {
+        Self {
+            uid: status.account.uid.unwrap_or(0) as i64,
+            login: status.account.login.unwrap_or_default(),
+            full_name: status.account.full_name,
+            display_name: status.account.display_name,
+            has_plus: status.plus.has_plus,
+            avatar_url,
+        }
+    }
+}
+
+#[flutter_rust_bridge::frb(unignore)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct BandDto {
+    pub frequency: f32,
+    pub gain_db: f32,
+    pub index: u32,
+}
+
+#[flutter_rust_bridge::frb(unignore)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct EqualizerDto {
+    pub enabled: bool,
+    pub bands: Vec<BandDto>,
+}
+
+#[flutter_rust_bridge::frb(unignore)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct EffectParamDto {
+    pub name: String,
+    pub value: f32,
+    pub default_value: f32,
+    pub min: f32,
+    pub max: f32,
+    pub step: f32,
+    pub unit: String,
+    pub index: u32,
+}
+
+#[flutter_rust_bridge::frb(unignore)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AudioEffectDto {
+    pub id: String,
+    pub name: String,
+    pub enabled: bool,
+    pub params: Vec<EffectParamDto>,
+}
+
+#[flutter_rust_bridge::frb(unignore)]
+#[derive(thiserror::Error, Debug)]
+pub enum AppError {
+    #[error("Audio system not initialized")]
+    NotInitialized,
+    #[error("API error: {0}")]
+    ApiError(String),
+    #[error("Database error: {0}")]
+    DbError(String),
+    #[error("Invalid token or session expired")]
+    Unauthorized,
+    #[error("Invalid token")]
+    InvalidToken,
+    #[error("Network error: please check your connection")]
+    NetworkError,
+    #[error("Resource not found: {0}")]
+    NotFound(String),
+    #[error("Rate limited: too many requests")]
+    RateLimited,
+    #[error("IO error: {0}")]
+    IoError(String),
+    #[error("Unknown error: {0}")]
+    Unknown(String),
+}
+
+impl From<yandex_music::error::ClientError> for AppError {
+    fn from(err: yandex_music::error::ClientError) -> Self {
+        match err {
+            yandex_music::error::ClientError::RequestError { error } => {
+                let s = error.to_string();
+                if s.contains("401") {
+                    AppError::Unauthorized
+                } else if s.contains("404") {
+                    AppError::NotFound(s)
+                } else if s.contains("429") {
+                    AppError::RateLimited
+                } else if s.contains("timeout") || s.contains("connection") {
+                    AppError::NetworkError
+                } else {
+                    AppError::ApiError(s)
+                }
+            }
+            yandex_music::error::ClientError::YandexMusicError { error } => {
+                AppError::ApiError(error.message.unwrap_or(error.name))
+            }
+            yandex_music::error::ClientError::JsonParseError { error } => {
+                AppError::Unknown(format!("Deserialization error: {}", error))
+            }
+            _ => AppError::Unknown(err.to_string()),
+        }
+    }
+}
+
+impl From<rusqlite::Error> for AppError {
+    fn from(err: rusqlite::Error) -> Self {
+        AppError::DbError(err.to_string())
+    }
+}
+
+impl From<reqwest::Error> for AppError {
+    fn from(err: reqwest::Error) -> Self {
+        let s = err.to_string();
+        if s.contains("401") {
+            AppError::Unauthorized
+        } else if s.contains("404") {
+            AppError::NotFound(s)
+        } else if s.contains("429") {
+            AppError::RateLimited
+        } else if s.contains("timeout") || s.contains("connection") {
+            AppError::NetworkError
+        } else {
+            AppError::ApiError(s)
+        }
+    }
+}
+
+impl From<std::io::Error> for AppError {
+    fn from(err: std::io::Error) -> Self {
+        AppError::IoError(err.to_string())
+    }
+}
+
+impl From<Box<dyn std::error::Error + Send + Sync>> for AppError {
+    fn from(err: Box<dyn std::error::Error + Send + Sync>) -> Self {
+        let s = err.to_string();
+        if s.contains("401") || s.contains("unauthorized") {
+            AppError::Unauthorized
+        } else if s.contains("404") || s.contains("not found") {
+            AppError::NotFound(s)
+        } else if s.contains("429") || s.contains("too many requests") {
+            AppError::RateLimited
+        } else if s.contains("timeout") || s.contains("connection") {
+            AppError::NetworkError
+        } else {
+            AppError::ApiError(s)
+        }
+    }
+}

@@ -1,0 +1,359 @@
+import 'dart:async';
+
+import 'package:m3e_core/m3e_core.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:signals_flutter/signals_flutter.dart';
+import 'package:yayma/src/features/core/providers/navigation_provider.dart';
+import 'package:yayma/src/features/core/views/widgets/app_cover.dart';
+import 'package:yayma/src/features/core/views/widgets/common_ui.dart';
+import 'package:yayma/src/features/core/views/widgets/horizontal_shelf.dart';
+import 'package:yayma/src/features/core/views/widgets/media_card.dart';
+import 'package:yayma/src/features/core/views/widgets/responsive.dart';
+import 'package:yayma/src/features/core/views/widgets/smooth_scroll.dart';
+import 'package:yayma/src/features/core/views/widgets/tab_visibility.dart';
+import 'package:yayma/src/features/core/views/widgets/track_tile.dart';
+import 'package:yayma/src/features/library/views/add_to_playlist_dialog.dart';
+import 'package:yayma/src/features/playback/providers/playback_provider.dart';
+import 'package:yayma/src/features/search/providers/search_provider.dart';
+import 'package:yayma/src/rust/api/models.dart';
+
+class SearchView extends StatefulWidget {
+  const SearchView({super.key});
+
+  @override
+  State<SearchView> createState() => _SearchViewState();
+}
+
+class _SearchViewState extends State<SearchView> {
+  final TextEditingController _controller = TextEditingController();
+  final _scrollController = SmoothScrollController(debugLabel: 'search');
+  EffectCleanup? _refreshSub;
+  var _lastRefreshSeen = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.text = searchQuerySignal.value;
+    _lastRefreshSeen = refreshRequestSignal.peek();
+    _refreshSub = refreshRequestSignal.subscribe((count) {
+      if (count == _lastRefreshSeen) return;
+      _lastRefreshSeen = count;
+      if (currentNavStateSignal.peek().section == AppSection.search) {
+        unawaited(searchResultsSignal.refresh());
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _refreshSub?.call();
+    _controller.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SignalBuilder(
+      builder: (context) {
+        // No subscription while the tab is hidden; results arriving in
+        // the background don't rebuild it, they are picked up on open.
+        final searchResultsAsync = visibleSignal(context, searchResultsSignal);
+        final screenWidth = MediaQuery.sizeOf(context).width;
+        final isNarrow = screenWidth < 600;
+        final results = searchResultsAsync.value;
+        final noResults =
+            results != null &&
+            results.tracks.isEmpty &&
+            results.albums.isEmpty &&
+            results.artists.isEmpty;
+
+        // Painted over the whole page. Centred in the column below it would
+        // drop by half the search field's height.
+        final Widget? placeholder = searchResultsAsync.isLoading
+            ? const CommonLoadingWidget()
+            : searchResultsAsync.hasError
+            ? CommonErrorWidget(error: searchResultsAsync.error!)
+            : results == null
+            ? const _EmptySearchState()
+            : noResults
+            ? Text(
+                'Ничего не найдено',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontSize: 18,
+                ),
+              )
+            : null;
+
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: isNarrow
+                        ? const EdgeInsets.fromLTRB(20, 16, 20, 8)
+                        : context.viewPadding,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const CommonPageTitle(title: 'Поиск'),
+                        if (!isNarrow) const SizedBox(height: 24),
+                        if (isNarrow) const SizedBox(height: 8),
+                        TextField(
+                          controller: _controller,
+                          onChanged: setSearchQuery,
+                          style: TextStyle(
+                            fontSize: isNarrow ? 18 : 24,
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
+                          decoration: InputDecoration(
+                            hintText: 'Треки, альбомы, артисты...',
+                            hintStyle: TextStyle(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant
+                                  .withValues(alpha: 0.6),
+                            ),
+                            prefixIcon: Padding(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: isNarrow ? 12 : 16,
+                              ),
+                              child: Icon(
+                                Icons.search,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                                size: isNarrow ? 24 : 32,
+                              ),
+                            ),
+                            filled: true,
+                            fillColor: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withValues(alpha: 0.05),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(
+                                isNarrow ? 16 : 24,
+                              ),
+                              borderSide: BorderSide.none,
+                            ),
+                            contentPadding: EdgeInsets.symmetric(
+                              vertical: isNarrow ? 16 : 24,
+                              horizontal: 20,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: results == null
+                        ? const SizedBox.shrink()
+                        : noResults
+                        ? AppRefreshIndicator(
+                            onRefresh: searchResultsSignal.refresh,
+                            child: CustomScrollView(
+                              controller: _scrollController,
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              // Kept scrollable for pull-to-refresh; the message is
+                              // the page-level placeholder above.
+                              slivers: const [
+                                SliverFillRemaining(
+                                  hasScrollBody: false,
+                                  child: SizedBox.shrink(),
+                                ),
+                              ],
+                            ),
+                          )
+                        : _SearchResults(
+                            results: results,
+                            controller: _scrollController,
+                          ),
+                  ),
+                ],
+              ),
+            ),
+            if (placeholder != null)
+              Positioned.fill(
+                // Must not eat the field's taps or the list's drags.
+                child: IgnorePointer(child: Center(child: placeholder)),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _EmptySearchState extends StatelessWidget {
+  const _EmptySearchState();
+
+  @override
+  Widget build(BuildContext context) {
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          Icons.manage_search_rounded,
+          size: 80,
+          color: onSurface.withValues(alpha: 0.1),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          'Начните вводить текст',
+          style: TextStyle(
+            color: onSurface.withValues(alpha: 0.38),
+            fontSize: 18,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SearchResults extends StatelessWidget {
+  final SearchResultsDto results;
+  final ScrollController controller;
+
+  const _SearchResults({required this.results, required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    return AppRefreshIndicator(
+      onRefresh: searchResultsSignal.refresh,
+      child: CustomScrollView(
+        controller: controller,
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          if (results.artists.isNotEmpty) ...[
+            const SliverToBoxAdapter(
+              child: CommonSectionTitle(title: 'Артисты'),
+            ),
+            SliverToBoxAdapter(
+              child: HorizontalShelf(
+                height: 210,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 32,
+                ), // 32 + 8 (internal card padding) = 40
+                itemCount: results.artists.length,
+                itemBuilder: (context, i) =>
+                    _ArtistSearchCard(artist: results.artists[i]),
+              ),
+            ),
+          ],
+          if (results.albums.isNotEmpty) ...[
+            const SliverToBoxAdapter(
+              child: CommonSectionTitle(title: 'Альбомы'),
+            ),
+            SliverToBoxAdapter(
+              child: HorizontalShelf(
+                height: 240,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 32,
+                ), // 32 + 8 = 40
+                itemCount: results.albums.length,
+                itemBuilder: (context, i) =>
+                    _AlbumSearchCard(album: results.albums[i]),
+              ),
+            ),
+          ],
+          if (results.tracks.isNotEmpty) ...[
+            const SliverToBoxAdapter(child: CommonSectionTitle(title: 'Треки')),
+            SliverM3ESegmentedList(
+              haptic: M3EHapticFeedback.light,
+              itemCount: results.tracks.length,
+              addAutomaticKeepAlives: false,
+              color: Colors.transparent,
+              padding: EdgeInsets.symmetric(
+                horizontal: context.isNarrow ? 0 : 32,
+                vertical: 4,
+              ),
+              itemBuilder: (context, i) =>
+                  _TrackSearchTile(track: results.tracks[i]),
+            ),
+            const SliverToBoxAdapter(child: SizedBox(height: 40)),
+          ],
+          const SliverPadding(padding: EdgeInsets.only(bottom: 140)),
+        ],
+      ),
+    );
+  }
+}
+
+class _TrackSearchTile extends StatelessWidget {
+  final SimpleTrackDto track;
+
+  const _TrackSearchTile({required this.track});
+
+  @override
+  Widget build(BuildContext context) {
+    return CommonTrackTile(
+      trackId: track.id,
+      title: track.title,
+      version: track.version,
+      artists: track.artists,
+      albumId: track.albumId,
+      leading: AppCover(coverUrl: track.coverUrl),
+      trailing: Text(
+        formatDuration(track.durationMs),
+        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+      ),
+      hoverActions: [
+        IconButton(
+          icon: Icon(
+            Icons.add_rounded,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+          tooltip: 'Добавить в плейлист',
+          onPressed: () => AddToPlaylistDialog.show(context, track),
+        ),
+      ],
+      onTap: () => PlaybackController.playTrack(track.id),
+      onTitleTap: () {
+        if (track.albumId != null) {
+          navigateTo(AppSection.album, track.albumId);
+        }
+      },
+    );
+  }
+}
+
+class _AlbumSearchCard extends StatelessWidget {
+  final SimpleAlbumDto album;
+
+  const _AlbumSearchCard({required this.album});
+
+  @override
+  Widget build(BuildContext context) {
+    return CommonMediaCard(
+      title: album.title,
+      artists: album.artists,
+      coverUrl: album.coverUrl,
+      onTap: () => navigateTo(AppSection.album, album.id),
+    );
+  }
+}
+
+class _ArtistSearchCard extends StatelessWidget {
+  final SimpleArtistDto artist;
+
+  const _ArtistSearchCard({required this.artist});
+
+  @override
+  Widget build(BuildContext context) {
+    return CommonMediaCard(
+      title: artist.name,
+      subtitle: formatArtistCardSubtitle(
+        monthlyListeners: artist.monthlyListeners,
+        likesCount: artist.likesCount,
+      ),
+      coverUrl: artist.coverUrl,
+      isCircle: true,
+      size: 140,
+      onTap: () => navigateTo(AppSection.artist, artist.id),
+    );
+  }
+}

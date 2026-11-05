@@ -1,0 +1,89 @@
+# Reusable workflow: generates the flutter_rust_bridge bridge once and uploads
+# it as an artifact. Caller workflows download and restore it in each build job
+# instead of re-running codegen per runner (mirrors rustdesk's bridge.yml).
+name: Generate FRB Bridge
+
+on:
+  workflow_call:
+
+jobs:
+  generate-bridge:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve FRB Version
+        run: |
+          FRB_VERSION=$(sed -n 's/^[[:space:]]*flutter_rust_bridge:[[:space:]]*//p' src/pubspec.yaml | head -n1)
+          if [ -z "$FRB_VERSION" ]; then
+            echo "::error::Could not resolve flutter_rust_bridge version from src/pubspec.yaml"
+            exit 1
+          fi
+          echo "FRB_VERSION=$FRB_VERSION" >> "$GITHUB_ENV"
+
+      - name: System Init
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libasound2-dev libdbus-1-dev
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.97.1
+
+      - name: Setup Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src/rust -> src/rust/target"
+          key: bridge-${{ env.FRB_VERSION }}
+
+      - name: Cache Codegen Tools
+        uses: actions/cache@v4
+        with:
+          # Only the codegen binaries, not ~/.cargo/bin itself: that dir holds the
+          # rustup shims installed by the step above and must not be overwritten.
+          path: |
+            ~/.cargo/bin/cargo-binstall*
+            ~/.cargo/bin/cargo-expand*
+            ~/.cargo/bin/flutter_rust_bridge_codegen*
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+          key: bridge-tools-${{ runner.os }}-${{ env.FRB_VERSION }}-${{ hashFiles('src/rust/rust-toolchain.toml') }}
+
+      - name: Install Tools
+        run: |
+          if [ ! -f "$HOME/.cargo/bin/cargo-binstall" ]; then
+            curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
+          fi
+          cargo binstall "flutter_rust_bridge_codegen@$FRB_VERSION" -y || cargo install flutter_rust_bridge_codegen --version "$FRB_VERSION" --locked
+          cargo binstall -y cargo-expand
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+          pub-cache: true
+
+      - name: Generate Bridge
+        working-directory: ./src
+        run: |
+          flutter config --no-analytics
+          flutter pub get
+          flutter_rust_bridge_codegen generate
+
+      - name: Pack Bridge
+        run: |
+          tar -czf frb-bridge.tar.gz \
+            src/rust/src/frb_generated.rs \
+            src/lib/src/rust
+
+      - name: Upload Bridge Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frb-bridge
+          path: frb-bridge.tar.gz
+          if-no-files-found: error
+          compression-level: 0

@@ -25,6 +25,7 @@ class MainActivity : Activity() {
     private var page = "Главная"
     private var creditScreen = false
     private var pendingUpdate: java.io.File? = null
+    private var lyricsDialog: AlertDialog? = null
     private var checkingUpdates = false
     private val hardwarePolicy by lazy {
         val manager = getSystemService(android.app.ActivityManager::class.java)
@@ -62,7 +63,7 @@ class MainActivity : Activity() {
             }
         }
 
-    private val preferences by lazy { getSharedPreferences("player_settings", MODE_PRIVATE) }
+    private val preferences by lazy { SettingsStore.get(this) }
 
     private fun dp(n: Int) = (n * resources.displayMetrics.density).toInt()
 
@@ -762,6 +763,8 @@ class MainActivity : Activity() {
                 fullPlayer()
             }
         )
+        gap(body, 8)
+        body.addView(action("Текст песни · LrcLib") { showLyrics() })
         gap(body)
         body.addView(text("Очередь", 22f, white, true))
         renderTracks(body, PlaybackService.queue)
@@ -774,6 +777,37 @@ class MainActivity : Activity() {
             }
         )
         refreshPlayer()
+    }
+
+    private fun showLyrics() {
+        val song = PlaybackService.queue.getOrNull(PlaybackService.index) ?: return
+        AlertDialog.Builder(this).setTitle("Текст песни")
+            .setMessage("Найти текст в LrcLib? Сервис получит название трека и исполнителя.")
+            .setNegativeButton("Отмена", null)
+            .setPositiveButton("Найти") { _, _ ->
+                val version = generation
+                lyricsDialog?.dismiss()
+                val loading = AlertDialog.Builder(this).setTitle("Текст песни").setMessage("Ищем в LrcLib…").setNegativeButton("Отмена", null).show()
+                lyricsDialog = loading
+                executor.execute {
+                    val result = runCatching {
+                        NativeCore.call("lyrics", JSONObject().put("title", song.title).put("artist", song.artist).toString()) as JSONObject
+                    }
+                    runOnUiThread {
+                        val dismissed = !loading.isShowing
+                        if (!destroyed) loading.dismiss()
+                        if (destroyed || dismissed || version != generation) return@runOnUiThread
+                        val content = result.getOrNull()?.optString("text")
+                            ?: result.exceptionOrNull()?.message ?: "Текст не найден"
+                        val scroll = ScrollView(this).apply {
+                            addView(text(content, 18f, white))
+                            setPadding(dp(16), dp(8), dp(16), dp(8))
+                        }
+                        AlertDialog.Builder(this).setTitle("${song.title} · LrcLib")
+                            .setView(scroll).setPositiveButton("Закрыть", null).show()
+                    }
+                }
+            }.show()
     }
 
     private fun refreshPlayer() {
@@ -1027,7 +1061,29 @@ class MainActivity : Activity() {
                 muted,
             )
         )
+        val memory = android.app.ActivityManager.MemoryInfo()
+        getSystemService(android.app.ActivityManager::class.java).getMemoryInfo(memory)
+        val selectedTheme = labels[modes.indexOf(mode).coerceAtLeast(0)]
+        val effectiveTheme = if (palette.oled) "OLED" else if (palette.light) "Светлая" else "Тёмная"
+        about.addView(text("Версия: $current", 14f, muted))
+        about.addView(text("Телефон: ${Build.MANUFACTURER} ${Build.MODEL}", 14f, muted))
+        about.addView(text("Android ${Build.VERSION.RELEASE} · API ${Build.VERSION.SDK_INT}", 14f, muted))
+        about.addView(text("ОЗУ: ${String.format(java.util.Locale.ROOT, "%.1f", memory.totalMem / 1073741824.0)} ГиБ · ${Build.SUPPORTED_ABIS.firstOrNull().orEmpty()}", 14f, muted))
+        about.addView(text("Тема: $selectedTheme · сейчас $effectiveTheme", 14f, muted))
         about.addView(text(getString(R.string.author_credit), 18f, mint, true))
+        gap(about, 8)
+        about.addView(action("Открытый исходный код и лицензия") {
+            val license = assets.open("licenses/GPL-3.0.txt").bufferedReader().use { it.readText() }
+            val view = ScrollView(this).apply {
+                addView(text("Основа: YAYMA — DarkPlayOff и участники; YaMusic — Vyfor.\nИзменения Luma — Romeo13card. Без гарантий.\n\n$license", 13f, white))
+                setPadding(dp(16), dp(8), dp(16), dp(8))
+            }
+            AlertDialog.Builder(this).setTitle("GPL-3.0 · YAYMA / Luma")
+                .setView(view).setNegativeButton("Закрыть", null)
+                .setPositiveButton("Исходники") { _, _ ->
+                    startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/Romeo13card-sys/Luma-Music")))
+                }.show()
+        })
     }
 
     private fun checkUpdates(manual: Boolean = true) {
@@ -1274,6 +1330,8 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        lyricsDialog?.dismiss()
+        lyricsDialog = null
         destroyed = true
         executor.shutdownNow()
         super.onDestroy()

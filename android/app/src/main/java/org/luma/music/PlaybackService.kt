@@ -96,7 +96,7 @@ class PlaybackService : Service() {
     private fun streamOptions(song: Song): String {
         val network = getSystemService(android.net.ConnectivityManager::class.java)
         val metered = network.isActiveNetworkMetered
-        val preferences = getSharedPreferences("player_settings", MODE_PRIVATE)
+        val preferences = SettingsStore.get(this)
         check(!preferences.getBoolean("unmetered_only", false) || !metered) {
             "Аудио в сети с лимитом отключено в настройках"
         }
@@ -193,7 +193,7 @@ class PlaybackService : Service() {
     override fun onCreate() {
         super.onCreate()
         instance = this
-        val preferences = getSharedPreferences("player_settings", MODE_PRIVATE)
+        val preferences = SettingsStore.get(this)
         shuffle = preferences.getBoolean("shuffle", false)
         repeat = preferences.getBoolean("repeat", false)
         main.postDelayed(checkpoint, 30000)
@@ -451,15 +451,12 @@ class PlaybackService : Service() {
             if (index + 1 >= queue.size) refillWave(current, false) else load(index + 1)
             return
         }
-        val available = queue.indices.filter { queue[it].available }
-        if (available.isEmpty()) return
-        val destination =
-            if (shuffle && step > 0)
-                (available.filter { it != index }.ifEmpty { available }).random()
-            else
-                (1..queue.size)
-                    .map { Math.floorMod(index + step * it, queue.size) }
-                    .first { queue[it].available }
+        val destination = (NativeCore.call(
+            "queue_next",
+            JSONObject().put("available", org.json.JSONArray(queue.map { it.available }))
+                .put("index", index).put("step", step).put("shuffle", shuffle)
+                .put("entropy", kotlin.random.Random.nextLong(Long.MAX_VALUE)).toString()
+        ) as? Number)?.toInt() ?: return
         load(destination)
     }
 

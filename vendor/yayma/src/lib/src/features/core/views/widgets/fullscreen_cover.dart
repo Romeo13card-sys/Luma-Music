@@ -1,0 +1,82 @@
+import 'package:material_ui/material_ui.dart';
+
+import 'package:yayma/src/features/core/theme/app_tokens.dart';
+import 'package:yayma/src/features/core/views/widgets/rust_cached_image.dart';
+
+class FullscreenCoverDialog extends StatelessWidget {
+  final String imageUrl;
+  final String heroTag;
+
+  const FullscreenCoverDialog({
+    required this.imageUrl,
+    required this.heroTag,
+    super.key,
+  });
+
+  static Future<void> show(
+    BuildContext context,
+    String imageUrl, {
+    String? heroTag,
+  }) {
+    // Fullscreen always wants the largest preset the backend offers.
+    final highResUrl = resolveCoverUrl(imageUrl, coverSizePicks.last);
+
+    return Navigator.of(context).push(
+      PageRouteBuilder(
+        opaque: false,
+        barrierColor: Colors.black.withValues(alpha: 0.9),
+        barrierDismissible: true,
+        pageBuilder: (context, animation, secondaryAnimation) {
+          return FadeTransition(
+            opacity: animation,
+            child: FullscreenCoverDialog(
+              imageUrl: highResUrl,
+              heroTag: heroTag ?? imageUrl,
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Use original low-res cover as placeholder to prevent flickering when loading high-res version
+    final placeholder = RustCachedImage(
+      imageUrl: heroTag, // heroTag contains the original low-res url
+      fit: BoxFit.contain,
+    );
+
+    return GestureDetector(
+      onTap: () => Navigator.of(context).pop(),
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Stack(
+          children: [
+            Positioned.fill(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Center(
+                  child: Hero(
+                    tag: heroTag,
+                    child: AspectRatio(
+                      aspectRatio: 1,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(AppRadius.sm),
+                        child: RustCachedImage(
+                          imageUrl: imageUrl,
+                          placeholder: placeholder,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

@@ -1,0 +1,229 @@
+import 'dart:async';
+
+import 'package:material_ui/material_ui.dart';
+import 'package:signals_flutter/signals_flutter.dart';
+
+enum AppNotificationLevel { error, warning, success }
+
+class AppNotification {
+  final String message;
+  final AppNotificationLevel level;
+  final DateTime timestamp;
+
+  AppNotification({
+    required this.message,
+    this.level = AppNotificationLevel.error,
+  }) : timestamp = DateTime.now();
+
+  bool get isError => level == AppNotificationLevel.error;
+}
+
+final FlutterSignal<AppNotification?> appNotificationSignal =
+    signal<AppNotification?>(null);
+
+void showAppError(String message) {
+  appNotificationSignal.value = AppNotification(message: message);
+}
+
+void showAppWarning(String message) {
+  appNotificationSignal.value = AppNotification(
+    message: message,
+    level: AppNotificationLevel.warning,
+  );
+}
+
+void showAppSuccess(String message) {
+  appNotificationSignal.value = AppNotification(
+    message: message,
+    level: AppNotificationLevel.success,
+  );
+}
+
+class GlobalNotificationListener extends StatefulWidget {
+  final Widget child;
+  const GlobalNotificationListener({required this.child, super.key});
+
+  @override
+  State<GlobalNotificationListener> createState() =>
+      _GlobalNotificationListenerState();
+}
+
+class _GlobalNotificationListenerState extends State<GlobalNotificationListener>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<Offset> _offsetAnimation;
+  late final EffectCleanup _notificationEffect;
+  AppNotification? _currentNotification;
+  Timer? _hideTimer;
+  int _showToken = 0;
+  bool _disposed = false;
+  DateTime? _lastShown;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 600),
+      vsync: this,
+    );
+    _offsetAnimation = Tween<Offset>(
+      begin: const Offset(0, -2),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutBack));
+
+    _notificationEffect = effect(() {
+      final notif = appNotificationSignal.value;
+      if (notif == null) return;
+      if (_lastShown != null && notif.timestamp.isBefore(_lastShown!)) return;
+
+      _lastShown = notif.timestamp;
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        unawaited(_showNotification(notif));
+      });
+    });
+  }
+
+  Future<void> _showNotification(AppNotification notif) async {
+    if (_disposed) return;
+    // Drop while one is visible/animating: notifications are transient,
+    // no backlog.
+    if (_controller.isAnimating || _currentNotification != null) return;
+
+    final token = ++_showToken;
+    if (!mounted || _disposed) return;
+    setState(() {
+      _currentNotification = notif;
+    });
+
+    if (!mounted || _disposed) return;
+    await _controller.forward();
+    if (!mounted || _disposed || token != _showToken) return;
+
+    _hideTimer?.cancel();
+    _hideTimer = Timer(const Duration(seconds: 4), () {
+      if (!mounted || _disposed || token != _showToken) return;
+      unawaited(_hide(token));
+    });
+  }
+
+  Future<void> _hide(int token) async {
+    if (!mounted || _disposed || token != _showToken) return;
+    await _controller.reverse();
+    if (!mounted || _disposed || token != _showToken) return;
+    setState(() {
+      _currentNotification = null;
+    });
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _showToken++;
+    _hideTimer?.cancel();
+    _hideTimer = null;
+    _notificationEffect();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _offsetAnimation,
+      builder: (context, child) {
+        return Stack(
+          alignment: Alignment.topCenter,
+          children: [
+            widget.child,
+            if (_currentNotification != null)
+              Positioned(
+                top: 40,
+                left: 0,
+                right: 0,
+                child: SlideTransition(
+                  position: _offsetAnimation,
+                  child: Center(
+                    child: Material(
+                      color: Colors.transparent,
+                      child: Builder(
+                        builder: (context) {
+                          final cs = Theme.of(context).colorScheme;
+                          final (
+                            bgColor,
+                            fgColor,
+                          ) = switch (_currentNotification!.level) {
+                            AppNotificationLevel.error => (
+                              cs.error,
+                              cs.onError,
+                            ),
+                            AppNotificationLevel.warning => (
+                              cs.tertiary,
+                              cs.onTertiary,
+                            ),
+                            AppNotificationLevel.success => (
+                              cs.primary,
+                              cs.onPrimary,
+                            ),
+                          };
+                          return Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 12,
+                            ),
+                            decoration: BoxDecoration(
+                              color: bgColor,
+                              borderRadius: BorderRadius.circular(100),
+                              border: Border.all(
+                                color: cs.onSurface.withValues(alpha: 0.1),
+                              ),
+                              boxShadow: const [
+                                BoxShadow(
+                                  color: Colors.black26,
+                                  blurRadius: 20,
+                                  offset: Offset(0, 10),
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  switch (_currentNotification!.level) {
+                                    AppNotificationLevel.error =>
+                                      Icons.error_outline_rounded,
+                                    AppNotificationLevel.warning =>
+                                      Icons.warning_amber_rounded,
+                                    AppNotificationLevel.success =>
+                                      Icons.check_circle_outline_rounded,
+                                  },
+                                  color: fgColor,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 12),
+                                Flexible(
+                                  child: Text(
+                                    _currentNotification!.message,
+                                    style: TextStyle(
+                                      color: fgColor,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}

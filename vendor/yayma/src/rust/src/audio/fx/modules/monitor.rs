@@ -1,0 +1,25 @@
+use std::sync::Arc;
+
+use crate::audio::{fx::Effect, monitor::Monitor};
+
+pub struct MonitorEffect {
+    inner: Arc<Monitor>,
+}
+
+impl MonitorEffect {
+    pub fn new(monitor: Arc<Monitor>, sample_rate: f32) -> Self {
+        monitor.configure(sample_rate);
+        Self { inner: monitor }
+    }
+}
+
+impl Effect for MonitorEffect {
+    #[inline]
+    fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
+        self.inner.process_block(left, right);
+    }
+
+    fn reset(&mut self) {
+        self.inner.reset_position();
+    }
+}

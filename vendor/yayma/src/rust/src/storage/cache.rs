@@ -1,0 +1,424 @@
+use crate::db::AppDatabase;
+use directories::ProjectDirs;
+use foldhash::HashMap;
+use foldhash::HashMapExt;
+use foldhash::fast::FixedState;
+use parking_lot::Mutex as SyncMutex;
+use std::hash::{BuildHasher, Hasher};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::OnceLock;
+use tokio::fs;
+use tokio::sync::Mutex;
+use tokio::sync::broadcast;
+
+pub struct ActiveDownloads {
+    pub map: SyncMutex<HashMap<String, broadcast::Sender<Result<PathBuf, String>>>>,
+}
+
+pub static ACTIVE_DOWNLOADS: OnceLock<ActiveDownloads> = OnceLock::new();
+
+fn get_active_downloads() -> &'static ActiveDownloads {
+    ACTIVE_DOWNLOADS.get_or_init(|| ActiveDownloads {
+        map: SyncMutex::new(HashMap::new()),
+    })
+}
+
+pub struct HttpCache {
+    cache_dir: PathBuf,
+    client: reqwest::Client,
+    db: Arc<Mutex<AppDatabase>>,
+}
+
+impl HttpCache {
+    pub fn new(db: Arc<Mutex<AppDatabase>>, base_path: Option<PathBuf>) -> Self {
+        let cache_dir = if let Some(path) = base_path {
+            path.join("http_cache")
+        } else if let Some(proj_dirs) = ProjectDirs::from("com", "yamusic", "yamusic") {
+            proj_dirs.cache_dir().join("http_cache")
+        } else {
+            std::env::current_dir()
+                .unwrap_or_default()
+                .join("cache")
+                .join("http_cache")
+        };
+
+        let client = crate::util::tls::builder()
+            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 YandexMusic/5.82.0")
+            .pool_max_idle_per_host(5)
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+
+        Self {
+            cache_dir,
+            client,
+            db,
+        }
+    }
+
+    pub fn get_cache_dir(&self) -> &Path {
+        &self.cache_dir
+    }
+
+    fn hash_url(&self, url: &str) -> String {
+        let mut s = FixedState::with_seed(0).build_hasher();
+        s.write(url.as_bytes());
+        format!("{:x}", s.finish())
+    }
+
+    pub async fn get_file(
+        &self,
+        url: &str,
+    ) -> Result<PathBuf, Box<dyn std::error::Error + Send + Sync>> {
+        // 1. Check DB for existing cache
+        {
+            let path_opt = {
+                let mut db = self.db.lock().await;
+                db.get_cache_metadata(url).await.ok().flatten()
+            };
+
+            if let Some((path, _, is_expired)) = path_opt {
+                let path = PathBuf::from(&path);
+                if path.exists() && !is_expired {
+                    return Ok(path);
+                }
+                // Expired or missing file — will re-download below
+            }
+        }
+
+        // 2. Deduplication: check if already downloading
+        let (tx, mut rx) = {
+            let mut active = get_active_downloads().map.lock();
+            if let Some(tx) = active.get(url) {
+                (None, tx.subscribe())
+            } else {
+                let (tx, _rx) = broadcast::channel::<Result<PathBuf, String>>(16);
+                active.insert(url.to_string(), tx.clone());
+                let rx = tx.subscribe();
+                (Some(tx), rx)
+            }
+        };
+
+        if let Some(tx) = tx {
+            // We are the downloader. Guard the map entry so a cancelled
+            // download never leaves a dead channel behind.
+            let url_key = url.to_string();
+            let result = tokio::time::timeout(
+                std::time::Duration::from_secs(60),
+                self.perform_download(url),
+            )
+            .await
+            .map_err(|_| {
+                Box::<dyn std::error::Error + Send + Sync>::from("http cache download timed out")
+            })
+            .and_then(|r| r);
+
+            // Remove before send: a waiter subscribing between send and remove
+            // would wait on an already-fired broadcast channel forever.
+            get_active_downloads().map.lock().remove(&url_key);
+
+            // Broadcast the result to all waiters
+            let broadcast_result = result
+                .as_ref()
+                .map(|p| p.clone())
+                .map_err(|e| e.to_string());
+
+            let _ = tx.send(broadcast_result);
+
+            result
+        } else {
+            // Wait for existing download
+            match rx.recv().await? {
+                Ok(path) => Ok(path),
+                Err(e) => Err(e.into()),
+            }
+        }
+    }
+
+    async fn perform_download(
+        &self,
+        url: &str,
+    ) -> Result<PathBuf, Box<dyn std::error::Error + Send + Sync>> {
+        let filename = self.hash_url(url);
+
+        let path_only = url.split('?').next().unwrap_or(url);
+        let last_segment = path_only.rsplit('/').next().unwrap_or("");
+        let extension = if last_segment.contains('.') {
+            last_segment.rsplit('.').next().unwrap_or("bin")
+        } else {
+            "bin"
+        };
+
+        let file_path = self.cache_dir.join(format!("{}.{}", filename, extension));
+
+        fs::create_dir_all(&self.cache_dir).await?;
+
+        let response = self
+            .client
+            .get(url)
+            .header("Referer", "https://music.yandex.ru/")
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let err_msg = format!("HTTP error {}: for URL {}", response.status(), url);
+            return Err(err_msg.into());
+        }
+
+        let etag = response
+            .headers()
+            .get("etag")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string());
+
+        let mut size = response.content_length().unwrap_or(0);
+
+        // Stream the response to file to avoid loading everything into RAM.
+        // A chunk error must fail the download: treating it as EOF would cache
+        // a truncated file as valid forever.
+        let mut file = fs::File::create(&file_path).await?;
+        let mut response = response;
+        while let Some(chunk) = tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            response.chunk(),
+        )
+        .await
+        .map_err(|_| {
+            Box::<dyn std::error::Error + Send + Sync>::from("http cache chunk timed out")
+        })?
+        .map_err(|e| {
+            Box::<dyn std::error::Error + Send + Sync>::from(format!("http cache chunk failed: {e}"))
+        })? {
+            tokio::io::AsyncWriteExt::write_all(&mut file, &chunk).await?;
+        }
+        tokio::io::AsyncWriteExt::flush(&mut file).await?;
+
+        if size == 0
+            && let Ok(metadata) = fs::metadata(&file_path).await
+        {
+            size = metadata.len();
+        }
+
+        // Update DB
+        {
+            let path_str = file_path.to_string_lossy().into_owned();
+            let mut db = self.db.lock().await;
+            let _ = db
+                .update_cache_metadata(url, &path_str, size, etag.as_deref())
+                .await;
+        }
+
+        Ok(file_path)
+    }
+
+    pub async fn prune(
+        &self,
+        max_size_bytes: i64,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let to_delete = {
+            let mut db = self.db.lock().await;
+            db.prune_cache(max_size_bytes).await?
+        };
+
+        for path_str in to_delete {
+            let _ = fs::remove_file(path_str).await;
+        }
+
+        Ok(())
+    }
+
+    pub async fn get_size(&self) -> Result<i64, Box<dyn std::error::Error + Send + Sync>> {
+        if !self.cache_dir.exists() {
+            return Ok(0);
+        }
+
+        let mut total_size = 0;
+        let mut dir = fs::read_dir(&self.cache_dir).await?;
+        while let Some(entry) = dir.next_entry().await? {
+            if let Ok(metadata) = entry.metadata().await
+                && metadata.is_file()
+            {
+                total_size += metadata.len() as i64;
+            }
+        }
+        Ok(total_size)
+    }
+
+    pub async fn clear(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        if self.cache_dir.exists() {
+            fs::remove_dir_all(&self.cache_dir).await?;
+        }
+        let mut db = self.db.lock().await;
+        let _ = db.clear_cache_metadata().await;
+        Ok(())
+    }
+
+    /// Prune all expired entries from cache.
+    pub async fn prune_expired(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let to_delete = {
+            let mut db = self.db.lock().await;
+            db.prune_expired().await?
+        };
+
+        for path_str in to_delete {
+            let _ = fs::remove_file(path_str).await;
+        }
+
+        Ok(())
+    }
+}
+
+pub struct TrackCache {
+    cache_dir: PathBuf,
+}
+
+/// Single source of truth for offline track extensions.
+/// `m4a` files carry AAC codec — mapping lives here only.
+pub const SUPPORTED_TRACK_EXTS: &[(&str, &str)] =
+    &[("flac", "flac"), ("m4a", "aac"), ("mp3", "mp3")];
+
+impl TrackCache {
+    pub fn new(base_path: Option<PathBuf>) -> Self {
+        let cache_dir = if let Some(path) = base_path {
+            path.join("offline_tracks")
+        } else if let Some(proj_dirs) = ProjectDirs::from("com", "yamusic", "yamusic") {
+            proj_dirs.data_dir().join("offline_tracks")
+        } else {
+            std::env::current_dir()
+                .unwrap_or_default()
+                .join("data")
+                .join("offline_tracks")
+        };
+
+        Self { cache_dir }
+    }
+
+    pub fn get_cache_dir(&self) -> &Path {
+        &self.cache_dir
+    }
+
+    fn hash_url(&self, url: &str) -> String {
+        let mut s = FixedState::with_seed(0).build_hasher();
+        s.write(url.as_bytes());
+        format!("{:x}", s.finish())
+    }
+
+    pub async fn save_cover(&self, url: &str, source_path: &Path) -> Result<(), std::io::Error> {
+        let covers_dir = self.cache_dir.join("covers");
+        fs::create_dir_all(&covers_dir).await?;
+        let filename = self.hash_url(url);
+        let dest_path = covers_dir.join(format!("{}.jpg", filename));
+        if !dest_path.exists() {
+            fs::copy(source_path, dest_path).await?;
+        }
+        Ok(())
+    }
+
+    pub async fn get_cover(&self, url: &str) -> Option<PathBuf> {
+        let covers_dir = self.cache_dir.join("covers");
+        let filename = self.hash_url(url);
+        let dest_path = covers_dir.join(format!("{}.jpg", filename));
+        if dest_path.exists() {
+            Some(dest_path)
+        } else {
+            None
+        }
+    }
+
+    pub async fn get_track_file(&self, track_id: &str) -> Option<(PathBuf, String)> {
+        // Try to find the file with any supported extension.
+        // Skips stale `.part` files and empty/corrupt downloads.
+        for (ext, codec) in SUPPORTED_TRACK_EXTS {
+            let path = self.cache_dir.join(format!("{}.{}", track_id, ext));
+            if path.exists()
+                && let Ok(meta) = std::fs::metadata(&path)
+                && meta.len() > 0
+            {
+                return Some((path, codec.to_string()));
+            }
+        }
+        None
+    }
+
+    pub async fn init(&self) -> Result<(), std::io::Error> {
+        fs::create_dir_all(&self.cache_dir).await
+    }
+
+    pub async fn get_all_track_ids(&self) -> Vec<String> {
+        let mut ids = Vec::new();
+        if !self.cache_dir.exists() {
+            return ids;
+        }
+
+        if let Ok(mut entries) = fs::read_dir(&self.cache_dir).await {
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                if let Ok(metadata) = entry.metadata().await
+                    && metadata.is_file()
+                {
+                    let path = entry.path();
+                    if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                        ids.push(stem.to_string());
+                    }
+                }
+            }
+        }
+        ids
+    }
+
+    pub async fn get_size(&self) -> Result<i64, std::io::Error> {
+        let mut size = 0;
+        if self.cache_dir.exists() {
+            // Include tracks
+            let mut entries = fs::read_dir(&self.cache_dir).await?;
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                if let Ok(metadata) = entry.metadata().await
+                    && metadata.is_file()
+                {
+                    size += metadata.len() as i64;
+                }
+            }
+            // Include covers
+            let covers_dir = self.cache_dir.join("covers");
+            if covers_dir.exists() {
+                let mut covers = fs::read_dir(&covers_dir).await?;
+                while let Ok(Some(entry)) = covers.next_entry().await {
+                    if let Ok(metadata) = entry.metadata().await
+                        && metadata.is_file()
+                    {
+                        size += metadata.len() as i64;
+                    }
+                }
+            }
+        }
+        Ok(size)
+    }
+
+    pub async fn clear(&self) -> Result<(), std::io::Error> {
+        if self.cache_dir.exists() {
+            let _ = fs::remove_dir_all(&self.cache_dir).await;
+            let _ = fs::create_dir_all(&self.cache_dir).await;
+        }
+        Ok(())
+    }
+
+    pub async fn delete_track(&self, track_id: &str) -> Result<(), std::io::Error> {
+        // Delete the track file (final + stale partials)
+        for (ext, _) in SUPPORTED_TRACK_EXTS {
+            let path = self.cache_dir.join(format!("{}.{}", track_id, ext));
+            if path.exists() {
+                let _ = fs::remove_file(path).await;
+            }
+            let part = self.cache_dir.join(format!("{}.{}.part", track_id, ext));
+            if part.exists() {
+                let _ = fs::remove_file(part).await;
+            }
+        }
+        // Legacy `.aac` files never matched get_track_file — clean them too.
+        let legacy = self.cache_dir.join(format!("{}.aac", track_id));
+        if legacy.exists() {
+            let _ = fs::remove_file(legacy).await;
+        }
+        Ok(())
+    }
+}

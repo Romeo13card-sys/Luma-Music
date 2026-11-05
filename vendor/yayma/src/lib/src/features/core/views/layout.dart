@@ -1,0 +1,605 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:m3e_core/m3e_core.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:signals_flutter/signals_flutter.dart';
+import 'package:window_manager/window_manager.dart';
+import 'package:yayma/src/features/album/views/album_view.dart';
+import 'package:yayma/src/features/artist/views/artist_view.dart';
+import 'package:yayma/src/features/auth/views/yandex_id_view.dart';
+import 'package:yayma/src/features/core/providers/navigation_provider.dart';
+import 'package:yayma/src/features/core/views/layout/background.dart';
+import 'package:yayma/src/features/core/views/layout/mobile_full_player.dart';
+import 'package:yayma/src/features/core/views/layout/navigation_bar.dart';
+import 'package:yayma/src/features/core/views/layout/player_bar.dart';
+import 'package:yayma/src/features/core/views/widgets/tab_visibility.dart';
+import 'package:yayma/src/features/home/views/home_view.dart';
+import 'package:yayma/src/features/library/views/library_view.dart';
+import 'package:yayma/src/features/library/views/playlist_view.dart';
+import 'package:yayma/src/features/playback/providers/playback_provider.dart';
+import 'package:yayma/src/features/search/views/search_view.dart';
+import 'package:yayma/src/features/settings/views/settings_view.dart';
+
+class AppLayout extends StatefulWidget {
+  const AppLayout({super.key});
+
+  @override
+  State<AppLayout> createState() => _AppLayoutState();
+}
+
+class _AppLayoutState extends State<AppLayout> {
+  final PageStorageBucket _bucket = PageStorageBucket();
+
+  @override
+  Widget build(BuildContext context) {
+    return SignalBuilder(
+      builder: (context) {
+        currentRootSignal();
+        final navState = currentNavStateSignal();
+        final isHome = navState.section == AppSection.home;
+
+        final isDesktop =
+            Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+        final isCustomTitlebar = isDesktop && customTitlebarSignal.value;
+
+        final screenWidth = MediaQuery.sizeOf(context).width;
+        // Use the touch layout for all Android form factors, including
+        // tablets. A large Android screen must not select the desktop navbar.
+        final isNarrow = Platform.isAndroid || screenWidth < 600;
+
+        return PopScope(
+          canPop: !canGoBackSignal.value,
+          onPopInvokedWithResult: (didPop, result) {
+            if (didPop) return;
+            if (canGoBackSignal.value) {
+              goBack();
+            }
+          },
+          child: Scaffold(
+            backgroundColor: Colors.transparent,
+            resizeToAvoidBottomInset: false,
+            body: PageStorage(
+              bucket: _bucket,
+              child: Stack(
+                children: [
+                  ..._buildBackground(),
+                  _buildDimOverlay(isHome),
+                  Positioned.fill(
+                    child: SafeArea(
+                      top: !isCustomTitlebar,
+                      bottom: false,
+                      child: Stack(
+                        children: [
+                          _buildContentLayer(
+                            isHome: isHome,
+                            isNarrow: isNarrow,
+                            isCustomTitlebar: isCustomTitlebar,
+                          ),
+                          _buildNavigation(),
+                          // Back button, and on desktop a refresh button
+                          // because pull-to-refresh is not reachable with a
+                          // mouse.
+                          _FloatingBackButton(),
+                          const _FloatingRefreshButton(),
+                          if (isCustomTitlebar)
+                            const Positioned(
+                              top: 0,
+                              left: 0,
+                              right: 0,
+                              child: SizedBox(
+                                height: 32,
+                                child: WindowCaption(
+                                  brightness: Brightness.dark,
+                                  backgroundColor: Colors.transparent,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  _buildFullPlayerOverlay(),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Material gradient on Android, blurred cover elsewhere, plus the shader.
+  List<Widget> _buildBackground() {
+    return [
+      Positioned.fill(
+        child: Platform.isAndroid
+            ? const MaterialGradientBackground()
+            : const BlurredCoverBackground(),
+      ),
+      if (!Platform.isAndroid) const Positioned.fill(child: WaveBackground()),
+    ];
+  }
+
+  /// Dimming when leaving home or showing lyrics — held off while lyrics are
+  /// still loading or came back empty, so nothing is shown over a darkened
+  /// background in either case.
+  Widget _buildDimOverlay(bool isHome) {
+    return Positioned.fill(
+      child: SignalBuilder(
+        builder: (context) {
+          final showLyrics = showLyricsSignal.value;
+          final hideOverlay = hideLyricsOverlaySignal.value;
+          final suppressDim = lyricsSuppressDimSignal.value;
+          final dimForLyrics = showLyrics && !hideOverlay && !suppressDim;
+          final isDimmed = Platform.isAndroid
+              ? dimForLyrics
+              : !isHome || dimForLyrics;
+
+          return AnimatedContainer(
+            duration: const Duration(milliseconds: 500),
+            color: isDimmed
+                ? (isHome
+                      ? Colors.black54
+                      : Colors.black.withValues(alpha: 0.6))
+                : Colors.transparent,
+          );
+        },
+      ),
+    );
+  }
+
+  /// Tabs plus the floating player bar above them.
+  Widget _buildContentLayer({
+    required bool isHome,
+    required bool isNarrow,
+    required bool isCustomTitlebar,
+  }) {
+    // Edge-to-edge: Flutter draws behind the Android system navigation bar, so
+    // floating UI must sit above it manually. viewPadding (not padding) stays
+    // stable when the keyboard opens.
+    final systemBottom = MediaQuery.viewPaddingOf(context).bottom;
+
+    return Positioned.fill(
+      child: Padding(
+        padding: EdgeInsets.only(top: isCustomTitlebar ? 32.0 : 0),
+        child: Stack(
+          children: [
+            // Independent stacks per tab, so each keeps its own scroll state.
+            Positioned.fill(
+              child: Stack(
+                children: rootSections
+                    .map((root) => _RootBucket(root: root))
+                    .toList(),
+              ),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              // Floating player sits above the floating navbar on narrow
+              // layouts, plus the Android system navigation inset.
+              bottom:
+                  ((isNarrow && !(Platform.isAndroid && showLyricsSignal.value))
+                      ? 80.0
+                      : 0.0) +
+                  systemBottom,
+              // While the full player covers the app, the bar keeps painting
+              // behind it (its own blur pass included). Unmount it on Android
+              // instead.
+              child: ValueListenableBuilder<double>(
+                valueListenable: mobileFullPlayerProgress,
+                builder: (context, progress, child) {
+                  if (Platform.isAndroid && progress > 0.999) {
+                    return const SizedBox.shrink();
+                  }
+                  return child!;
+                },
+                child: _AnimatedPlayerBar(isHome: isHome),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNavigation() {
+    return SignalBuilder(
+      builder: (context) {
+        final showLyrics = showLyricsSignal.value;
+        final isAndroid = Platform.isAndroid;
+        if (isAndroid && showLyrics) {
+          return const SizedBox.shrink();
+        }
+        return Align(
+          alignment: MediaQuery.sizeOf(context).width < 600
+              ? Alignment.bottomCenter
+              : Alignment.centerLeft,
+          child: ValueListenableBuilder<double>(
+            valueListenable: mobileFullPlayerProgress,
+            builder: (context, progress, child) {
+              if (Platform.isAndroid && progress > 0.999) {
+                return const SizedBox.shrink();
+              }
+              final hiddenAt = progress.clamp(0.0, 1.0);
+              // Fully faded: keep it out of the tree instead of painting a
+              // transparent copy.
+              if (hiddenAt >= 1) {
+                return const SizedBox.shrink();
+              }
+              return IgnorePointer(
+                ignoring: hiddenAt > 0,
+                child: Opacity(
+                  opacity: 1 - hiddenAt,
+                  child: Transform.translate(
+                    offset: Offset(0, 120 * hiddenAt),
+                    child: child,
+                  ),
+                ),
+              );
+            },
+            child: const FloatingNavBar(),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildFullPlayerOverlay() {
+    return Positioned.fill(
+      child: SignalBuilder(
+        builder: (context) {
+          if (!mobileFullPlayerOpenSignal.value) {
+            return const SizedBox.shrink();
+          }
+          final origin = mobileFullPlayerOrigin.value;
+          if (origin == null) return const SizedBox.shrink();
+          return RepaintBoundary(
+            child: MobileFullPlayer(
+              plateRect: origin.plateRect,
+              coverRect: origin.coverRect,
+              controller: mobileFullPlayerController,
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _RootBucket extends StatelessWidget {
+  final AppSection root;
+
+  const _RootBucket({required this.root});
+
+  @override
+  Widget build(BuildContext context) {
+    return SignalBuilder(
+      builder: (context) {
+        final activeRoot = currentRootSignal.value;
+        final stack = rootStacksSignal.value[root] ?? [NavState(root)];
+        final isVisible = activeRoot == root;
+
+        if (root == AppSection.account && !isVisible) {
+          return const SizedBox.shrink();
+        }
+
+        return TabVisibility(
+          isVisible: isVisible,
+          child: Offstage(
+            offstage: !isVisible,
+            child: TickerMode(
+              enabled: isVisible,
+              child: Stack(children: _buildWindowStack(stack)),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  List<Widget> _buildWindowStack(List<NavState> stack) {
+    return stack.asMap().entries.map((entry) {
+      final index = entry.key;
+      final state = entry.value;
+      final isLast = index == stack.length - 1;
+      final isHome = state.section == AppSection.home;
+
+      // Keep only the current and previous screens in the tab stack
+      final isDeeplyHidden = index < stack.length - 2;
+
+      return Offstage(
+        key: ValueKey('win_${state.section}_${state.id}_$index'),
+        offstage: isDeeplyHidden,
+        child: TickerMode(
+          enabled: !isDeeplyHidden,
+          child: AnimatedOpacity(
+            duration: const Duration(milliseconds: 500),
+            opacity: isLast ? 1.0 : 0.0,
+            curve: Curves.easeInOutCubic,
+            child: AnimatedSlide(
+              duration: const Duration(milliseconds: 500),
+              offset: isLast
+                  ? Offset.zero
+                  : (isHome ? const Offset(0, -0.05) : const Offset(0.03, 0)),
+              curve: Curves.easeOutCubic,
+              child: AnimatedScale(
+                duration: const Duration(milliseconds: 500),
+                scale: isLast ? 1.0 : 0.98,
+                curve: Curves.easeOutCubic,
+                child: IgnorePointer(
+                  ignoring: !isLast,
+                  child: _WindowContent(state: state, index: index),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }).toList();
+  }
+}
+
+class _AnimatedPlayerBar extends StatelessWidget {
+  final bool isHome;
+
+  const _AnimatedPlayerBar({required this.isHome});
+
+  @override
+  Widget build(BuildContext context) {
+    return SignalBuilder(
+      builder: (context) {
+        final showLyrics = showLyricsSignal.value;
+        final shouldShowBar = !isHome || showLyrics;
+
+        return AnimatedSwitcher(
+          duration: const Duration(milliseconds: 600),
+          reverseDuration: const Duration(milliseconds: 500),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          transitionBuilder: (child, animation) {
+            final offsetAnimation = Tween<Offset>(
+              begin: const Offset(0, 1),
+              end: Offset.zero,
+            ).animate(animation);
+            final opacityAnimation = Platform.isAndroid
+                ? Tween<double>(begin: 0, end: 1).animate(
+                    CurvedAnimation(
+                      parent: animation,
+                      curve: const Interval(0, 0.6, curve: Curves.easeIn),
+                    ),
+                  )
+                : animation;
+            return SlideTransition(
+              position: offsetAnimation,
+              child: FadeTransition(opacity: opacityAnimation, child: child),
+            );
+          },
+          child: shouldShowBar
+              ? const PlayerBar(key: ValueKey('player_bar_visible'))
+              : const SizedBox.shrink(key: ValueKey('player_bar_hidden')),
+        );
+      },
+    );
+  }
+}
+
+class _WindowContent extends StatelessWidget {
+  final NavState state;
+  final int index;
+
+  const _WindowContent({required this.state, required this.index});
+
+  @override
+  Widget build(BuildContext context) {
+    return SignalBuilder(
+      builder: (context) {
+        final isHome = state.section == AppSection.home;
+        final showLyrics = showLyricsSignal.value;
+        final screenWidth = MediaQuery.sizeOf(context).width;
+        final isNarrow = Platform.isAndroid || screenWidth < 600;
+
+        // Bottom padding calculation to avoid overlap with PlayerBar and NavBar
+        // We only apply it to the browser (yandexId) and settings (account) to prevent them from being covered,
+        // while other views scroll under the player for the blur effect.
+        final hasPlayerBar = !isHome || showLyrics;
+
+        double bottomPadding = 0;
+        if (state.section == AppSection.yandexId ||
+            state.section == AppSection.account) {
+          if (isNarrow) {
+            bottomPadding = hasPlayerBar ? 180 : 96;
+          } else {
+            bottomPadding = hasPlayerBar ? 116 : 0;
+          }
+          // Keep webview/settings content above the Android system buttons.
+          bottomPadding += MediaQuery.viewPaddingOf(context).bottom;
+        } else if (isHome && screenWidth < 600) {
+          // Home is centered non-scrollable content: its bottom row
+          // (wave settings, repeat, quality) must stay above the floating
+          // navbar. Navbar top sits at 64 (height) + 12 (gap) +
+          // systemBottom above the screen bottom, plus a small gap.
+          final navbarVisible = !(Platform.isAndroid && showLyrics);
+          if (navbarVisible) {
+            bottomPadding = 88 + MediaQuery.viewPaddingOf(context).bottom;
+          }
+        }
+
+        final key = state.section == AppSection.account
+            ? ValueKey('account_$index')
+            : PageStorageKey('scroll_${state.section}_${state.id}_$index');
+
+        final child = KeyedSubtree(
+          key: key,
+          child: _mapSectionToWidget(context, state),
+        );
+
+        return Padding(
+          padding: EdgeInsets.only(
+            left: (isHome || isNarrow) ? 0 : 96,
+            bottom: bottomPadding,
+          ),
+          child: child,
+        );
+      },
+    );
+  }
+
+  Widget _mapSectionToWidget(BuildContext context, NavState state) {
+    switch (state.section) {
+      case AppSection.home:
+        return const HomeView();
+      case AppSection.search:
+        return const SearchView();
+      case AppSection.liked:
+      case AppSection.playlists:
+        return const LibraryView();
+      case AppSection.album:
+        return AlbumView(albumId: state.id);
+      case AppSection.artist:
+        return ArtistView(artistId: state.id);
+      case AppSection.playlist:
+        final parts = state.id?.split(':') ?? [];
+        return PlaylistView(
+          uid: parts.isNotEmpty ? parts[0] : null,
+          kind: parts.length > 1 ? parts[1] : null,
+        );
+      case AppSection.wave:
+        return Center(
+          child: Text(
+            'Волна',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        );
+      case AppSection.account:
+        return const SettingsView();
+      case AppSection.yandexId:
+        return const YandexIdView();
+    }
+  }
+}
+
+class _FloatingBackButton extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return SignalBuilder(
+      builder: (context) {
+        if (!canGoBackSignal.value) return const SizedBox.shrink();
+
+        return Positioned(
+          top: 60,
+          left: 24,
+          child: IconButton(
+            onPressed: goBack,
+            style: IconButton.styleFrom(
+              backgroundColor: Color.lerp(
+                Theme.of(context).colorScheme.surfaceContainerHighest,
+                Colors.black,
+                0.4,
+              ),
+              hoverColor: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.1),
+              padding: const EdgeInsets.all(12),
+              side: BorderSide(
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.1),
+              ),
+            ),
+            icon: Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              size: 24,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _FloatingRefreshButton extends StatefulWidget {
+  const _FloatingRefreshButton();
+
+  @override
+  State<_FloatingRefreshButton> createState() => _FloatingRefreshButtonState();
+}
+
+class _FloatingRefreshButtonState extends State<_FloatingRefreshButton> {
+  static const Set<AppSection> _refreshable = {
+    AppSection.liked,
+    AppSection.playlists,
+    AppSection.album,
+    AppSection.artist,
+    AppSection.playlist,
+    AppSection.search,
+  };
+
+  bool _spinning = false;
+
+  Future<void> _onRefresh() async {
+    if (_spinning) return;
+    setState(() => _spinning = true);
+    try {
+      requestGlobalRefresh();
+      // Minimum spinner time: the views themselves show
+      // their own loading indicators.
+      await Future<void>.delayed(const Duration(milliseconds: 1000));
+    } finally {
+      if (mounted) setState(() => _spinning = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Mobile has pull-to-refresh, so the button is not needed there.
+    if (Platform.isAndroid) return const SizedBox.shrink();
+    return SignalBuilder(
+      builder: (context) {
+        if (!_refreshable.contains(currentNavStateSignal.value.section)) {
+          return const SizedBox.shrink();
+        }
+        // Without the back button take its place, otherwise sit below it.
+        final top = canGoBackSignal.value ? 120.0 : 60.0;
+        return Positioned(
+          top: top,
+          left: 24,
+          child: IconButton(
+            onPressed: _spinning ? null : _onRefresh,
+            tooltip: 'Обновить',
+            style: IconButton.styleFrom(
+              backgroundColor: Color.lerp(
+                Theme.of(context).colorScheme.surfaceContainerHighest,
+                Colors.black,
+                0.4,
+              ),
+              hoverColor: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.1),
+              padding: const EdgeInsets.all(12),
+              side: BorderSide(
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.1),
+              ),
+            ),
+            icon: _spinning
+                ? M3ECircularWavyProgressIndicator(
+                    size: 24,
+                    strokeWidth: 2.5,
+                    color: Theme.of(context).colorScheme.primary,
+                  )
+                : Icon(
+                    Icons.refresh_rounded,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    size: 24,
+                  ),
+          ),
+        );
+      },
+    );
+  }
+}

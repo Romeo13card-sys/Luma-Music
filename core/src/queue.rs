@@ -100,3 +100,69 @@ mod tests {
         );
     }
 }
+
+/// Playback navigation policy. Android supplies availability and entropy; Rust chooses the index.
+pub fn next(value: &serde_json::Value) -> Result<serde_json::Value, String> {
+    use serde_json::{json, Value};
+    let items = value["available"]
+        .as_array()
+        .filter(|v| v.len() <= 2000)
+        .ok_or("Некорректная очередь")?;
+    if items.is_empty() {
+        return Ok(Value::Null);
+    }
+    let len = items.len() as i64;
+    let index = value["index"].as_i64().unwrap_or(0).clamp(-1, len - 1);
+    let step = match value["step"].as_i64() {
+        Some(-1) => -1,
+        Some(1) => 1,
+        _ => return Err("Некорректное направление".into()),
+    };
+    if value["shuffle"].as_bool() == Some(true) && step > 0 {
+        let mut available: Vec<_> = items
+            .iter()
+            .enumerate()
+            .filter(|(_, v)| v.as_bool() == Some(true))
+            .map(|(i, _)| i)
+            .collect();
+        if available.len() > 1 {
+            available.retain(|i| *i != index as usize);
+        }
+        if available.is_empty() {
+            return Ok(Value::Null);
+        }
+        return Ok(json!(
+            available[(value["entropy"].as_u64().unwrap_or(0) % available.len() as u64) as usize]
+        ));
+    }
+    Ok((1..=len)
+        .map(|n| (index + step * n).rem_euclid(len) as usize)
+        .find(|i| items[*i].as_bool() == Some(true))
+        .map(|i| json!(i))
+        .unwrap_or(Value::Null))
+}
+#[cfg(test)]
+mod navigation_tests {
+    use super::*;
+    use serde_json::json;
+    #[test]
+    fn skip_unavailable_wrap_and_shuffle_without_repeating_current() {
+        let mut v = json!({"available":[true,false,true],"index":0,"step":1});
+        assert_eq!(next(&v).unwrap(), 2);
+        v["step"] = json!(-1);
+        assert_eq!(next(&v).unwrap(), 2);
+        v["shuffle"] = json!(true);
+        v["step"] = json!(1);
+        for seed in 0..10 {
+            v["entropy"] = json!(seed);
+            assert_eq!(next(&v).unwrap(), 2);
+        }
+        v["shuffle"] = json!(false);
+        v["index"] = json!(-1);
+        assert_eq!(next(&v).unwrap(), 0);
+        v["available"] = json!([false, false, false]);
+        assert_eq!(next(&v).unwrap(), serde_json::Value::Null);
+        v["available"] = json!([]);
+        assert_eq!(next(&v).unwrap(), serde_json::Value::Null);
+    }
+}

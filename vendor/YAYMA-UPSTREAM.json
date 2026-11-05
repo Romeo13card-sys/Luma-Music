@@ -1,0 +1,8 @@
+{
+  "repository": "https://github.com/DarkPlayOff/YAYMA",
+  "commit": "7b502c0c1e143c7847efb69773abb504abd61b20",
+  "license": "GPL-3.0",
+  "snapshot": "yayma/",
+  "status": "Unmodified reference snapshot; not an active Android implementation. Adaptations live in core/.",
+  "files": 317
+}

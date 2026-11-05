@@ -1,0 +1,136 @@
+use crate::audio::util::{construct_sink, setup_device_config};
+use rodio::{MixerDeviceSink, Player, Source};
+use std::num::NonZero;
+use std::sync::Arc;
+
+struct EngineState {
+    _stream: MixerDeviceSink,
+    sink: Arc<Player>,
+    sample_rate: NonZero<u32>,
+    channels: NonZero<u16>,
+}
+
+pub struct PlaybackEngine {
+    state: parking_lot::RwLock<Option<EngineState>>,
+    tx: tokio::sync::mpsc::Sender<crate::audio::commands::AudioMessage>,
+}
+
+impl PlaybackEngine {
+    pub fn new(
+        tx: tokio::sync::mpsc::Sender<crate::audio::commands::AudioMessage>,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let engine = Self {
+            state: parking_lot::RwLock::new(None),
+            tx,
+        };
+        engine.recreate(None)?;
+        Ok(engine)
+    }
+
+    pub fn recreate(
+        &self,
+        device_name: Option<&str>,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let (device, stream_config, sample_format) = setup_device_config(device_name)?;
+        let sample_rate = NonZero::new(stream_config.sample_rate).ok_or_else(|| {
+            Box::<dyn std::error::Error + Send + Sync>::from("device reported a sample rate of 0")
+        })?;
+        let channels = NonZero::new(stream_config.channels).ok_or_else(|| {
+            Box::<dyn std::error::Error + Send + Sync>::from("device reported 0 channels")
+        })?;
+
+        let tx_clone = self.tx.clone();
+        let error_callback = move |err: rodio::cpal::StreamError| {
+            match err {
+                // cpal already recovers an xrun internally (prepare/try_recover), so
+                // recreating the stream here would only drop audio — and on VMs where
+                // underruns are constant, turn every glitch into an endless recreate loop.
+                rodio::cpal::StreamError::BufferUnderrun => {
+                    tracing::debug!("Audio stream underrun (recovered by cpal)");
+                }
+                err => {
+                    tracing::error!("Audio stream error: {:?}", err);
+                    let _ = tx_clone
+                        .try_send(crate::audio::commands::AudioMessage::RecreateStream);
+                }
+            }
+        };
+
+        let (stream, sink) = construct_sink(device, &stream_config, sample_format, error_callback)?;
+
+        *self.state.write() = Some(EngineState {
+            _stream: stream,
+            sink: Arc::new(sink),
+            sample_rate,
+            channels,
+        });
+        Ok(())
+    }
+
+    pub fn play_source<S>(&self, source: S)
+    where
+        S: Source<Item = f32> + Send + 'static,
+    {
+        if let Some(state) = self.state.read().as_ref() {
+            let resampled = rodio::source::UniformSourceIterator::new(
+                source,
+                state.channels,
+                state.sample_rate,
+            );
+            state.sink.append(resampled);
+        }
+    }
+
+    pub fn set_volume(&self, volume: f32) {
+        if let Some(state) = self.state.read().as_ref() {
+            state.sink.set_volume(volume);
+        }
+    }
+
+    pub fn pause(&self) {
+        if let Some(state) = self.state.read().as_ref() {
+            state.sink.pause();
+        }
+    }
+
+    pub fn play(&self) {
+        if let Some(state) = self.state.read().as_ref() {
+            state.sink.play();
+        }
+    }
+
+    pub fn stop(&self) {
+        if let Some(state) = self.state.read().as_ref() {
+            state.sink.stop();
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.state
+            .read()
+            .as_ref()
+            .map(|s| s.sink.empty())
+            .unwrap_or(true)
+    }
+
+    pub fn pos(&self) -> std::time::Duration {
+        self.state
+            .read()
+            .as_ref()
+            .map(|s| s.sink.get_pos())
+            .unwrap_or_default()
+    }
+
+    pub fn try_seek(
+        &self,
+        pos: std::time::Duration,
+    ) -> std::result::Result<(), rodio::source::SeekError> {
+        if let Some(state) = self.state.read().as_ref() {
+            state.sink.try_seek(pos)
+        } else {
+            Err(rodio::source::SeekError::NotSupported {
+                underlying_source: "Stream not initialized",
+            })
+        }
+    }
+}

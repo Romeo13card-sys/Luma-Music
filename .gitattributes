@@ -4,3 +4,6 @@ gradlew text eol=lf
 *.bat text eol=crlf
 *.jar binary
 *.wav binary
+
+# Preserve exact upstream bytes and classify this reference as vendor code.
+vendor/yayma/** -text linguist-vendored

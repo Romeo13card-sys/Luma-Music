@@ -1,0 +1,1175 @@
+import 'dart:async';
+import 'dart:math' as math;
+
+import 'package:m3e_core/m3e_core.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:signals_flutter/signals_flutter.dart';
+import 'package:yayma/src/features/core/services/app_error.dart';
+import 'package:yayma/src/features/core/theme/app_theme.dart';
+import 'package:yayma/src/features/core/theme/app_tokens.dart';
+import 'package:yayma/src/features/core/views/widgets/app_context_menu.dart';
+import 'package:yayma/src/features/core/views/widgets/app_cover.dart';
+import 'package:yayma/src/features/core/views/widgets/responsive.dart';
+import 'package:yayma/src/features/core/views/widgets/smooth_scroll.dart';
+import 'package:yayma/src/features/core/views/widgets/tab_visibility.dart';
+import 'package:yayma/src/features/core/views/widgets/track_elements.dart';
+import 'package:yayma/src/features/playback/providers/playback_provider.dart';
+import 'package:yayma/src/rust/api/models.dart';
+
+/// App-styled M3E modal sheet. Content owns its own padding: the M3E default
+/// 24dp inner padding would double the padding each sheet already sets.
+Future<T?> showAppBottomSheet<T>({
+  required BuildContext context,
+  required WidgetBuilder builder,
+  bool showDragHandle = false,
+  Color? backgroundColor,
+}) {
+  final cs = Theme.of(context).colorScheme;
+  return showM3EModalBottomSheet<T>(
+    context: context,
+    showDragHandle: showDragHandle,
+    backgroundColor:
+        backgroundColor ?? surfaceOverlay(cs.surfaceContainerHighest),
+    style: const M3EBottomSheetStyle(padding: EdgeInsets.zero),
+    builder: builder,
+  );
+}
+
+String formatDuration(int ms) {
+  final d = Duration(milliseconds: ms);
+  return "${d.inMinutes}:${(d.inSeconds % 60).toString().padLeft(2, '0')}";
+}
+
+/// Groups thousands with spaces: 1234567 -> "1 234 567".
+String formatCount(int value) {
+  final digits = value.toString();
+  final buffer = StringBuffer();
+  final offset = digits.length % 3;
+  if (offset > 0) buffer.write(digits.substring(0, offset));
+  for (var i = offset; i < digits.length; i += 3) {
+    if (buffer.isNotEmpty) buffer.write(' ');
+    buffer.write(digits.substring(i, i + 3));
+  }
+  return buffer.toString();
+}
+
+String _plural(int n, String one, String few, String many) {
+  final mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 14) return many;
+  switch (n % 10) {
+    case 1:
+      return one;
+    case 2:
+    case 3:
+    case 4:
+      return few;
+    default:
+      return many;
+  }
+}
+
+/// "1 234 567 monthly listeners", or null when there is no data.
+String? formatMonthlyListeners(int? value) {
+  if (value == null) return null;
+  return '${formatCount(value)} ${_plural(value, 'слушатель', 'слушателя', 'слушателей')} за месяц';
+}
+
+/// Compact subtitle for artist cards: monthly listeners, falling back to likes.
+String? formatArtistCardSubtitle({int? monthlyListeners, int? likesCount}) {
+  final monthly = formatMonthlyListeners(monthlyListeners);
+  if (monthly != null) return monthly;
+  if (likesCount != null) {
+    return '${formatCount(likesCount)} ${_plural(likesCount, 'слушатель', 'слушателя', 'слушателей')}';
+  }
+  return null;
+}
+
+class CommonLoadingWidget extends StatelessWidget {
+  const CommonLoadingWidget({super.key});
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: M3ECircularWavyProgressIndicator(
+        size: 56,
+        color: Theme.of(context).colorScheme.primary,
+      ),
+    );
+  }
+}
+
+/// Shown when a screen failed to load. [error] is logged as-is; the screen
+/// only gets [humanizeError] text, never an internal message.
+class CommonErrorWidget extends StatelessWidget {
+  final Object error;
+  const CommonErrorWidget({required this.error, super.key});
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Text(
+          humanizeError(error),
+          textAlign: TextAlign.center,
+          style: TextStyle(color: Theme.of(context).colorScheme.error),
+        ),
+      ),
+    );
+  }
+}
+
+/// Page-level title shown at the top of a root tab (Library, Search,
+/// Settings …). Single source of truth so every tab header renders at the
+/// same size.
+class CommonPageTitle extends StatelessWidget {
+  final String title;
+
+  const CommonPageTitle({required this.title, super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final isNarrow = context.isNarrow;
+
+    return Text(
+      title,
+      style: Theme.of(context).textTheme.displayMedium?.copyWith(
+        fontSize: isNarrow ? 24 : 48,
+        fontWeight: FontWeight.w900,
+        color: Theme.of(context).colorScheme.onSurface,
+        letterSpacing: -1.5,
+        height: 1.05,
+      ),
+    );
+  }
+}
+
+class CommonSectionTitle extends StatelessWidget {
+  final String title;
+  final EdgeInsets? padding;
+
+  const CommonSectionTitle({required this.title, super.key, this.padding});
+
+  @override
+  Widget build(BuildContext context) {
+    final isNarrow = context.isNarrow;
+    final onSurface = Theme.of(context).colorScheme.onSurface;
+
+    final effectivePadding =
+        padding ??
+        EdgeInsets.symmetric(
+          vertical: 24,
+          horizontal: context.horizontalPadding,
+        );
+
+    return Padding(
+      padding: effectivePadding,
+      child: Text(
+        title,
+        style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+          fontSize: isNarrow ? 22 : 28,
+          fontWeight: FontWeight.w800,
+          color: onSurface,
+          letterSpacing: -0.5,
+          height: 1.1,
+        ),
+      ),
+    );
+  }
+}
+
+class CommonDetailHeader extends StatelessWidget {
+  final String type;
+  final String title;
+  final List<TrackArtistDto>? artists;
+  final String? subtitle;
+  final String? secondarySubtitle;
+  final String? coverUrl;
+  final double coverSize;
+  final bool isCircle;
+  final List<Widget>? actions;
+  final Widget? titleTrailing;
+
+  const CommonDetailHeader({
+    required this.type,
+    required this.title,
+    super.key,
+    this.artists,
+    this.subtitle,
+    this.secondarySubtitle,
+    this.coverUrl,
+    this.coverSize = 250,
+    this.isCircle = false,
+    this.actions,
+    this.titleTrailing,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final isNarrow = screenWidth < 600;
+    final scheme = Theme.of(context).colorScheme;
+    final onSurface = scheme.onSurface;
+    final onSurfaceVariant = scheme.onSurfaceVariant;
+
+    final actualCoverSize = isNarrow
+        ? (screenWidth - 80).clamp(150.0, 200.0)
+        : coverSize;
+
+    final titleWidget = Text(
+      title,
+      textAlign: isNarrow ? TextAlign.center : TextAlign.start,
+      style: Theme.of(context).textTheme.displayMedium?.copyWith(
+        fontSize: isNarrow ? 32 : 48,
+        fontWeight: FontWeight.w900,
+        color: onSurface,
+        height: 1.05,
+        letterSpacing: -1.5,
+      ),
+    );
+
+    final content = Column(
+      crossAxisAlignment: isNarrow
+          ? CrossAxisAlignment.center
+          : CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          type.toUpperCase(),
+          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+            color: onSurface.withValues(alpha: 0.55),
+            letterSpacing: 2,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 8),
+        if (titleTrailing != null) ...[
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(child: titleWidget),
+              const SizedBox(width: 4),
+              Transform.translate(
+                offset: const Offset(0, 7),
+                child: titleTrailing,
+              ),
+            ],
+          ),
+        ] else ...[
+          titleWidget,
+        ],
+        if (artists != null) ...[
+          const SizedBox(height: 12),
+          ArtistNamesWidget(
+            artists: artists!,
+            fontSize: isNarrow ? 18 : 24,
+            color: onSurfaceVariant,
+            alignment: isNarrow ? WrapAlignment.center : WrapAlignment.start,
+          ),
+        ] else if (subtitle != null) ...[
+          const SizedBox(height: 12),
+          Text(
+            subtitle!,
+            textAlign: isNarrow ? TextAlign.center : TextAlign.start,
+            style: TextStyle(
+              fontSize: isNarrow ? 18 : 24,
+              color: onSurfaceVariant,
+            ),
+          ),
+        ],
+        if (secondarySubtitle != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            secondarySubtitle!,
+            textAlign: isNarrow ? TextAlign.center : TextAlign.start,
+            style: TextStyle(color: onSurfaceVariant.withValues(alpha: 0.6)),
+          ),
+        ],
+        if (actions != null) ...[
+          const SizedBox(height: 24),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            alignment: isNarrow ? WrapAlignment.center : WrapAlignment.start,
+            children: actions!,
+          ),
+        ],
+      ],
+    );
+
+    return Padding(
+      padding: EdgeInsets.all(isNarrow ? 20 : 40),
+      child: isNarrow
+          ? Column(
+              children: [
+                AppCover(
+                  coverUrl: coverUrl,
+                  size: actualCoverSize,
+                  borderRadius: 16,
+                  circle: isCircle,
+                  canExpand: true,
+                  heroTag: coverUrl,
+                ),
+                const SizedBox(height: 24),
+                content,
+              ],
+            )
+          : Row(
+              crossAxisAlignment: isCircle
+                  ? CrossAxisAlignment.center
+                  : CrossAxisAlignment.end,
+              children: [
+                AppCover(
+                  coverUrl: coverUrl,
+                  size: actualCoverSize,
+                  borderRadius: 16,
+                  circle: isCircle,
+                  canExpand: true,
+                  heroTag: coverUrl,
+                ),
+                const SizedBox(width: 40),
+                Expanded(child: content),
+              ],
+            ),
+    );
+  }
+}
+
+class CommonVolumeSlider extends StatefulWidget {
+  final double width;
+  final Color? activeColor;
+  const CommonVolumeSlider({super.key, this.width = 120, this.activeColor});
+
+  @override
+  State<CommonVolumeSlider> createState() => _CommonVolumeSliderState();
+}
+
+class _CommonVolumeSliderState extends State<CommonVolumeSlider> {
+  double? _dragVolume;
+
+  @override
+  Widget build(BuildContext context) {
+    final activeColor =
+        widget.activeColor ?? Theme.of(context).colorScheme.primary;
+    return SignalBuilder(
+      builder: (context) {
+        final volume = playerVolumeSignal().toDouble();
+        final displayVolume = _dragVolume ?? volume;
+
+        return SizedBox(
+          width: widget.width,
+          child: M3ESlider(
+            value: displayVolume.clamp(0, 100),
+            max: 100,
+            decoration: expressSliderDecoration(
+              activeColor: activeColor,
+              inactiveColor: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.15),
+            ),
+            onChanged: (val) {
+              setState(() => _dragVolume = val);
+              unawaited(PlaybackController.changeVolume(val.toInt()));
+            },
+            onChangeEnd: (_) {
+              setState(() => _dragVolume = null);
+            },
+          ),
+        );
+      },
+    );
+  }
+}
+
+class AudioDeviceButton extends StatefulWidget {
+  final double iconSize;
+  const AudioDeviceButton({super.key, this.iconSize = 18});
+
+  @override
+  State<AudioDeviceButton> createState() => _AudioDeviceButtonState();
+}
+
+class _AudioDeviceButtonState extends State<AudioDeviceButton> {
+  bool _devicesLoaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadDevices());
+  }
+
+  Future<void> _loadDevices() async {
+    await refreshAudioDevices();
+    if (mounted) {
+      setState(() => _devicesLoaded = true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SignalBuilder(
+      builder: (context) {
+        final devices = audioDevicesSignal.value;
+        final selectedDevice = selectedAudioDeviceSignal.value;
+        // No accent subscription while the hosting tab is hidden.
+        final accentColor = visibleSignal<Color>(context, accentColorSignal);
+
+        final items = [
+          AppContextMenuItem<String>(
+            value: '',
+            label: 'По умолчанию',
+            icon: Icons.computer_rounded,
+            isSelected: selectedDevice == null,
+            color: selectedDevice == null ? accentColor : null,
+          ),
+          ...devices.map(
+            (device) => AppContextMenuItem<String>(
+              value: device,
+              label: device,
+              icon: Icons.speaker_rounded,
+              isSelected: device == selectedDevice,
+              color: device == selectedDevice ? accentColor : null,
+            ),
+          ),
+        ];
+
+        return AppContextMenu<String>(
+          onOpen: () {
+            if (!_devicesLoaded) {
+              unawaited(_loadDevices());
+            }
+          },
+          onSelected: (value) {
+            unawaited(setAudioDevice(value));
+          },
+          items: items,
+          child: IconButton(
+            icon: Icon(
+              Icons.speaker_group_rounded,
+              size: widget.iconSize,
+              color: selectedDevice != null
+                  ? accentColor
+                  : Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+            tooltip: selectedDevice ?? 'Устройство вывода',
+            onPressed: null, // AppContextMenu handles clicks
+          ),
+        );
+      },
+    );
+  }
+}
+
+typedef DataBuilder<T> = Widget Function(BuildContext context, T data);
+
+/// Renders screen-level async data held in a `FutureSignal`.
+///
+/// State here is split by *who reads it*, not by mechanism:
+/// * shared across screens (library, playback, settings) — module-level
+///   `Signal` next to its provider;
+/// * one screen's fetched data — `FutureSignal` + this widget, or plain
+///   signals when the user appends to the list (pagination, pull-to-refresh,
+///   as on the artist screen);
+/// * read only by the owning widget's `build`, per frame — `ValueNotifier`
+///   (hover, drag, playhead) or `setState` for one-shot changes (tab index,
+///   focus, dialog busy flag). A `Signal` would notify every watcher
+///   synchronously and needs disposal from `State`, which buys nothing when
+///   nothing else listens.
+///
+/// Rust mutations always go through `runRustAction`.
+class CommonAsyncView<T> extends StatelessWidget {
+  final AsyncState<T> state;
+  final DataBuilder<T> builder;
+  final Widget? loading;
+  final Widget Function(String error)? error;
+  final Widget? empty;
+  final bool Function(T data)? isEmpty;
+
+  const CommonAsyncView({
+    required this.state,
+    required this.builder,
+    super.key,
+    this.loading,
+    this.error,
+    this.empty,
+    this.isEmpty,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return state.map(
+      data: (data) {
+        if (isEmpty != null && isEmpty!(data)) {
+          return empty ?? const Center(child: Text('Пусто'));
+        }
+        return builder(context, data);
+      },
+      loading: () => loading ?? const CommonLoadingWidget(),
+      error: (Object e, _) => error != null
+          ? error!(humanizeError(e))
+          : CommonErrorWidget(error: e),
+    );
+  }
+}
+
+class CommonDetailSliverLayout extends StatelessWidget {
+  final Widget header;
+  final List<Widget> slivers;
+  final ScrollController? controller;
+  final Future<void> Function()? onRefresh;
+
+  const CommonDetailSliverLayout({
+    required this.header,
+    required this.slivers,
+    super.key,
+    this.controller,
+    this.onRefresh,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scrollView = SmoothScroll(
+      child: CustomScrollView(
+        controller: controller,
+        physics: onRefresh != null
+            ? const AlwaysScrollableScrollPhysics()
+            : null,
+        slivers: [
+          SliverToBoxAdapter(child: header),
+          ...slivers,
+          const SliverToBoxAdapter(child: SizedBox(height: 140)),
+        ],
+      ),
+    );
+    final refresh = onRefresh;
+    if (refresh == null) return scrollView;
+    return AppRefreshIndicator(onRefresh: refresh, child: scrollView);
+  }
+}
+
+/// Shared pull-to-refresh for the whole app: branded colors,
+/// triggers on the top edge only.
+class AppRefreshIndicator extends StatelessWidget {
+  final Future<void> Function() onRefresh;
+  final Widget child;
+
+  const AppRefreshIndicator({
+    required this.onRefresh,
+    required this.child,
+    super.key,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return M3EPullToRefreshIndicator(
+      onRefresh: onRefresh,
+      style: M3EPullToRefreshStyle(
+        indicatorColor: cs.primary,
+        containerColor: cs.surfaceContainerHighest,
+      ),
+      child: child,
+    );
+  }
+}
+
+class CommonProgressSlider extends StatefulWidget {
+  final Color? accentColor;
+  final double maxWidth;
+  final bool compact;
+  const CommonProgressSlider({
+    this.accentColor,
+    super.key,
+    this.maxWidth = double.infinity,
+    this.compact = false,
+  });
+
+  @override
+  State<CommonProgressSlider> createState() => _CommonProgressSliderState();
+}
+
+class _CommonProgressSliderState extends State<CommonProgressSlider> {
+  double? _dragValue;
+  String? _dragTrackId;
+  bool _isDragging = false;
+  int _holdSeq = 0;
+  Timer? _confirmTimer;
+
+  @override
+  void dispose() {
+    _confirmTimer?.cancel();
+    super.dispose();
+  }
+
+  /// Drops the held drag value. Never runs while the user is actively
+  /// dragging, so a late seek completion or fallback timer can't yank the
+  /// thumb out from under the finger.
+  void _clearDrag() {
+    _confirmTimer?.cancel();
+    _confirmTimer = null;
+    if (mounted && !_isDragging && _dragValue != null) {
+      setState(() {
+        _dragValue = null;
+        _dragTrackId = null;
+      });
+    }
+  }
+
+  void _onDragStart(double val) {
+    _holdSeq++; // invalidate pending seek-completion callbacks
+    // Also aborts a pending deferred commit (see _onDragEnd): if a new
+    // drag took over the gesture, the thumb jump must not seek.
+    _confirmTimer?.cancel();
+    _isDragging = true;
+    setState(() {
+      _dragValue = val;
+      _dragTrackId = currentTrackIdSignal.peek();
+    });
+  }
+
+  void _onDragUpdate(double val) {
+    setState(() => _dragValue = val);
+  }
+
+  void _onDragEnd(double val) {
+    _isDragging = false;
+    _dragTrackId = currentTrackIdSignal.peek();
+    // M3ESlider reports widget.value here, which can be one frame stale: a
+    // fast press+release can complete within a single frame, so no rebuild
+    // happens between onTapDown and onTapUp and widget.value is still the
+    // pre-tap position — committing it makes the thumb snap back to where
+    // it was and the seek looks lost. onChanged already ran with the fresh
+    // tapped value and it is held in _dragValue, so prefer our own state;
+    // never overwrite it with val.
+    final commitValue = _dragValue ?? val;
+    // M3ESlider emits onChangeEnd not only on release. When a press loses
+    // the gesture arena to a drag (the user starts moving without having
+    // released), flutter resolves the arena in favor of the drag by
+    // rejecting the tap first (GestureArenaManager._resolveInFavorOf), so
+    // M3ESlider's onTapCancel path commits onChangeEnd mid-gesture while
+    // the finger is still down. Defer the actual seek by one event-loop
+    // turn: if the drag took over, onChangeStart arrives within the same
+    // dispatch, _onDragStart flips _isDragging back and cancels this
+    // timer — nothing is seeked mid-drag. On a real release no further
+    // callbacks fire and the seek proceeds as usual.
+    _confirmTimer?.cancel();
+    _confirmTimer = Timer(Duration.zero, () => _commitSeek(commitValue));
+  }
+
+  void _commitSeek(double val) {
+    if (!mounted || _isDragging) return; // gesture kept running — preview only
+    // Fallback: don't stick forever if the seek never completes at all
+    // (e.g. a hung backend). The hold is normally dropped right after the
+    // seek call below returns: on success the new position has been
+    // applied, on failure the backend resets the position and publishes a
+    // correction — so no positional heuristic is needed here.
+    _confirmTimer = Timer(const Duration(seconds: 2), _clearDrag);
+    final seq = ++_holdSeq;
+    unawaited(
+      PlaybackController.seekTo(
+        Duration(milliseconds: val.toInt()),
+      ).whenComplete(() {
+        if (_holdSeq == seq) _clearDrag();
+      }),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: widget.maxWidth),
+      // The position ticks rebuild and repaint this subtree several times a
+      // second; keep that off the surrounding cover / background layers.
+      child: RepaintBoundary(
+        child: SignalBuilder(
+          builder: (context) {
+            final progress = trackProgressSignal();
+            final trackId = currentTrackIdSignal();
+            // A seek hold that is no longer anchored to the current track
+            // (the track changed after the drag ended) is stale — drop it so
+            // the live position of the new track takes over.
+            if (_dragValue != null && !_isDragging && trackId != _dragTrackId) {
+              WidgetsBinding.instance.addPostFrameCallback((_) => _clearDrag());
+            }
+            // Guard against a zero/unknown duration (e.g. streams). The
+            // non-compact branch used to pass a raw 0 max while the compact
+            // branch clamped to 1.0 — use the same guard for both.
+            final maxDur = progress.durationMs > 0 ? progress.durationMs : 1.0;
+            final dur = progress.durationMs;
+            final displayPosition = _dragValue ?? progress.positionMs;
+            final trackHeight = widget.compact ? 4.0 : 6.0;
+            final thumbRadius = widget.compact ? 4.0 : 6.0;
+            final fontSize = widget.compact ? 11.0 : 12.0;
+            // No accent subscription while the hosting tab is hidden.
+            final accentColor =
+                widget.accentColor ??
+                visibleSignal<Color>(context, accentColorSignal);
+            final onSurfaceVariant = Theme.of(
+              context,
+            ).colorScheme.onSurfaceVariant;
+
+            return widget.compact
+                ? Row(
+                    children: [
+                      SizedBox(
+                        width: 40,
+                        child: Text(
+                          formatDuration(displayPosition.toInt()),
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: onSurfaceVariant,
+                            fontSize: fontSize,
+                            fontWeight: FontWeight.bold,
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: ClipRect(
+                          child: SizedBox(
+                            height: 28,
+                            child: M3ESlider(
+                              value: displayPosition.clamp(0, maxDur),
+                              max: maxDur,
+                              decoration: expressSliderDecoration(
+                                activeColor: accentColor,
+                                trackHeight: trackHeight,
+                                thumbWidth: thumbRadius,
+                                thumbHeight: thumbRadius * 3.5,
+                                inactiveColor: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.15),
+                              ),
+                              onChangeStart: _onDragStart,
+                              onChanged: _onDragUpdate,
+                              onChangeEnd: _onDragEnd,
+                            ),
+                          ),
+                        ),
+                      ),
+                      SizedBox(
+                        width: 40,
+                        child: Text(
+                          formatDuration(dur.toInt()),
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: onSurfaceVariant,
+                            fontSize: fontSize,
+                            fontWeight: FontWeight.bold,
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                : Column(
+                    children: [
+                      M3ESlider(
+                        value: displayPosition.clamp(0.0, maxDur),
+                        max: maxDur,
+                        decoration: expressSliderDecoration(
+                          activeColor: accentColor,
+                          trackHeight: trackHeight,
+                          thumbWidth: thumbRadius * 1.4,
+                          thumbHeight: thumbRadius * 4,
+                          inactiveColor: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.15),
+                        ),
+                        onChangeStart: _onDragStart,
+                        onChanged: _onDragUpdate,
+                        onChangeEnd: _onDragEnd,
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            formatDuration(displayPosition.toInt()),
+                            style: TextStyle(
+                              color: onSurfaceVariant,
+                              fontSize: fontSize,
+                              fontWeight: FontWeight.w600,
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
+                              ],
+                            ),
+                          ),
+                          Text(
+                            formatDuration(dur.toInt()),
+                            style: TextStyle(
+                              color: onSurfaceVariant,
+                              fontSize: fontSize,
+                              fontWeight: FontWeight.w600,
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+M3ESliderDecoration expressSliderDecoration({
+  required Color activeColor,
+  required Color inactiveColor,
+  double trackHeight = 4,
+  double thumbWidth = 5,
+  double thumbHeight = 20,
+}) {
+  return M3ESliderDecoration(
+    haptic: M3EHapticFeedback.light,
+    hapticConfig: const M3EHapticConfig(
+      deltaProgressForDragThreshold: 0.04,
+      progressBasedDragMinScale: 0.05,
+      progressBasedDragMaxScale: 0.45,
+      additionalVelocityMaxBump: 0.05,
+      minimumDragInterval: Duration(milliseconds: 45),
+    ),
+    trackHeight: trackHeight,
+    trackCornerRadius: trackHeight / 2,
+    thumbWidth: thumbWidth,
+    thumbHeight: thumbHeight,
+    colors: M3ESliderColors(
+      thumbColor: activeColor,
+      disabledThumbColor: activeColor,
+      activeTrackColor: activeColor,
+      inactiveTrackColor: inactiveColor,
+      disabledActiveTrackColor: activeColor,
+      disabledInactiveTrackColor: inactiveColor,
+      activeTickColor: activeColor,
+      inactiveTickColor: inactiveColor,
+      disabledActiveTickColor: activeColor,
+      disabledInactiveTickColor: inactiveColor,
+    ),
+  );
+}
+
+/// A like/heart toggle with a springy pop and an expanding "burst" ring.
+/// Feels alive: a quick ring whoosh + pop of the heart when it's turned on.
+class AnimatedLikeButton extends StatefulWidget {
+  final bool isLiked;
+  final double size;
+  final Color? likedColor;
+  final VoidCallback? onTap;
+
+  const AnimatedLikeButton({
+    required this.isLiked,
+    super.key,
+    this.size = 22,
+    this.likedColor,
+    this.onTap,
+  });
+
+  @override
+  State<AnimatedLikeButton> createState() => _AnimatedLikeButtonState();
+}
+
+class _AnimatedLikeButtonState extends State<AnimatedLikeButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _burst = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 650),
+  );
+  late final Animation<double> _ringGrowth = CurvedAnimation(
+    parent: _burst,
+    curve: const Interval(0, 0.55, curve: Curves.easeOutCubic),
+  );
+  late final Animation<double> _ringFade = Tween<double>(
+    begin: 0.5,
+    end: 0,
+  ).animate(CurvedAnimation(parent: _burst, curve: Curves.easeOut));
+
+  @override
+  void didUpdateWidget(covariant AnimatedLikeButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!oldWidget.isLiked && widget.isLiked) {
+      _burst.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _burst.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final hexSize = widget.size;
+    final color = widget.isLiked
+        ? (widget.likedColor ?? Colors.redAccent)
+        : cs.onSurfaceVariant;
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      // Local Material: ink paints here, not on a Material buried under the
+      // player backdrop, where the hover layer would be invisible.
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: widget.onTap,
+          // Matches the global iconButtonTheme corner radius so the hover
+          // backdrop looks identical to neighbouring player buttons.
+          borderRadius: BorderRadius.circular(14),
+          // Match the M3 IconButton state layer, otherwise hover is invisible.
+          hoverColor: cs.onSurfaceVariant.withValues(alpha: 0.1),
+          highlightColor: cs.onSurfaceVariant.withValues(alpha: 0.1),
+          child: SizedBox(
+            width: math.max<double>(hexSize + 12, 40),
+            height: math.max<double>(hexSize + 12, 40),
+            child: AnimatedBuilder(
+              animation: _burst,
+              builder: (context, child) {
+                return Stack(
+                  alignment: Alignment.center,
+                  clipBehavior: Clip.none,
+                  children: [
+                    if (_burst.isAnimating || _burst.value > 0)
+                      CustomPaint(
+                        size: Size(hexSize * 2.4, hexSize * 2.4),
+                        painter: _BurstPainter(
+                          progress: _ringGrowth.value,
+                          opacity: _ringFade.value,
+                          color: color,
+                        ),
+                      ),
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 320),
+                      switchInCurve: Curves.easeOutBack,
+                      switchOutCurve: Curves.easeInCubic,
+                      transitionBuilder: (child, animation) {
+                        return FadeTransition(
+                          opacity: animation,
+                          child: ScaleTransition(
+                            scale: animation,
+                            child: child,
+                          ),
+                        );
+                      },
+                      child: Icon(
+                        widget.isLiked ? Icons.favorite : Icons.favorite_border,
+                        key: ValueKey<bool>(widget.isLiked),
+                        size: hexSize,
+                        color: color,
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BurstPainter extends CustomPainter {
+  final double progress;
+  final double opacity;
+  final Color color;
+
+  _BurstPainter({
+    required this.progress,
+    required this.opacity,
+    required this.color,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (progress <= 0 || opacity <= 0) return;
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.2
+      ..color = color.withValues(alpha: opacity);
+    final center = size.center(Offset.zero);
+    canvas.drawCircle(center, (size.shortestSide / 2) * progress, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _BurstPainter oldDelegate) {
+    return oldDelegate.progress != progress ||
+        oldDelegate.opacity != opacity ||
+        oldDelegate.color != color;
+  }
+}
+
+/// Shared application dialog shell: one shape, one title style and standard
+/// dismiss buttons for every standard AlertDialog-based dialog.
+///
+/// Anything non-standard (custom positioning, bare Dialog hosts like login or
+/// the account menu) stays on raw Dialog/AlertDialog deliberately.
+class AppDialog extends StatelessWidget {
+  /// Fully custom title (e.g. a row with a close button or tabs). Takes
+  /// precedence over [title]/[titleIcon].
+  final Widget? titleWidget;
+
+  /// Plain-text title, rendered bold in [titleStyle] unless overridden.
+  final String? title;
+
+  /// Optional leading icon for the plain-text title row.
+  final IconData? titleIcon;
+
+  /// Style for the plain-text title. Defaults to bold onSurface.
+  final TextStyle? titleStyle;
+
+  final Widget? content;
+
+  /// Constrains content width (replaces `SizedBox(width: ...)` wrappers).
+  final double? contentWidth;
+
+  final List<Widget>? actions;
+
+  final EdgeInsetsGeometry? titlePadding;
+  final EdgeInsetsGeometry? contentPadding;
+  final EdgeInsetsGeometry? actionsPadding;
+  final ShapeBorder? shape;
+  final Color? surfaceTintColor;
+  final bool scrollable;
+
+  const AppDialog({
+    super.key,
+    this.titleWidget,
+    this.title,
+    this.titleIcon,
+    this.titleStyle,
+    this.content,
+    this.contentWidth,
+    this.actions,
+    this.titlePadding,
+    this.contentPadding,
+    this.actionsPadding,
+    this.shape,
+    this.surfaceTintColor,
+    this.scrollable = false,
+  });
+
+  /// The app-wide dialog shape. Used automatically; exposed for the rare
+  /// dialog that needs the shape without the full shell.
+  static ShapeBorder shapeOf(BuildContext context) {
+    return RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(AppRadius.xxl),
+      side: BorderSide(
+        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.1),
+      ),
+    );
+  }
+
+  /// Standard dismiss action with default button color.
+  static Widget cancelButton(BuildContext context, [String label = 'Отмена']) {
+    return M3ETextButton(
+      onPressed: () => Navigator.pop(context),
+      child: Text(label),
+    );
+  }
+
+  /// Standard dismiss action in muted color.
+  static Widget closeButton(BuildContext context, [String label = 'Закрыть']) {
+    final cs = Theme.of(context).colorScheme;
+    return M3ETextButton(
+      onPressed: () => Navigator.pop(context),
+      child: Text(label, style: TextStyle(color: cs.onSurfaceVariant)),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final titleText = title;
+
+    var effectiveTitle = titleWidget;
+    effectiveTitle ??= titleText != null
+        ? Row(
+            children: [
+              if (titleIcon != null) ...[
+                Icon(titleIcon, color: cs.onSurface),
+                const SizedBox(width: 12),
+              ],
+              Expanded(
+                child: Text(
+                  titleText,
+                  style:
+                      titleStyle ??
+                      TextStyle(
+                        color: cs.onSurface,
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+              ),
+            ],
+          )
+        : null;
+
+    var body = content;
+    if (body != null && contentWidth != null) {
+      body = SizedBox(width: contentWidth, child: body);
+    }
+
+    return AlertDialog(
+      shape: shape ?? shapeOf(context),
+      surfaceTintColor: surfaceTintColor,
+      titlePadding: titlePadding,
+      contentPadding: contentPadding,
+      actionsPadding: actionsPadding,
+      scrollable: scrollable,
+      title: effectiveTitle,
+      content: body,
+      actions: actions,
+    );
+  }
+}
+
+/// Single-line text prompt in the app's dialog shell: title, one field,
+/// cancel + confirm. Returns the trimmed text, or null when cancelled.
+Future<String?> showTextPromptDialog(
+  BuildContext context, {
+  required String title,
+  String hint = 'Название',
+  String confirmLabel = 'Создать',
+  String? initial,
+  bool autofocus = false,
+}) {
+  final controller = TextEditingController(text: initial);
+  final cs = Theme.of(context).colorScheme;
+
+  return showDialog<String>(
+    context: context,
+    builder: (dialogContext) {
+      void close([String? value]) =>
+          Navigator.of(dialogContext).pop<String>(value);
+
+      return AppDialog(
+        title: title,
+        content: TextField(
+          controller: controller,
+          autofocus: autofocus,
+          style: TextStyle(color: cs.onSurface),
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: TextStyle(color: cs.onSurface.withValues(alpha: 0.24)),
+            filled: true,
+            fillColor: cs.onSurface.withValues(alpha: 0.05),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(AppRadius.sm),
+              borderSide: BorderSide.none,
+            ),
+          ),
+          onSubmitted: close,
+        ),
+        actions: [
+          AppDialog.cancelButton(dialogContext),
+          M3EFilledButton(
+            onPressed: () => close(controller.text),
+            child: Text(confirmLabel),
+          ),
+        ],
+      );
+    },
+  ).then((value) => value?.trim()).whenComplete(controller.dispose);
+}

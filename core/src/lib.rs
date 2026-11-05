@@ -1,4 +1,6 @@
+mod lyrics;
 mod queue;
+mod storage;
 mod update_transport;
 mod updates;
 use reqwest::blocking::Client;
@@ -373,12 +375,14 @@ pub fn core_dispatch(operation: &str, argument: &str) -> String {
         }
         let v: Value = serde_json::from_str(argument).map_err(|_| "Некорректный запрос ядра")?;
         match operation {
+            "queue_next" => queue::next(&v),
             "upgrade_validate" => updates::validate_upgrade(&v),
             "daily_check_due" => Ok(json!(updates::daily_due(
                 v["now"].as_i64().unwrap_or(0),
                 v["previous"].as_i64().unwrap_or(0)
             ))),
             "update_check" => update_transport::check(&v),
+            "lyrics" => lyrics::fetch(&v),
             "version_compare" => Ok(json!(updates::compare(
                 v["candidate"].as_str().unwrap_or(""),
                 v["installed"].as_str().unwrap_or("")
@@ -411,6 +415,31 @@ pub extern "system" fn Java_org_luma_music_Native_core(
         Some(core_dispatch(&operation, &argument))
     })()
     .unwrap_or_else(|| json!({"ok":false,"error":"Ошибка JNI"}).to_string());
+    env.new_string(value)
+        .map(|s| s.into_raw())
+        .unwrap_or(std::ptr::null_mut())
+}
+
+#[cfg(target_os = "android")]
+#[no_mangle]
+pub extern "system" fn Java_org_luma_music_Native_store(
+    mut env: jni::JNIEnv,
+    _object: jni::objects::JObject,
+    path: jni::objects::JString,
+    operation: jni::objects::JString,
+    argument: jni::objects::JString,
+) -> jni::sys::jstring {
+    let result = (|| {
+        let path: String = env.get_string(&path).map_err(|_| "Ошибка JNI")?.into();
+        let operation: String = env.get_string(&operation).map_err(|_| "Ошибка JNI")?.into();
+        let argument: String = env.get_string(&argument).map_err(|_| "Ошибка JNI")?.into();
+        storage::dispatch(&path, &operation, &argument)
+    })();
+    let value = match result {
+        Ok(data) => json!({"ok":true,"data":data}),
+        Err(error) => json!({"ok":false,"error":error}),
+    }
+    .to_string();
     env.new_string(value)
         .map(|s| s.into_raw())
         .unwrap_or(std::ptr::null_mut())

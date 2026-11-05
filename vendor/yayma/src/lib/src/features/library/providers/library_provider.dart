@@ -1,0 +1,768 @@
+import 'dart:async';
+
+import 'package:signals_flutter/signals_flutter.dart';
+import 'package:yayma/src/app/session.dart';
+import 'package:yayma/src/features/core/providers/notification_provider.dart';
+import 'package:yayma/src/features/core/services/debouncer.dart';
+import 'package:yayma/src/features/core/services/rust_bridge.dart';
+import 'package:yayma/src/features/core/utils/track_ids.dart';
+import 'package:yayma/src/rust/api/content.dart';
+import 'package:yayma/src/rust/api/library.dart';
+import 'package:yayma/src/rust/api/models.dart';
+import 'package:yayma/src/rust/app/context.dart';
+
+final FlutterSignal<List<SimpleTrackDto>> likedTracksSignal =
+    signal<List<SimpleTrackDto>>([]);
+final FlutterSignal<List<SimpleTrackDto>> dislikedTracksSignal =
+    signal<List<SimpleTrackDto>>([]);
+final FlutterSignal<List<SimplePlaylistDto>> playlistsSignal =
+    signal<List<SimplePlaylistDto>>([]);
+final FlutterSignal<List<SimpleAlbumDto>> likedAlbumsSignal =
+    signal<List<SimpleAlbumDto>>([]);
+final FlutterSignal<List<SimpleArtistDto>> likedArtistsSignal =
+    signal<List<SimpleArtistDto>>([]);
+final FlutterSignal<bool> isLibraryLoadingSignal = signal<bool>(false);
+final FlutterSignal<bool> isDislikedTracksLoadingSignal = signal<bool>(false);
+final FlutterSignal<String> librarySearchQuerySignal = signal<String>('');
+
+/// Number of liked tracks received in the active unfiltered sequence.
+/// Drives the "Loaded N…" progress indicator.
+final FlutterSignal<int> likedTracksLoadedSignal = signal<int>(0);
+
+/// Last known full liked-tracks count (0 = unknown yet). Shown as "N / M".
+final FlutterSignal<int> likedTracksExpectedSignal = signal<int>(0);
+
+/// Last fully loaded unfiltered liked-tracks list. Backs local search
+/// filtering so typing doesn't trigger a full Rust rebuild per keystroke.
+final List<SimpleTrackDto> _likedFullCache = [];
+final FlutterSignal<Set<String>> downloadedTracksSignal = signal<Set<String>>(
+  {},
+);
+final FlutterSignal<Set<String>> downloadingTracksSignal = signal<Set<String>>(
+  {},
+);
+
+/// Cache of track membership in playlists: trackId -> set of kind.
+/// Populated on demand (track context menus).
+final FlutterSignal<Map<String, Set<int>>> trackPlaylistMembershipSignal =
+    signal<Map<String, Set<int>>>({});
+
+/// In-flight membership checks, so a second request for the same track waits
+/// for the running one instead of returning stale cache to its caller.
+final Map<String, Future<void>> _membershipFetching = {};
+
+/// Max number of track ids kept in the membership cache. Dart maps are
+/// insertion-ordered, so the oldest entries get evicted first.
+const int _membershipCacheCap = 128;
+
+/// Writes [kinds] for [trackId] into the membership cache, capping its size.
+void _cacheMembership(String trackId, Set<int> kinds) {
+  final map = {...trackPlaylistMembershipSignal.value, trackId: kinds};
+  while (map.length > _membershipCacheCap) {
+    map.remove(map.keys.first);
+  }
+  trackPlaylistMembershipSignal.value = map;
+}
+
+/// Checks which playlists track [trackId] is already in
+/// (by fetching each playlist's details) and updates
+/// [trackPlaylistMembershipSignal].
+Future<void> refreshTrackPlaylistMembership(String trackId) {
+  final inFlight = _membershipFetching[trackId];
+  if (inFlight != null) return inFlight;
+
+  final future = _loadMembership(trackId).whenComplete(() {
+    unawaited(_membershipFetching.remove(trackId));
+  });
+  _membershipFetching[trackId] = future;
+  return future;
+}
+
+Future<void> _loadMembership(String trackId) async {
+  final ctx = appContextSignal.value;
+  if (ctx == null) return;
+
+  // An empty list means the playlists are not loaded yet (right after
+  // login), not that the track is in none — caching that would stick.
+  final kinds = playlistsSignal.value.map((p) => p.kind).toList();
+  if (kinds.isEmpty) return;
+
+  // One request for all playlists, ids only: checking every playlist's full
+  // track list costs a `fetch_tracks(50)` round trip per 50 tracks each, and
+  // only the track ids are needed here.
+  final containing = await runRustFetch(
+    (c) => getPlaylistsContainingTrack(ctx: c, kinds: kinds, trackId: trackId),
+    notifyErrors: false,
+  );
+  if (containing == null) {
+    showAppError('Не удалось проверить плейлисты');
+    return;
+  }
+  _cacheMembership(trackId, containing.toSet());
+}
+
+StreamSubscription<List<SimpleTrackDto>>? _likedSub;
+final Debouncer _librarySearchDebouncer = Debouncer();
+final List<SimpleTrackDto> _likedAccum = [];
+final Set<String> _likedAccumIds = {};
+Timer? _likedFlushTimer;
+bool _likedFlushPending = false;
+Timer? _likedIdleTimer;
+
+void _cancelLikedFlushTimer() {
+  _likedFlushTimer?.cancel();
+  _likedFlushTimer = null;
+}
+
+void _resetLikedAccum() {
+  _cancelLikedFlushTimer();
+  _likedIdleTimer?.cancel();
+  _likedIdleTimer = null;
+  _likedAccum.clear();
+  _likedAccumIds.clear();
+  _likedFlushPending = false;
+}
+
+/// Clears the chunk accumulator without touching the idle/load-finished
+/// timer. Used inside the stream chunk handler: the handler arms the idle
+/// timer on every chunk, so a full reset here would cancel the timer it
+/// just started and leave `isLibraryLoadingSignal` stuck `true` on short
+/// (single-chunk) or empty libraries.
+void _clearLikedAccumContents() {
+  _cancelLikedFlushTimer();
+  _likedAccum.clear();
+  _likedAccumIds.clear();
+  _likedFlushPending = false;
+}
+
+Future<void> initLibrary() async {
+  // Load only playlists as they are lightweight and might be needed for navigation
+  await refreshPlaylists();
+  await refreshDownloadedTracks();
+  // Liked tracks are loaded on demand when the library screen is opened
+}
+
+Future<void> disposeLibrary() async {
+  _librarySearchDebouncer.dispose();
+  final sub = _likedSub;
+  _likedSub = null;
+  await sub?.cancel();
+  _resetLikedAccum();
+  likedTracksSignal.value = [];
+  playlistsSignal.value = [];
+  likedAlbumsSignal.value = [];
+  likedArtistsSignal.value = [];
+  dislikedTracksSignal.value = [];
+  isDislikedTracksLoadingSignal.value = false;
+  isLibraryLoadingSignal.value = false;
+  likedTracksLoadedSignal.value = 0;
+  likedTracksExpectedSignal.value = 0;
+  _likedFullCache.clear();
+  librarySearchQuerySignal.value = '';
+  downloadedTracksSignal.value = {};
+  downloadingTracksSignal.value = {};
+  isDownloadingAllLikedTracksSignal.value = false;
+  // Playlist kinds are per account: keeping them would mark tracks as
+  // belonging to another account's playlists with the same kind.
+  trackPlaylistMembershipSignal.value = {};
+  _membershipFetching.clear();
+}
+
+Future<void> refreshDownloadedTracks() async {
+  final ids = await runRustFetch((ctx) => getDownloadedTrackIds(ctx: ctx));
+  if (ids != null) {
+    downloadedTracksSignal.value = ids.toSet();
+  }
+}
+
+Future<void> refreshPlaylists() async {
+  final playlists = await runRustFetch((ctx) => getPlaylists(ctx: ctx));
+  if (playlists != null) {
+    playlistsSignal.value = playlists;
+  }
+}
+
+Future<void> refreshLikedAlbums() async {
+  final albums = await runRustFetch((ctx) => getLikedAlbums(ctx: ctx));
+  if (albums != null) {
+    likedAlbumsSignal.value = albums;
+  }
+}
+
+Future<void> refreshLikedArtists() async {
+  final artists = await runRustFetch((ctx) => getLikedArtists(ctx: ctx));
+  if (artists != null) {
+    likedArtistsSignal.value = artists;
+  }
+}
+
+Future<void> refreshDislikedTracks() async {
+  isDislikedTracksLoadingSignal.value = true;
+  final tracks = await runRustFetch((ctx) => getDislikedTracks(ctx: ctx));
+  if (tracks != null) {
+    dislikedTracksSignal.value = tracks;
+  }
+  isDislikedTracksLoadingSignal.value = false;
+}
+
+/// Runs a like/dislike mutation after parsing the id Rust expects. A malformed
+/// id returns false without a request or an error notification.
+Future<bool> _runIdAction<T>(
+  String rawId,
+  T? Function(String id) parse,
+  Future<bool> Function(AppContext ctx, T id) action,
+) {
+  final id = parse(rawId);
+  if (id == null) return Future.value(false);
+  return runRustAction((ctx) => action(ctx, id));
+}
+
+String? _nonEmpty(String id) => id.isEmpty ? null : id;
+
+Future<bool> addLikedAlbumAction(String albumId) => _runIdAction(
+  albumId,
+  int.tryParse,
+  (ctx, id) => addLikedAlbum(ctx: ctx, albumId: id),
+);
+
+Future<bool> removeLikedAlbumAction(String albumId) => _runIdAction(
+  albumId,
+  int.tryParse,
+  (ctx, id) => removeLikedAlbum(ctx: ctx, albumId: id),
+);
+
+Future<bool> addLikedArtistAction(String artistId) => _runIdAction(
+  artistId,
+  _nonEmpty,
+  (ctx, id) => addLikedArtist(ctx: ctx, artistId: id),
+);
+
+Future<bool> removeLikedArtistAction(String artistId) => _runIdAction(
+  artistId,
+  _nonEmpty,
+  (ctx, id) => removeLikedArtist(ctx: ctx, artistId: id),
+);
+
+Future<bool> addDislikedArtistAction(String artistId) => _runIdAction(
+  artistId,
+  _nonEmpty,
+  (ctx, id) => addDislikedArtist(ctx: ctx, artistId: id),
+);
+
+Future<bool> removeDislikedArtistAction(String artistId) => _runIdAction(
+  artistId,
+  _nonEmpty,
+  (ctx, id) => removeDislikedArtist(ctx: ctx, artistId: id),
+);
+
+Future<bool> addLikedPlaylistAction(String ownerUid, int kind) => _runIdAction(
+  ownerUid,
+  BigInt.tryParse,
+  (ctx, uid) => addLikedPlaylist(ctx: ctx, ownerUid: uid, kind: kind),
+);
+
+Future<bool> removeLikedPlaylistAction(String ownerUid, int kind) =>
+    _runIdAction(
+      ownerUid,
+      BigInt.tryParse,
+      (ctx, uid) => removeLikedPlaylist(ctx: ctx, ownerUid: uid, kind: kind),
+    );
+
+Future<void> refreshLikedTracks({String? query, bool force = false}) async {
+  if (!force &&
+      query == null &&
+      likedTracksSignal.value.isNotEmpty &&
+      _likedSub != null) {
+    return;
+  }
+
+  final ctx = appContextSignal.value;
+  if (ctx == null) return;
+
+  // The unfiltered stream performs a server sync inline on (re)subscribe
+  // (see `liked_tracks_stream` in the Rust layer), so syncing again here is
+  // redundant and doubles the network round-trips on pull-to-refresh.
+
+  // Cancel previous subscription immediately
+  final oldSub = _likedSub;
+  _likedSub = null;
+  unawaited(oldSub?.cancel());
+  _resetLikedAccum();
+  // Reset progress for the new run; keep `expected` as last-known total
+  // so "N / M" still shows a denominator during reloads.
+  likedTracksLoadedSignal.value = 0;
+
+  // Do not clear the list immediately to avoid flickering.
+  // It will be cleared upon receiving the first chunk or reset signal.
+  isLibraryLoadingSignal.value = true;
+
+  StreamSubscription<List<SimpleTrackDto>>? sub;
+  var isFirstChunk = true;
+  final isSearch = query?.trim().isNotEmpty ?? false;
+
+  void publishAccum() {
+    _likedFlushPending = false;
+    likedTracksSignal.value = List.of(_likedAccum);
+    if (!isSearch) {
+      _likedFullCache
+        ..clear()
+        ..addAll(_likedAccum);
+      likedTracksLoadedSignal.value = _likedAccum.length;
+    }
+  }
+
+  void scheduleFlush() {
+    if (_likedFlushTimer != null) return;
+    // Huge lists: throttle UI rebuilds (each publish re-renders the list).
+    final delay = _likedAccum.length > 1000
+        ? const Duration(milliseconds: 1000)
+        : const Duration(milliseconds: 250);
+    _likedFlushTimer = Timer(delay, () {
+      _likedFlushTimer = null;
+      if (sub != _likedSub || !_likedFlushPending) return;
+      publishAccum();
+    });
+  }
+
+  // The Rust stream never closes on its own (it waits on library_changed),
+  // so "load finished" = no new chunks for a while. On idle, drop the
+  // loading flag and remember the count as the expected total.
+  void restartIdleTimer() {
+    _likedIdleTimer?.cancel();
+    // Huge lists stream hundreds of chunks with slow gaps (parallel
+    // fetch_tracks still round-trips): don't declare "done" on a 500ms
+    // pause mid-load.
+    final idle = _likedAccum.length > 500
+        ? const Duration(milliseconds: 2000)
+        : const Duration(milliseconds: 500);
+    _likedIdleTimer = Timer(idle, () {
+      _likedIdleTimer = null;
+      if (sub != _likedSub) return;
+      isLibraryLoadingSignal.value = false;
+      if (!isSearch && _likedAccum.isNotEmpty) {
+        likedTracksExpectedSignal.value = _likedAccum.length;
+      }
+    });
+  }
+
+  sub = likedTracksStream(ctx: ctx, query: query).listen(
+    (chunk) {
+      if (sub != _likedSub) {
+        unawaited(sub?.cancel());
+        return;
+      }
+      isLibraryLoadingSignal.value = true;
+      restartIdleTimer();
+
+      if (chunk.isEmpty) {
+        if (isFirstChunk) {
+          // Second empty chunk in a row or initial empty chunk when already expecting first
+          // means the list is truly empty.
+          _clearLikedAccumContents();
+          likedTracksSignal.value = [];
+          if (!isSearch) {
+            _likedFullCache.clear();
+            likedTracksLoadedSignal.value = 0;
+          }
+          isFirstChunk = false;
+        } else {
+          // First empty chunk serves as a reset signal for a new data sequence.
+          // We set isFirstChunk to true so that the next non-empty chunk REPLACES the list.
+          // NOTE: must not cancel the idle timer armed above.
+          _clearLikedAccumContents();
+          isFirstChunk = true;
+        }
+      } else {
+        if (isFirstChunk) {
+          // Replace old list with the first result of a new search or update.
+          // Publish immediately for fast first paint.
+          // NOTE: must not cancel the idle timer armed above.
+          _clearLikedAccumContents();
+          for (final t in chunk) {
+            if (_likedAccumIds.add(t.id)) _likedAccum.add(t);
+          }
+          publishAccum();
+          isFirstChunk = false;
+        } else {
+          // Accumulate subsequent chunks with incremental dedup (O(1) per
+          // track) and publish throttled copies instead of one signal
+          // update per 50-track chunk.
+          var added = false;
+          for (final t in chunk) {
+            if (_likedAccumIds.add(t.id)) {
+              _likedAccum.add(t);
+              added = true;
+            }
+          }
+          if (added) {
+            _likedFlushPending = true;
+            scheduleFlush();
+          }
+        }
+      }
+    },
+    onDone: () {
+      if (sub != _likedSub) return;
+      _cancelLikedFlushTimer();
+      _likedIdleTimer?.cancel();
+      _likedIdleTimer = null;
+      if (_likedFlushPending) publishAccum();
+      isLibraryLoadingSignal.value = false;
+    },
+    onError: (_) {
+      if (sub != _likedSub) return;
+      _cancelLikedFlushTimer();
+      _likedIdleTimer?.cancel();
+      _likedIdleTimer = null;
+      isLibraryLoadingSignal.value = false;
+    },
+  );
+  _likedSub = sub;
+}
+
+/// Finds a cached DTO for optimistic like handling (full cache first).
+SimpleTrackDto? findLikedDto(String baseId) {
+  for (final t in _likedFullCache) {
+    if (t.id == baseId) return t;
+  }
+  for (final t in _likedAccum) {
+    if (t.id == baseId) return t;
+  }
+  return null;
+}
+
+/// Optimistic like/unlike for instant list feedback (mirrors the official
+/// client): mutates the visible list + full cache immediately; the Rust
+/// stream reconciles via reset shortly after, so a wrong guess is silently
+/// corrected. Removal needs only the id; insertion needs the DTO (without
+/// it the stream brings the track).
+/// Returns the optimistic liked state that was applied (`true` = inserted).
+bool applyLikeOptimistic({
+  required String trackId,
+  SimpleTrackDto? track,
+  bool? liked,
+}) {
+  final baseId = baseTrackId(trackId);
+  // Prefer the source DTO's authoritative flag (the queue DTO reflects the
+  // server's liked state); fall back to the local caches. Without this, a
+  // track liked server-side but absent from the not-yet-loaded liked caches
+  // would optimistically *insert* on an unlike toggle. [liked] overrides both
+  // so a failed Rust toggle can restore the exact previous state.
+  final effectiveLiked =
+      liked ??
+      ((track?.isLiked ?? false) ||
+          _likedAccumIds.contains(baseId) ||
+          _likedFullCache.any((t) => t.id == baseId));
+  if (effectiveLiked) {
+    _likedAccumIds.remove(baseId);
+    _likedAccum.removeWhere((t) => t.id == baseId);
+    _likedFullCache.removeWhere((t) => t.id == baseId);
+    likedTracksSignal.value = likedTracksSignal.value
+        .where((t) => t.id != baseId)
+        .toList();
+    return false;
+  }
+  final dto = track;
+  if (dto == null) return false;
+  // The source DTO (e.g. from the queue) may carry a composite id — normalize
+  // it to the base id the liked list keys by.
+  final normalized = SimpleTrackDto(
+    id: baseId,
+    title: dto.title,
+    version: dto.version,
+    artists: dto.artists,
+    album: dto.album,
+    albumId: dto.albumId,
+    durationMs: dto.durationMs,
+    coverUrl: dto.coverUrl,
+    isLiked: true,
+    isDisliked: dto.isDisliked,
+  );
+  if (_likedAccumIds.add(baseId)) _likedAccum.insert(0, normalized);
+  _likedFullCache.insert(0, normalized);
+  // Respect an active search filter: don't leak non-matching tracks into it.
+  final query = librarySearchQuerySignal.value.trim().toLowerCase();
+  if (query.isEmpty || _likedTrackMatchesQuery(normalized, query)) {
+    likedTracksSignal.value = [
+      normalized,
+      ...likedTracksSignal.value.where((t) => t.id != baseId),
+    ];
+  }
+  return true;
+}
+
+/// Local equivalent of Rust `track_dto_matches_query` (title/artists/album,
+/// case-insensitive): filters the cached full liked-tracks list without a
+/// Rust round-trip.
+bool _likedTrackMatchesQuery(SimpleTrackDto t, String q) {
+  if (t.title.toLowerCase().contains(q)) return true;
+  for (final a in t.artists) {
+    if (a.name.toLowerCase().contains(q)) return true;
+  }
+  final album = t.album;
+  return album != null && album.toLowerCase().contains(q);
+}
+
+/// Filters the cached full liked-tracks list locally. Returns false when the
+/// cache is empty and the caller should fall back to the Rust query stream
+/// (e.g. library opened with a persisted query before the first full load).
+bool filterLikedTracksLocally(String query) {
+  if (_likedFullCache.isEmpty) return false;
+  // The cache is updated incrementally during the bulk load, so filtering
+  // it mid-load would show a truncated list and cancel the full stream
+  // (`_likedSub`), leaving the cache partial. Fall back to the Rust query
+  // stream while the unfiltered load is still in progress.
+  if (isLibraryLoadingSignal.value) return false;
+  final oldSub = _likedSub;
+  _likedSub = null;
+  unawaited(oldSub?.cancel());
+  _resetLikedAccum();
+  isLibraryLoadingSignal.value = false;
+  final q = query.toLowerCase();
+  likedTracksSignal.value = _likedFullCache
+      .where((t) => _likedTrackMatchesQuery(t, q))
+      .toList();
+  return true;
+}
+
+void setLibrarySearchQuery(String query) {
+  final trimmedQuery = query.trim();
+  librarySearchQuerySignal.value = trimmedQuery;
+
+  _librarySearchDebouncer.cancel();
+
+  if (trimmedQuery.isEmpty) {
+    // Immediately reset search and request the full list
+    unawaited(refreshLikedTracks(force: true));
+    return;
+  }
+
+  _librarySearchDebouncer.run(() {
+    // Check if the query changed while waiting
+    if (librarySearchQuerySignal.value == trimmedQuery) {
+      // Prefer the local cache: no full Rust rebuild per keystroke.
+      if (!filterLikedTracksLocally(trimmedQuery)) {
+        unawaited(refreshLikedTracks(query: trimmedQuery, force: true));
+      }
+    }
+  }, const Duration(milliseconds: 300));
+}
+
+/// Updates the membership cache: track added/removed from playlist [kind].
+/// [present] = true when adding, false when removing. No-op when the track
+/// has no cached entry yet (the next [refreshTrackPlaylistMembership] call
+/// will fill it in).
+void _updateTrackMembership(String trackId, int kind, {required bool present}) {
+  final setOf = trackPlaylistMembershipSignal.value[trackId];
+  if (setOf == null) return;
+  final updated = {...setOf};
+  if (present) {
+    updated.add(kind);
+  } else {
+    updated.remove(kind);
+  }
+  _cacheMembership(trackId, updated);
+}
+
+/// Drops [kind] from every cached membership set after its playlist
+/// was deleted, so stale checkmarks never resurface.
+void _pruneMembershipKind(int kind) {
+  final map = trackPlaylistMembershipSignal.value;
+  var changed = false;
+  final updatedMap = <String, Set<int>>{};
+  map.forEach((trackId, kinds) {
+    if (kinds.contains(kind)) {
+      updatedMap[trackId] = {...kinds}..remove(kind);
+      changed = true;
+    } else {
+      updatedMap[trackId] = kinds;
+    }
+  });
+  if (changed) trackPlaylistMembershipSignal.value = updatedMap;
+}
+
+/// [kind] — unique playlist identifier, [trackId] — the track.
+Future<bool> addTrackToPlaylistAction(
+  int kind,
+  String trackId,
+  String? albumId,
+) async {
+  final success = await runRustAction(
+    (ctx) => addTrackToPlaylist(
+      ctx: ctx,
+      kind: kind,
+      trackId: trackId,
+      albumId: albumId,
+    ),
+  );
+  if (success) {
+    // Refresh first: it must not clobber the membership update below.
+    await refreshPlaylists();
+    _updateTrackMembership(trackId, kind, present: true);
+  }
+  return success;
+}
+
+Future<bool> removeTrackFromPlaylistAction(
+  int kind,
+  String trackId,
+  String? albumId,
+) async {
+  final success = await runRustAction(
+    (ctx) => removeTrackFromPlaylist(
+      ctx: ctx,
+      kind: kind,
+      trackId: trackId,
+      albumId: albumId,
+    ),
+  );
+  if (success) {
+    // Keep the cached checkmarks in sync with the removal.
+    _updateTrackMembership(trackId, kind, present: false);
+    await refreshPlaylists();
+  }
+  return success;
+}
+
+Future<bool> moveTrackInPlaylistAction(
+  int kind,
+  int fromIndex,
+  int toIndex,
+  String trackId,
+  String? albumId,
+) async {
+  final success = await runRustAction(
+    (ctx) => moveTrackInPlaylist(
+      ctx: ctx,
+      kind: kind,
+      fromIndex: fromIndex,
+      toIndex: toIndex,
+      trackId: trackId,
+      albumId: albumId ?? '',
+    ),
+  );
+  if (success) await refreshPlaylists();
+  return success;
+}
+
+Future<bool> createPlaylistAction(
+  String title, {
+  required bool isPublic,
+}) async {
+  final success = await runRustAction(
+    (ctx) => createPlaylist(ctx: ctx, title: title, isPublic: isPublic),
+  );
+  if (success) await refreshPlaylists();
+  return success;
+}
+
+Future<bool> deletePlaylistAction(int kind) async {
+  final success = await runRustAction(
+    (ctx) => deletePlaylist(ctx: ctx, kind: kind),
+  );
+  if (success) {
+    _pruneMembershipKind(kind);
+    await refreshPlaylists();
+  }
+  return success;
+}
+
+Future<bool> renamePlaylistAction(int kind, String newTitle) async {
+  final success = await runRustAction(
+    (ctx) => renamePlaylist(ctx: ctx, kind: kind, newTitle: newTitle),
+  );
+  if (success) await refreshPlaylists();
+  return success;
+}
+
+Future<bool> setPlaylistVisibilityAction(
+  int kind, {
+  required bool isPublic,
+}) async {
+  final success = await runRustAction(
+    (ctx) => setPlaylistVisibility(ctx: ctx, kind: kind, isPublic: isPublic),
+  );
+  if (success) await refreshPlaylists();
+  return success;
+}
+
+Future<bool> uploadTrackAction(String filePath, {int? playlistKind}) async {
+  final success = await runRustAction(
+    (ctx) => uploadUserTrack(
+      ctx: ctx,
+      filePath: filePath,
+      playlistKind: playlistKind,
+    ),
+  );
+  return success;
+}
+
+final FlutterSignal<bool> isDownloadingAllLikedTracksSignal = signal(false);
+
+Future<List<String>> downloadLikedTracksAction(
+  List<SimpleTrackDto> tracks, {
+  required bool toCache,
+}) async {
+  if (isDownloadingAllLikedTracksSignal.value) return const [];
+
+  final ctx = appContextSignal.value;
+  if (ctx == null) return const [];
+
+  isDownloadingAllLikedTracksSignal.value = true;
+
+  try {
+    final trackIds = toCache
+        ? tracks
+              .where((t) => !downloadedTracksSignal.value.contains(t.id))
+              .map((t) => t.id)
+              .toList()
+        : tracks.map((track) => track.id).toList();
+
+    if (trackIds.isEmpty) return const [];
+
+    final paths = await downloadTracks(
+      ctx: ctx,
+      trackIds: trackIds,
+      toCache: toCache,
+      collectionName: toCache ? null : 'Любимые треки',
+    );
+    if (toCache) unawaited(refreshDownloadedTracks());
+    return paths;
+  } finally {
+    isDownloadingAllLikedTracksSignal.value = false;
+  }
+}
+
+Future<List<String>> downloadCollectionToFilesAction(
+  List<SimpleTrackDto> tracks, {
+  required String collectionName,
+}) async {
+  final ctx = appContextSignal.value;
+  if (ctx == null || tracks.isEmpty) return const [];
+
+  return await downloadTracks(
+    ctx: ctx,
+    trackIds: tracks.map((track) => track.id).toList(),
+    toCache: false,
+    collectionName: collectionName,
+  );
+}
+
+Future<int> deleteAllLikedTracksAction(List<SimpleTrackDto> tracks) async {
+  final ctx = appContextSignal.value;
+  if (ctx == null) return 0;
+
+  var deleted = 0;
+  final downloadedTracks = downloadedTracksSignal.value;
+  for (final track in tracks) {
+    if (downloadedTracks.contains(track.id)) {
+      await deleteDownloadedTrack(ctx: ctx, trackId: track.id);
+      deleted++;
+    }
+  }
+  // Single refresh after the loop: per-track refreshes used to queue
+  // thousands of redundant DB reads on large libraries.
+  if (deleted > 0) unawaited(refreshDownloadedTracks());
+
+  return deleted;
+}

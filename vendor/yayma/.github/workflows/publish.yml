@@ -1,0 +1,155 @@
+name: Publish Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  run-build:
+    uses: ./.github/workflows/build.yml
+    secrets: inherit
+    
+  create-release:
+    needs: run-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract Release Notes
+        id: changelog
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          
+          NOTES=$(awk "/## \[$VERSION\]/{flag=1; next} /## \[/{flag=0} flag" CHANGELOG.md)
+          
+          if [ -z "$NOTES" ]; then
+            NOTES="Release for version $VERSION"
+          fi
+          
+          EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+          echo "notes<<$EOF" >> "$GITHUB_OUTPUT"
+          echo "$NOTES" >> "$GITHUB_OUTPUT"
+          echo "$EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '{linux_x64_release,windows_x64_release,windows_x64_installer,android_release,macos_arm64_release}'
+          path: release_artifacts
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: YAYMA ${{ github.ref_name }}
+          body: ${{ steps.changelog.outputs.notes }}
+          files: release_artifacts/*
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  update-aur-pkgbuild:
+    needs: create-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Regenerate PKGBUILD
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          REPO="${{ github.repository }}"
+          X64_URL="https://github.com/${REPO}/releases/download/v${VERSION}/yayma-linux-x64-${VERSION}.tar.gz"
+          LICENSE_URL="https://raw.githubusercontent.com/${REPO}/v${VERSION}/LICENSE"
+
+          TARBALL_SHA_X64=$(curl -sL --fail "$X64_URL" | sha256sum | cut -d' ' -f1)
+          LICENSE_SHA=$(curl -sL --fail "$LICENSE_URL" | sha256sum | cut -d' ' -f1)
+          DESKTOP_SHA=$(sha256sum packaging/linux/io.github.darkplayoff.yayma.desktop | cut -d' ' -f1)
+
+          if [ -z "$TARBALL_SHA_X64" ] || [ -z "$LICENSE_SHA" ] || [ -z "$DESKTOP_SHA" ]; then
+            echo "::error::Failed to download release asset(s) or LICENSE to compute checksums"
+            exit 1
+          fi
+
+          REPO_ESCAPED=$(printf '%s' "$REPO" | sed 's/[&/\]/\\&/g')
+          sed \
+            -e "s/@VERSION@/${VERSION}/g" \
+            -e "s/@REPO@/${REPO_ESCAPED}/g" \
+            -e "s/@TARBALL_SHA_X64@/${TARBALL_SHA_X64}/g" \
+            -e "s/@LICENSE_SHA@/${LICENSE_SHA}/g" \
+            -e "s/@DESKTOP_SHA@/${DESKTOP_SHA}/g" \
+            packaging/aur/yayma-bin/PKGBUILD.template > PKGBUILD
+
+      - name: Upload PKGBUILD to release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.ref_name }}" PKGBUILD --clobber --repo "${{ github.repository }}"
+
+  update-nix-flake:
+    needs: create-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sync master
+        run: |
+          git fetch origin master
+          git checkout -B master origin/master
+
+      - name: Setup Nix
+        uses: DeterminateSystems/nix-installer-action@v22
+
+      - name: Update flake for release
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+          URL="https://github.com/${REPO}/releases/download/v${VERSION}/yayma-linux-x64-${VERSION}.tar.gz"
+          SRC_HASH=$(nix store prefetch-file --json "$URL" | jq -er .hash)
+          if [ -z "$SRC_HASH" ]; then
+            echo "::error::Failed to fetch/checksum ${URL}"
+            exit 1
+          fi
+
+          python3 - "$VERSION" "$SRC_HASH" <<'EOF'
+          import re, sys
+          from pathlib import Path
+          version, src_hash = sys.argv[1], sys.argv[2]
+          p = Path("flake.nix")
+          s = p.read_text()
+          s = re.sub(r'^(\s*version = ")[^"]*(")', lambda m: m.group(1) + version + m.group(2), s, flags=re.M)
+          s = re.sub(r'^(\s*srcHash = ")[^"]*(")', lambda m: m.group(1) + src_hash + m.group(2), s, flags=re.M)
+          p.write_text(s)
+          EOF
+
+          nix flake lock
+          nix build .#yayma
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add flake.nix flake.lock
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: update nix flake for v${VERSION}"
+            git push origin master
+          fi
