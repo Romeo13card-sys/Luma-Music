@@ -8,20 +8,7 @@ concurrency:
   group: desktop-release-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  cleanup:
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      actions: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - env:
-          GH_TOKEN: ${{ github.token }}
-        run: python scripts/cancel-obsolete-desktop-runs.py
   desktop:
-    needs: cleanup
     strategy:
       fail-fast: false
       matrix:
@@ -94,7 +81,6 @@ jobs:
           path: dist/*
           if-no-files-found: error
   legacy:
-    needs: cleanup
     strategy:
       fail-fast: false
       matrix:
