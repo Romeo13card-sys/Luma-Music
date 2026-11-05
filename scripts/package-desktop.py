@@ -38,7 +38,8 @@ def main():
     output = root/'dist'; output.mkdir(exist_ok=True)
     suffix = '-experimental' if args.legacy else ''
     filename = f'Luma-Music-{version}-{platform}-{arch}{suffix}.zip'
-    metadata = dict(version=version, platform=platform, arch=arch, source=source, binary=identity,
+    recipe = subprocess.check_output(['git','rev-parse','HEAD'], cwd=root, text=True).strip()
+    metadata = dict(version=version, platform=platform, arch=arch, source=source, build_recipe=recipe, binary=identity,
                     legacy_experimental=args.legacy, runtime_test='--self-check on build host; real devices required')
     with tempfile.TemporaryDirectory() as temp:
         stage = Path(temp)

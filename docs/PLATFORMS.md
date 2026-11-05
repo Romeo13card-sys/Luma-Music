@@ -58,7 +58,8 @@ Apple: Xcode Command Line Tools, macOS SDK. `scripts/package-desktop.py`
 commit и SHA-256; macOS получает `.app` и ad-hoc-подпись.
 
 Workflow `Desktop release` запускается только owner-push ветки `publish-desktop/v...`
-с тем же деревом исходников, что опубликованный тег. Он создаёт обычные и legacy
+с теми же исходниками приложения/зависимостей/лицензий, что опубликованный тег.
+Исправления build recipe допускаются отдельно и записываются в build-info.json. Он создаёт обычные и legacy
 архивы в отдельных jobs и прикрепляет их к существующему Release без перезаписи.
 Отказ legacy job не скрывает успешно собранные современные платформы.
 
