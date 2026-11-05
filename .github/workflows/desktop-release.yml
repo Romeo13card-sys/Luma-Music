@@ -85,9 +85,14 @@ jobs:
         with:
           key: legacy-${{ matrix.target }}
       - name: Build legacy Windows std and application
+        shell: bash
         env:
           RUSTFLAGS: '-C target-feature=+crt-static -C link-arg=/SUBSYSTEM:WINDOWS,6.01'
-        run: cargo +nightly-2025-09-18 build -Z build-std=std,panic_abort --release --locked -p luma-desktop --target ${{ matrix.target }}
+        run: |
+          set -o pipefail
+          cargo +nightly-2025-09-18 build -Z build-std=std,panic_abort --release --locked -p luma-desktop --target ${{ matrix.target }} 2>&1 | tee build-legacy.log
+      - if: failure()
+        run: python scripts/ci-build-summary.py build-legacy.log
       - run: python -m pip install pefile==2024.8.26
       - run: python scripts/audit-windows-legacy.py target/${{ matrix.target }}/release/luma-desktop.exe
       - run: python scripts/package-desktop.py --binary target/${{ matrix.target }}/release/luma-desktop.exe --platform Windows-7-8-8.1 --arch ${{ matrix.arch }} --legacy
