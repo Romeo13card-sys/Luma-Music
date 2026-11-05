@@ -43,10 +43,7 @@ class PlaybackService : Service() {
             queue = emptyList()
             index = -1
             restoredPosition = 0
-            val app = context.applicationContext
-            val service = instance
-            if (service != null) service.worker.execute { QueueStore(app).clear() }
-            else QueueStore(app).clear()
+            QueueStore.clearAsync(context)
         }
 
         fun restore(context: Context) {
@@ -133,7 +130,7 @@ class PlaybackService : Service() {
         if (index !in queue.indices) return
         val start = maxOf(0, index - 20)
         val snapshot = QueueStore.Snapshot(queue.drop(start).take(200), index - start, position())
-        worker.execute { QueueStore(this).save(snapshot) }
+        QueueStore.saveAsync(this, snapshot)
     }
 
     private fun feedback(song: Song, type: String, seconds: Int = 0) {

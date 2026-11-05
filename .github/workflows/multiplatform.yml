@@ -25,7 +25,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: Luma-Music-desktop-preview-${{ runner.os }}-${{ runner.arch }}
-          path: Luma-Music-desktop-preview.zip
+          path: dist/*
           if-no-files-found: error
   iphone-simulator:
     runs-on: macos-latest

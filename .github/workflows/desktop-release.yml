@@ -1,0 +1,138 @@
+name: Desktop release
+on:
+  push:
+    branches: ['publish-desktop/**']
+permissions:
+  contents: read
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            platform: Linux
+            arch: x64
+          - os: windows-latest
+            platform: Windows-10-11
+            arch: x64
+          - os: macos-15-intel
+            platform: macOS
+            arch: x64
+          - os: macos-latest
+            platform: macOS
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '11.0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python scripts/desktop-release-context.py
+      - uses: dtolnay/rust-toolchain@1.90.0
+      - uses: Swatinem/rust-cache@v2
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libxkbcommon-dev libwayland-dev libgl1-mesa-dev libgl1-mesa-dri xvfb
+      - run: cargo test --locked -p yamusic-core -p luma-desktop
+      - if: runner.os == 'Windows'
+        shell: bash
+        run: echo 'RUSTFLAGS=-C target-feature=+crt-static' >> "$GITHUB_ENV"
+      - run: cargo build --release --locked -p luma-desktop
+      - if: runner.os == 'Linux'
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+        run: timeout 30s xvfb-run -a target/release/luma-desktop --ui-smoke
+      - run: python scripts/package-desktop.py --platform ${{ matrix.platform }} --arch ${{ matrix.arch }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.platform }}-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+  legacy:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-win7-windows-msvc
+            arch: x64
+          - target: i686-win7-windows-msvc
+            arch: x86
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python scripts/desktop-release-context.py
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2025-09-18
+          components: rust-src
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.arch }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: legacy-${{ matrix.target }}
+      - name: Build legacy Windows std and application
+        env:
+          RUSTFLAGS: '-C target-feature=+crt-static -C link-arg=/SUBSYSTEM:WINDOWS,6.01'
+        run: cargo +nightly-2025-09-18 build -Z build-std=std,panic_abort --release --locked -p luma-desktop --target ${{ matrix.target }}
+      - run: python -m pip install pefile==2024.8.26
+      - run: python scripts/audit-windows-legacy.py target/${{ matrix.target }}/release/luma-desktop.exe
+      - run: python scripts/package-desktop.py --binary target/${{ matrix.target }}/release/luma-desktop.exe --platform Windows-7-8-8.1 --arch ${{ matrix.arch }} --legacy
+      - uses: actions/upload-artifact@v4
+        with:
+          name: legacy-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+  publish:
+    needs: desktop
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: release
+      - name: Attach immutable desktop builds
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          tag="${RELEASE_BRANCH#publish-desktop/}"
+          gh release upload "$tag" release/*.zip release/*.sha256
+  publish-legacy:
+    needs: legacy
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: legacy-*
+          merge-multiple: true
+          path: release
+      - name: Attach experimental legacy builds
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          tag="${RELEASE_BRANCH#publish-desktop/}"
+          gh release upload "$tag" release/*.zip release/*.sha256

@@ -75,9 +75,17 @@ impl MusicClient {
             200 => {}
             status => return Err(format!("Сервис вернул HTTP {status}")),
         }
-        let body: Value = response
-            .json()
-            .map_err(|_| "Неизвестный формат ответа сервиса")?;
+        use std::io::Read;
+        let mut bytes = Vec::new();
+        response
+            .take(4 * 1024 * 1024 + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|_| "Не удалось прочитать ответ сервиса")?;
+        if bytes.len() > 4 * 1024 * 1024 {
+            return Err("Ответ сервиса слишком большой. Попробуйте другой запрос.".into());
+        }
+        let body: Value =
+            serde_json::from_slice(&bytes).map_err(|_| "Неизвестный формат ответа сервиса")?;
         if body.get("error").is_some() {
             return Err("Яндекс Музыка отклонила запрос".into());
         }
@@ -313,6 +321,24 @@ fn parse_wave(value: &Value) -> Result<Value> {
     Ok(json!(tracks))
 }
 
+/// Audio transport never sends an account token and follows only trusted HTTPS redirects.
+pub fn audio_client() -> Result<Client> {
+    Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(60))
+        .user_agent("Luma-Music-Audio")
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if attempt.previous().len() >= 5
+                || validate_download_url(attempt.url().as_str()).is_err()
+            {
+                attempt.error("Untrusted audio redirect")
+            } else {
+                attempt.follow()
+            }
+        }))
+        .build()
+        .map_err(|_| "Не удалось создать аудиоклиент".into())
+}
 fn validate_download_url(raw: &str) -> Result<()> {
     let url = reqwest::Url::parse(raw).map_err(|_| "Некорректный адрес аудио")?;
     let host = url.host_str().unwrap_or("");

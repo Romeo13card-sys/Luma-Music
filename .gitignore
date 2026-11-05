@@ -16,3 +16,8 @@ __pycache__/
 *.p12
 *.pfx
 .signing/
+
+/dist/
+/Luma-Music-desktop-preview.zip
+/ios/build/
+/ios/*.xcodeproj/

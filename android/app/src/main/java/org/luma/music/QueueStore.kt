@@ -12,6 +12,21 @@ class QueueStore(context: Context) {
     data class Snapshot(val songs: List<Song>, val index: Int, val position: Int)
 
     companion object {
+        private val persistence = QueuePersistence()
+        fun saveAsync(context: Context, snapshot: Snapshot) {
+            val app = context.applicationContext
+            persistence.save {
+                try { QueueStore(app).save(snapshot) }
+                catch (_: Exception) { android.util.Log.w("Luma", "Could not save playback queue") }
+            }
+        }
+        fun clearAsync(context: Context) {
+            val app = context.applicationContext
+            persistence.clear {
+                try { QueueStore(app).clear() }
+                catch (_: Exception) { android.util.Log.w("Luma", "Could not clear playback queue") }
+            }
+        }
         fun encode(snapshot: Snapshot): String {
             val items = JSONArray()
             snapshot.songs.take(200).forEach { song ->
@@ -51,7 +66,9 @@ class QueueStore(context: Context) {
         database.call("queue_save", encode(snapshot))
     }
 
-    fun load(): Snapshot? = try {
+    fun load(): Snapshot? {
+        if (persistence.cleared) return null
+        return try {
         val legacy = prefs.getString("state", null)
         var saved = database.call("queue_load") as? String
         if (legacy != null && saved == null) {
@@ -65,6 +82,7 @@ class QueueStore(context: Context) {
     } catch (_: Exception) {
         // Preserve the legacy snapshot when migration fails.
         null
+        }
     }
 
     fun clear() {
