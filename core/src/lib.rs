@@ -1,4 +1,5 @@
 mod queue;
+mod update_transport;
 mod updates;
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
@@ -215,19 +216,14 @@ impl MusicClient {
         Ok(json!(true))
     }
     pub fn stream(&self, id: &str) -> Result<String> {
+        self.stream_at(id, 320)
+    }
+    pub fn stream_at(&self, id: &str, quality: u64) -> Result<String> {
         if id.is_empty() || !id.bytes().all(|b| b.is_ascii_digit()) {
             return Err("Некорректный идентификатор трека".into());
         }
         let value = self.get(&format!("/tracks/{id}/download-info"), &[])?;
-        let info = value
-            .as_array()
-            .and_then(|items| {
-                items
-                    .iter()
-                    .filter(|v| v["codec"] == "mp3" && v["transport"] == "raw")
-                    .max_by_key(|v| v["bitrateInKbps"].as_u64().unwrap_or(0))
-            })
-            .ok_or("Для трека нет доступного MP3-потока")?;
+        let info = download_choice(&value, quality)?;
         let url = info["downloadInfoUrl"]
             .as_str()
             .ok_or("Отсутствует адрес потока")?;
@@ -246,6 +242,30 @@ impl MusicClient {
             quick_xml::de::from_str(&xml).map_err(|_| "Неизвестный формат данных аудио")?;
         info.signed_url()
     }
+}
+
+fn download_choice(value: &Value, quality: u64) -> Result<&Value> {
+    if ![128, 192, 320].contains(&quality) {
+        return Err("Неизвестное качество звука".into());
+    }
+    value
+        .as_array()
+        .and_then(|items| {
+            items
+                .iter()
+                .filter(|v| {
+                    v["codec"] == "mp3"
+                        && v["transport"] == "raw"
+                        && v["bitrateInKbps"]
+                            .as_u64()
+                            .map(|rate| rate > 0 && rate <= quality)
+                            .unwrap_or(false)
+                })
+                .max_by_key(|v| v["bitrateInKbps"].as_u64().unwrap_or(0))
+        })
+        .ok_or_else(|| {
+            "Нет MP3-потока в выбранном качестве. Выберите другое качество в настройках.".into()
+        })
 }
 
 fn parse_wave(value: &Value) -> Result<Value> {
@@ -323,6 +343,16 @@ pub fn dispatch(token: &str, operation: &str, argument: &str) -> String {
             "likes" => client.likes().map(|v| json!(v)),
             "wave" => client.wave(argument),
             "wave_feedback" => client.wave_feedback(argument),
+            "stream_quality" => {
+                let options: Value =
+                    serde_json::from_str(argument).map_err(|_| "Некорректные параметры аудио")?;
+                client
+                    .stream_at(
+                        options["id"].as_str().unwrap_or(""),
+                        options["quality"].as_u64().unwrap_or(0),
+                    )
+                    .map(|url| json!(url))
+            }
             "stream" => client.stream(argument).map(|url| json!(url)),
             _ => Err("Неизвестная операция".into()),
         }
@@ -343,6 +373,12 @@ pub fn core_dispatch(operation: &str, argument: &str) -> String {
         }
         let v: Value = serde_json::from_str(argument).map_err(|_| "Некорректный запрос ядра")?;
         match operation {
+            "upgrade_validate" => updates::validate_upgrade(&v),
+            "daily_check_due" => Ok(json!(updates::daily_due(
+                v["now"].as_i64().unwrap_or(0),
+                v["previous"].as_i64().unwrap_or(0)
+            ))),
+            "update_check" => update_transport::check(&v),
             "version_compare" => Ok(json!(updates::compare(
                 v["candidate"].as_str().unwrap_or(""),
                 v["installed"].as_str().unwrap_or("")
@@ -375,6 +411,46 @@ pub extern "system" fn Java_org_luma_music_Native_core(
         Some(core_dispatch(&operation, &argument))
     })()
     .unwrap_or_else(|| json!({"ok":false,"error":"Ошибка JNI"}).to_string());
+    env.new_string(value)
+        .map(|s| s.into_raw())
+        .unwrap_or(std::ptr::null_mut())
+}
+
+#[cfg(target_os = "android")]
+#[no_mangle]
+pub extern "system" fn Java_org_luma_music_Native_download(
+    mut env: jni::JNIEnv,
+    _object: jni::objects::JObject,
+    argument: jni::objects::JString,
+    progress: jni::objects::JObject,
+) -> jni::sys::jstring {
+    let result: Result<String> = (|| {
+        let raw: String = env.get_string(&argument).map_err(|_| "Ошибка JNI")?.into();
+        if raw.len() > queue::MAX_BYTES {
+            return Err("Запрос обновления слишком большой".into());
+        }
+        let data: Value =
+            serde_json::from_str(&raw).map_err(|_| "Некорректный запрос обновления")?;
+        update_transport::download(&data, |percent| {
+            match env.call_method(
+                &progress,
+                "onProgress",
+                "(I)Z",
+                &[jni::objects::JValue::Int(percent)],
+            ) {
+                Ok(value) => value.z().unwrap_or(false),
+                Err(_) => {
+                    let _ = env.exception_clear();
+                    false
+                }
+            }
+        })
+    })();
+    let value = match result {
+        Ok(data) => json!({"ok":true,"data":data}),
+        Err(error) => json!({"ok":false,"error":error}),
+    }
+    .to_string();
     env.new_string(value)
         .map(|s| s.into_raw())
         .unwrap_or(std::ptr::null_mut())
@@ -495,5 +571,22 @@ mod tests {
         let client = MusicClient::new("test-token").unwrap();
         assert!(client.wave("../escape").is_err());
         assert!(client.wave_feedback(r#"{"type":"unknown"}"#).is_err());
+    }
+    #[test]
+    fn quality_limit_never_silently_exceeds_mobile_budget() {
+        let items = json!([
+            {"codec":"mp3","transport":"raw","bitrateInKbps":320},
+            {"codec":"mp3","transport":"raw","bitrateInKbps":128},
+            {"codec":"aac","transport":"raw","bitrateInKbps":192}
+        ]);
+        assert_eq!(download_choice(&items, 128).unwrap()["bitrateInKbps"], 128);
+        assert_eq!(download_choice(&items, 192).unwrap()["bitrateInKbps"], 128);
+        assert_eq!(download_choice(&items, 320).unwrap()["bitrateInKbps"], 320);
+        assert!(download_choice(
+            &json!([{"codec":"mp3","transport":"raw","bitrateInKbps":320}]),
+            128
+        )
+        .is_err());
+        assert!(download_choice(&items, 999).is_err());
     }
 }

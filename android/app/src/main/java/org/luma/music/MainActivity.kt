@@ -26,12 +26,26 @@ class MainActivity : Activity() {
     private var creditScreen = false
     private var pendingUpdate: java.io.File? = null
     private var checkingUpdates = false
-    private val renderPolicy by lazy {
+    private val hardwarePolicy by lazy {
         val manager = getSystemService(android.app.ActivityManager::class.java)
         val memory = android.app.ActivityManager.MemoryInfo()
         manager.getMemoryInfo(memory)
         RenderPolicy.choose(manager.isLowRamDevice, memory.totalMem, manager.memoryClass)
     }
+    private val economyPolicy = RenderPolicy(true)
+    private val renderPolicy
+        get() =
+            if (preferences.getBoolean("reduce_effects", false)) economyPolicy else hardwarePolicy
+
+    private val palette
+        get() =
+            AppThemes.resolve(
+                preferences.getString("theme_mode", "system").orEmpty(),
+                resources.configuration.uiMode and
+                    android.content.res.Configuration.UI_MODE_NIGHT_MASK ==
+                    android.content.res.Configuration.UI_MODE_NIGHT_YES,
+            )
+
     private var token = ""
     private var demo = false
     private var generation = 0
@@ -52,11 +66,20 @@ class MainActivity : Activity() {
 
     private fun dp(n: Int) = (n * resources.displayMetrics.density).toInt()
 
-    private val white = Color.rgb(239, 247, 248)
-    private val muted = Color.rgb(172, 193, 201)
-    private val mint = Color.rgb(182, 244, 221)
+    private val white
+        get() = palette.text
+
+    private val muted
+        get() = palette.muted
+
+    private val mint
+        get() = palette.accent
 
     override fun onCreate(state: Bundle?) {
+        setTheme(
+            if (palette.light) R.style.Theme_Luma_LiquidGlass_Light
+            else R.style.Theme_Luma_LiquidGlass
+        )
         super.onCreate(state)
         // Public update feed no longer uses stored GitHub credentials.
         TokenStore(this, "github_auth").clear()
@@ -71,7 +94,10 @@ class MainActivity : Activity() {
         PlaybackService.repeat = preferences.getBoolean("repeat", false)
         PlaybackService.restore(this)
         token = TokenStore(this).load().orEmpty()
-        if (token.isEmpty()) login() else shell("Главная")
+        demo = state?.getBoolean("demo", false) ?: false
+        page = state?.getString("page") ?: "Главная"
+        if (token.isEmpty() && !demo) login() else shell(page)
+        if (state?.getBoolean("settings", false) == true) settings()
         handleOAuth(intent)
         if (
             Build.VERSION.SDK_INT >= 33 &&
@@ -127,6 +153,11 @@ class MainActivity : Activity() {
         }
 
     private fun backdrop() {
+        AppThemes.active = palette
+        val bars =
+            android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or
+                android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+        window.insetsController?.setSystemBarsAppearance(if (palette.light) bars else 0, bars)
         creditScreen = false
         mini = null
         body = column()
@@ -772,6 +803,84 @@ class MainActivity : Activity() {
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         status = text("", 13f, muted)
         body.addView(status)
+        val appearance = panel(body)
+        appearance.addView(text("Оформление", 22f, white, true))
+        val mode = preferences.getString("theme_mode", "system")
+        val labels =
+            arrayOf(
+                "Как в системе",
+                "Тёмная · Жидкое стекло",
+                "Светлая · Жидкое стекло",
+                "OLED · Чёрная",
+            )
+        val modes = arrayOf("system", "dark", "light", "oled")
+        appearance.addView(
+            action("Тема: ${labels[modes.indexOf(mode).coerceAtLeast(0)]}") {
+                AlertDialog.Builder(this)
+                    .setTitle("Тема оформления")
+                    .setSingleChoiceItems(labels, modes.indexOf(mode).coerceAtLeast(0)) {
+                        dialog,
+                        index ->
+                        preferences.edit().putString("theme_mode", modes[index]).apply()
+                        setTheme(
+                            if (palette.light) R.style.Theme_Luma_LiquidGlass_Light
+                            else R.style.Theme_Luma_LiquidGlass
+                        )
+                        dialog.dismiss()
+                        settings()
+                    }
+                    .setNegativeButton("Отмена", null)
+                    .show()
+            }
+        )
+        val sound = panel(body)
+        sound.addView(text("Качество звука", 22f, white, true))
+        fun quality(title: String, key: String, default: Int) {
+            val values = intArrayOf(128, 192, 320)
+            val names =
+                arrayOf(
+                    "Экономия · до 128 кбит/с",
+                    "Баланс · до 192 кбит/с",
+                    "Высокое · до 320 кбит/с",
+                )
+            val selected = preferences.getInt(key, default)
+            sound.addView(
+                action("$title: до $selected кбит/с") {
+                    AlertDialog.Builder(this)
+                        .setTitle(title)
+                        .setSingleChoiceItems(names, values.indexOf(selected).coerceAtLeast(0)) {
+                            dialog,
+                            index ->
+                            preferences.edit().putInt(key, values[index]).apply()
+                            dialog.dismiss()
+                            settings()
+                        }
+                        .setNegativeButton("Отмена", null)
+                        .show()
+                }
+            )
+            gap(sound, 8)
+        }
+        quality("Wi-Fi", "quality_wifi", 320)
+        quality("Сеть с лимитом", "quality_mobile", 128)
+        sound.addView(
+            text(
+                "Применяется к следующему треку. Формат MP3, доступность зависит от ответа Яндекса.",
+                13f,
+                muted,
+            )
+        )
+        sound.addView(
+            Switch(this).apply {
+                text = "Не загружать аудио в платной сети"
+                setTextColor(white)
+                minHeight = dp(54)
+                isChecked = preferences.getBoolean("unmetered_only", false)
+                setOnCheckedChangeListener { _, value ->
+                    preferences.edit().putBoolean("unmetered_only", value).apply()
+                }
+            }
+        )
         val player = panel(body)
         player.addView(text("Плеер", 22f, white, true))
         fun toggle(title: String, key: String, checked: Boolean, changed: (Boolean) -> Unit = {}) {
@@ -791,6 +900,77 @@ class MainActivity : Activity() {
         toggle("Вибрация кнопок", "haptics", preferences.getBoolean("haptics", true))
         toggle("Перемешивание", "shuffle", PlaybackService.shuffle) { PlaybackService.shuffle = it }
         toggle("Повтор трека", "repeat", PlaybackService.repeat) { PlaybackService.repeat = it }
+        player.addView(
+            action("Таймер сна") {
+                val service = PlaybackService.instance
+                if (service == null) {
+                    status.text = "Сначала запустите трек"
+                    return@action
+                }
+                val names = arrayOf("Выключить", "15 минут", "30 минут", "60 минут")
+                val minutes = intArrayOf(0, 15, 30, 60)
+                AlertDialog.Builder(this)
+                    .setTitle("Таймер сна")
+                    .setItems(names) { _, index ->
+                        service.setSleepTimer(minutes[index])
+                        status.text =
+                            if (index == 0) "Таймер выключен"
+                            else "Пауза через ${minutes[index]} минут"
+                    }
+                    .show()
+            }
+        )
+        gap(player, 8)
+        player.addView(
+            action("Уведомления Android") {
+                startActivity(
+                    Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                        .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, packageName)
+                )
+            }
+        )
+        val storage = panel(body)
+        storage.addView(text("Память и трафик", 22f, white, true))
+        storage.addView(
+            Switch(this).apply {
+                text = "Уменьшить эффекты"
+                setTextColor(white)
+                minHeight = dp(54)
+                isChecked = preferences.getBoolean("reduce_effects", false)
+                setOnCheckedChangeListener { _, value ->
+                    preferences.edit().putBoolean("reduce_effects", value).apply()
+                    settings()
+                }
+            }
+        )
+        storage.addView(
+            action("Удалить скачанные обновления") {
+                AlertDialog.Builder(this)
+                    .setTitle("Очистить файлы обновлений?")
+                    .setMessage("Аккаунт, музыка и очередь сохранятся.")
+                    .setNegativeButton("Отмена", null)
+                    .setPositiveButton("Очистить") { _, _ ->
+                        val version = generation
+                        executor.execute {
+                            val deleted =
+                                java.io
+                                    .File(cacheDir, "updates")
+                                    .listFiles()
+                                    ?.filter {
+                                        it.isFile && it.name in setOf("update.apk", "update.part")
+                                    }
+                                    ?.all { it.delete() } ?: true
+                            runOnUiThread {
+                                if (!destroyed && version == generation)
+                                    status.text =
+                                        if (deleted) "Файлы обновлений удалены"
+                                        else "Не все файлы удалось удалить"
+                            }
+                        }
+                    }
+                    .show()
+            }
+        )
         val update = panel(body)
         update.addView(text("Обновления", 22f, white, true))
         val current = packageManager.getPackageInfo(packageName, 0).versionName
@@ -1071,6 +1251,13 @@ class MainActivity : Activity() {
             )
         PlaybackService.command(this, "play", 0)
         fullPlayer()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean("demo", demo)
+        outState.putString("page", page)
+        outState.putBoolean("settings", creditScreen)
+        super.onSaveInstanceState(outState)
     }
 
     override fun onStart() {

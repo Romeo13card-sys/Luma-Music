@@ -77,6 +77,41 @@ class PlaybackService : Service() {
     private lateinit var audio: AudioManager
     private var generation = 0
     private var prepared = false
+    private var sleepTimer: Runnable? = null
+
+    fun setSleepTimer(minutes: Int) {
+        sleepTimer?.let { main.removeCallbacks(it) }
+        sleepTimer = null
+        if (minutes <= 0) return
+        val task = Runnable {
+            pause()
+            message = "Таймер сна · пауза"
+            publish()
+            sleepTimer = null
+        }
+        sleepTimer = task
+        main.postDelayed(task, minutes.toLong() * 60000)
+    }
+
+    private fun streamOptions(song: Song): String {
+        val network = getSystemService(android.net.ConnectivityManager::class.java)
+        val metered = network.isActiveNetworkMetered
+        val preferences = getSharedPreferences("player_settings", MODE_PRIVATE)
+        check(!preferences.getBoolean("unmetered_only", false) || !metered) {
+            "Аудио в сети с лимитом отключено в настройках"
+        }
+        return JSONObject()
+            .put("id", song.id)
+            .put(
+                "quality",
+                preferences.getInt(
+                    if (metered) "quality_mobile" else "quality_wifi",
+                    if (metered) 128 else 320,
+                ),
+            )
+            .toString()
+    }
+
     private var waveSessionStarted = false
     private var resumePosition = 0
     private val checkpoint =
@@ -307,7 +342,11 @@ class PlaybackService : Service() {
                     }
                     song.uri
                         ?: JSONObject(
-                                Native.request(TokenStore(this).load().orEmpty(), "stream", song.id)
+                                Native.request(
+                                    TokenStore(this).load().orEmpty(),
+                                    "stream_quality",
+                                    streamOptions(song),
+                                )
                             )
                             .let {
                                 if (!it.optBoolean("ok"))

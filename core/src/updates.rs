@@ -140,3 +140,67 @@ mod tests {
         .is_err());
     }
 }
+
+pub fn validate_upgrade(v: &Value) -> Result<Value, String> {
+    use std::collections::BTreeSet;
+    if v["candidatePackage"].as_str() != v["installedPackage"].as_str()
+        || v["installedPackage"].as_str().unwrap_or("").is_empty()
+    {
+        return Err("APK принадлежит другому приложению".into());
+    }
+    if v["candidateVersion"].as_u64().unwrap_or(0)
+        <= v["installedVersion"].as_u64().unwrap_or(u64::MAX)
+    {
+        return Err("Установлена такая же или более новая версия".into());
+    }
+    if v["minSdk"].as_u64().unwrap_or(u64::MAX) > v["deviceSdk"].as_u64().unwrap_or(0) {
+        return Err("APK требует более новую Android".into());
+    }
+    let set = |field: &str| -> Option<BTreeSet<&str>> {
+        let items = v[field].as_array()?;
+        if items.is_empty() || items.len() > 16 {
+            return None;
+        }
+        items
+            .iter()
+            .map(|i| i.as_str().filter(|s| !s.is_empty()))
+            .collect()
+    };
+    let before = set("before");
+    let after = set("after");
+    if before.is_none() || before != after {
+        return Err("Подпись отличается от установленной версии. Обновление поверх неё невозможно без исходного ключа.".into());
+    }
+    Ok(serde_json::json!(true))
+}
+pub fn daily_due(now: i64, previous: i64) -> bool {
+    previous <= 0 || !(0..24 * 60 * 60 * 1000).contains(&now.saturating_sub(previous))
+}
+#[cfg(test)]
+mod platform_policy_tests {
+    use super::*;
+    use serde_json::json;
+    #[test]
+    fn upgrades_require_new_version_matching_identity_and_certificate() {
+        let good = json!({"installedPackage":"org.luma.music","candidatePackage":"org.luma.music","installedVersion":9,"candidateVersion":10,"minSdk":30,"deviceSdk":33,"before":["cert"],"after":["cert"]});
+        assert_eq!(validate_upgrade(&good).unwrap(), json!(true));
+        for (field, bad) in [
+            ("candidatePackage", json!("other")),
+            ("candidateVersion", json!(9)),
+            ("minSdk", json!(36)),
+            ("before", json!([])),
+            ("after", json!(["other"])),
+        ] {
+            let mut value = good.clone();
+            value[field] = bad;
+            assert!(validate_upgrade(&value).is_err());
+        }
+    }
+    #[test]
+    fn daily_checks_handle_first_launch_and_clock_changes() {
+        assert!(daily_due(1000, 0));
+        assert!(!daily_due(1001, 1000));
+        assert!(daily_due(1000 + 24 * 60 * 60 * 1000, 1000));
+        assert!(daily_due(900, 1000));
+    }
+}

@@ -8,4 +8,11 @@
         <item name="android:navigationBarColor">#09131A</item>
         <item name="android:windowBackground">#09131A</item>
     </style>
+    <style name="Theme.Luma.LiquidGlass.Light" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:colorAccent">#165C50</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:windowBackground">#F2F7F6</item>
+    </style>
 </resources>

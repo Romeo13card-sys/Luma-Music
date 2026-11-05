@@ -10,7 +10,8 @@ fun glass(radius: Float = 28f, accent: Boolean = false): GradientDrawable =
             GradientDrawable(
                 GradientDrawable.Orientation.TL_BR,
                 if (accent) intArrayOf(Color.parseColor("#C2F8E5"), Color.parseColor("#78C9C0"))
-                else intArrayOf(Color.parseColor("#35FFFFFF"), Color.parseColor("#12FFFFFF")),
+                else if (AppThemes.active.light) intArrayOf(0xDDFFFFFF.toInt(), 0xA0E0ECE9.toInt())
+                else intArrayOf(0x35FFFFFF, 0x12FFFFFF),
             ) {
             private val rim =
                 Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -58,7 +59,10 @@ fun glass(radius: Float = 28f, accent: Boolean = false): GradientDrawable =
         }
         .apply {
             cornerRadius = radius
-            setStroke(1, if (accent) 0x70FFFFFF else 0x38FFFFFF)
+            setStroke(
+                1,
+                if (AppThemes.active.light) 0x30607972 else if (accent) 0x70FFFFFF else 0x38FFFFFF,
+            )
         }
 
 class Atmosphere(context: Context, private val economy: Boolean = false) : View(context) {
@@ -73,7 +77,8 @@ class Atmosphere(context: Context, private val economy: Boolean = false) : View(
                 w * .85f,
                 h * .15f,
                 w * .95f,
-                intArrayOf(0xFF254F59.toInt(), 0x00254F59),
+                if (AppThemes.active.light) intArrayOf(0xFFD4EBE6.toInt(), 0x00D4EBE6)
+                else intArrayOf(0xFF254F59.toInt(), 0x00254F59),
                 null,
                 Shader.TileMode.CLAMP,
             )
@@ -93,14 +98,16 @@ class Atmosphere(context: Context, private val economy: Boolean = false) : View(
                 0f,
                 h * .7f,
                 w * .9f,
-                intArrayOf(0xFF343459.toInt(), 0x00343459),
+                if (AppThemes.active.light) intArrayOf(0xFFE1E3F1.toInt(), 0x00E1E3F1)
+                else intArrayOf(0xFF343459.toInt(), 0x00343459),
                 null,
                 Shader.TileMode.CLAMP,
             )
     }
 
     override fun onDraw(canvas: Canvas) {
-        canvas.drawColor(Color.rgb(9, 19, 26))
+        canvas.drawColor(AppThemes.active.background)
+        if (AppThemes.active.oled) return
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), first)
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), second)
         if (!economy) canvas.drawOval(lensBounds, lens)

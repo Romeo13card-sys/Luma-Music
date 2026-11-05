@@ -1,8 +1,8 @@
-# Публичные APK без GitHub Secrets у сборщика и без токенов у пользователей
+# Публичные выпуски Luma Music
 
-Приложение читает `Romeo13card-sys/Luma-Music-Releases`. Исходники остаются в
-приватном `Luma-Music`; отдельный каталог должен быть публичным и содержать
-только APK, SHA256SUMS.txt и публичный fingerprint сертификата.
+Репозиторий `Romeo13card-sys/Luma-Music` теперь публичный и используется как
+единственный каталог готовых APK. Не нужно создавать второй репозиторий
+или вводить пользовательский GitHub-токен в приложение.
 
 ## Что уже сделано
 
@@ -13,14 +13,6 @@
   установки сохраняются. Автоматической установки без согласия пользователя нет.
 - Локальный подписывающий скрипт хранит один ключ вне Git. Он не использует
   GitHub Secrets. Публикация выполняется отдельно от сборочного runner.
-
-## Владелец: создать каталог выпусков один раз
-
-GitHub → New repository → owner Romeo13card-sys → name Luma-Music-Releases → Public.
-Включите Add a README, чтобы появилась ветка main для тегов выпусков.
-Не переносите туда исходники или каталог ключа. Создание из облачной машины
-заблокировано: GitHub API отвечает Forbidden, поэтому каталог ещё не подтверждён.
-Пока он не создан и первый выпуск не опубликован, OTA ещё не работает.
 
 ## Подпись в защищённой среде
 
@@ -36,8 +28,8 @@ GitHub → New repository → owner Romeo13card-sys → name Luma-Music-Releases
 ```sh
 python3 scripts/sign-local-apks.py --init-key \
   --key-dir /secure/path/luma-signing \
-  --input android/app/build/outputs/distribution/0.4.1-test \
-  --output android/app/build/outputs/family/0.4.1-test
+  --input android/app/build/outputs/distribution/0.5.0-rc.1 \
+  --output android/app/build/outputs/family/0.5.0-rc.1
 ```
 
 Для следующих версий та же команда без `--init-key` и с тем же key-dir.
@@ -50,7 +42,7 @@ python3 scripts/sign-local-apks.py --init-key \
 На машине с обычной авторизацией автора `gh auth login` (браузер, не секрет в CI):
 
 ```sh
-scripts/publish-public-release.sh v0.4.1-test.1 android/app/build/outputs/family/0.4.1-test
+scripts/publish-public-release.sh v0.5.0-rc.1 android/app/build/outputs/family/0.5.0-rc.1
 ```
 
 Скрипт проверяет контрольные суммы, сертификаты и публичность целевого репозитория,

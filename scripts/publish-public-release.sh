@@ -21,7 +21,7 @@ for apk in "$release_dir"/*.apk; do
         grep -Fxq "Signer #1 certificate SHA-256 digest: $certificate"
 done
 # gh uses the author's normal browser login; relatives need no GitHub account or token.
-repository='Romeo13card-sys/Luma-Music-Releases'
+repository='Romeo13card-sys/Luma-Music'
 visibility="$(gh repo view "$repository" --json isPrivate --jq .isPrivate)"
 if [[ "$visibility" != false ]]; then
     echo 'Distribution repository must be public' >&2

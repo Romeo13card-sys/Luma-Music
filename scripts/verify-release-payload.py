@@ -12,11 +12,11 @@ def verify(root: Path):
     payload = root / '.release-input'
     info = json.loads((payload / 'release.json').read_text())
     tag, commit, version = info['tag'], info['commit'], info['version']
-    if not re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+-test\.[0-9]+', tag):
-        raise ValueError('Invalid test tag')
+    if not re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+-(?:test|rc)\.[0-9]+', tag):
+        raise ValueError('Invalid candidate tag')
     if not re.fullmatch(r'[a-f0-9]{40}', commit) or not re.fullmatch(r'[A-Za-z0-9._-]+', version):
         raise ValueError('Invalid release identity')
-    if not tag.startswith('v'+version+'.'):
+    if tag != 'v'+version and not tag.startswith('v'+version+'.'):
         raise ValueError('Tag/version mismatch')
     subprocess.run(['git', 'merge-base', '--is-ancestor', commit, 'HEAD'], cwd=root, check=True)
     expected = (root / '.github/family-certificate.sha256').read_text().strip()

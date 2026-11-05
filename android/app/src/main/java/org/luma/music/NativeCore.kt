@@ -2,7 +2,7 @@ package org.luma.music
 
 import org.json.JSONObject
 
-/** Offline Rust operations do not create a network client or require an OAuth token. */
+/** Rust operations; offline policy calls do not create a network client. */
 object NativeCore {
     fun call(operation: String, argument: String): Any? {
         val reply = JSONObject(Native.core(operation, argument))

@@ -30,7 +30,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/verify-release-payload.py >> "$GITHUB_OUTPUT"
-      - name: Publish immutable test release
+      - name: Publish immutable candidate release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
