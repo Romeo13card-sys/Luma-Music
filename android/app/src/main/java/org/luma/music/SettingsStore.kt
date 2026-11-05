@@ -57,6 +57,18 @@ class SettingsStore private constructor(context: Context) {
             }
         }
     }
+    fun reset(onSaved: (Boolean) -> Unit) {
+        val defaults = NativeCore.call("settings_defaults", "{}") as JSONObject
+        synchronized(this) {
+            values.keys().asSequence().toList().forEach { values.remove(it) }
+            defaults.keys().forEach { values.put(it, defaults.get(it)) }
+            writer.execute {
+                val saved = runCatching { database.call("settings_reset") }.isSuccess
+                android.os.Handler(android.os.Looper.getMainLooper()).post { onSaved(saved) }
+            }
+        }
+    }
+
     companion object {
         @Volatile private var instance: SettingsStore? = null
         fun get(context: Context): SettingsStore = instance ?: synchronized(this) {

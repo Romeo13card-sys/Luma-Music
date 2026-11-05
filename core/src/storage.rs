@@ -11,9 +11,17 @@ fn valid_setting(key: &str, value: &Value) -> bool {
         "quality_wifi" | "quality_mobile" => matches!(value.as_i64(), Some(128 | 192 | 320)),
         "reduce_effects" | "unmetered_only" | "haptics" | "shuffle" | "repeat" | "test_updates"
         | "auto_update_check" => value.is_boolean(),
+        "font_size" => matches!(value.as_i64(), Some(90 | 100 | 115 | 130)),
+        "pause_on_unplug" => value.is_boolean(),
         "last_update_check" => value.as_i64().is_some_and(|n| n >= 0),
         _ => false,
     }
+}
+pub fn defaults() -> Value {
+    json!({"theme_mode":"system","quality_wifi":320,"quality_mobile":128,
+        "reduce_effects":false,"unmetered_only":false,"haptics":true,"shuffle":false,
+        "repeat":false,"test_updates":true,"auto_update_check":true,"last_update_check":0,
+        "font_size":100,"pause_on_unplug":true})
 }
 fn open(path: &Path) -> Result<Connection> {
     let db = Connection::open(path).map_err(|_| "Не удалось открыть базу Luma")?;
@@ -56,6 +64,23 @@ pub fn dispatch(path: &str, operation: &str, raw: &str) -> Result<Value> {
     let mut db = open(Path::new(path))?;
     match operation {
         "settings_load" => settings(&db),
+        "settings_reset" => {
+            let values = defaults();
+            let tx = db
+                .transaction()
+                .map_err(|_| "Не удалось сбросить настройки")?;
+            tx.execute("DELETE FROM app_settings", [])
+                .map_err(|_| "Не удалось сбросить настройки")?;
+            for (key, value) in values.as_object().unwrap() {
+                tx.execute(
+                    "INSERT INTO app_settings(key,value) VALUES(?1,?2)",
+                    params![key, value.to_string()],
+                )
+                .map_err(|_| "Не удалось сбросить настройки")?;
+            }
+            tx.commit().map_err(|_| "Не удалось сохранить сброс")?;
+            Ok(values)
+        }
         "settings_import" | "settings_patch" => {
             let input: Value = serde_json::from_str(raw).map_err(|_| "Некорректные настройки")?;
             let values = input
@@ -190,5 +215,38 @@ mod tests {
                 .unwrap(),
             42
         );
+    }
+}
+
+#[cfg(test)]
+mod reset_tests {
+    #[test]
+    fn reset_preserves_queue_and_cannot_reimport_old_settings() {
+        let path = std::env::temp_dir().join(format!("luma-reset-{}.db", std::process::id()));
+        let p = path.to_str().unwrap();
+        super::dispatch(
+            p,
+            "settings_patch",
+            r#"{"theme_mode":"oled","font_size":130,"pause_on_unplug":false}"#,
+        )
+        .unwrap();
+        super::dispatch(p, "queue_save", r#"{"songs":[],"position":42,"index":0}"#).unwrap();
+        let before = super::dispatch(p, "queue_load", "{}").unwrap();
+        assert_eq!(
+            super::dispatch(p, "settings_reset", "{}").unwrap(),
+            super::defaults()
+        );
+        assert_eq!(
+            super::dispatch(
+                p,
+                "settings_import",
+                r#"{"theme_mode":"oled","font_size":130}"#
+            )
+            .unwrap(),
+            super::defaults()
+        );
+        assert_eq!(before, super::dispatch(p, "queue_load", "{}").unwrap());
+        assert!(super::dispatch(p, "settings_patch", r#"{"font_size":999}"#).is_err());
+        let _ = std::fs::remove_file(path);
     }
 }

@@ -78,13 +78,20 @@ class PlaybackService : Service() {
     private var generation = 0
     private var prepared = false
     private var sleepTimer: Runnable? = null
+    private var sleepDeadline = 0L
+    fun sleepMinutesRemaining(): Int =
+        ((sleepDeadline - SystemClock.elapsedRealtime()).coerceAtLeast(0) / 60000.0).let { kotlin.math.ceil(it).toInt() }
+
 
     fun setSleepTimer(minutes: Int) {
         sleepTimer?.let { main.removeCallbacks(it) }
         sleepTimer = null
+        sleepDeadline = 0L
         if (minutes <= 0) return
+        sleepDeadline = SystemClock.elapsedRealtime() + minutes.toLong() * 60000
         val task = Runnable {
             pause()
+            sleepDeadline = 0L
             message = "Таймер сна · пауза"
             publish()
             sleepTimer = null
@@ -186,7 +193,7 @@ class PlaybackService : Service() {
     private val noisy =
         object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
-                pause()
+                if (SettingsStore.get(this@PlaybackService).getBoolean("pause_on_unplug", true)) pause()
             }
         }
 

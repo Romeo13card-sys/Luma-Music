@@ -238,12 +238,13 @@ impl MusicClient {
             .map_err(|_| "Не удалось получить адрес аудио")?
             .error_for_status()
             .map_err(|_| "Сервис отклонил получение аудио")?;
-        let xml = response
-            .text()
+        use std::io::Read;
+        let mut metadata = String::new();
+        response
+            .take(256 * 1024 + 1)
+            .read_to_string(&mut metadata)
             .map_err(|_| "Не удалось прочитать данные аудио")?;
-        let info: Download =
-            quick_xml::de::from_str(&xml).map_err(|_| "Неизвестный формат данных аудио")?;
-        info.signed_url()
+        parse_download_metadata(&metadata)?.signed_url()
     }
 }
 
@@ -332,13 +333,36 @@ struct Download {
     ts: String,
     s: String,
 }
+fn parse_download_metadata(raw: &str) -> Result<Download> {
+    if raw.len() > 256 * 1024 {
+        return Err("Ответ с параметрами аудио слишком большой".into());
+    }
+    if raw.trim_start().starts_with('{') {
+        let mut value: Value =
+            serde_json::from_str(raw).map_err(|_| "Не удалось прочитать JSON-параметры аудио")?;
+        if let Some(ts) = value["ts"].as_u64() {
+            value["ts"] = json!(ts.to_string());
+        }
+        serde_json::from_value(value)
+            .map_err(|_| "В ответе Яндекса отсутствуют параметры аудио".into())
+    } else {
+        quick_xml::de::from_str(raw).map_err(|_| "Не удалось прочитать XML-параметры аудио".into())
+    }
+}
 impl Download {
     fn signed_url(&self) -> Result<String> {
-        if !self.path.starts_with('/')
-            || !self.ts.bytes().all(|c| c.is_ascii_digit())
-            || self.ts.is_empty()
+        if !self.path.starts_with('/') || self.path.contains(['\r', '\n', '?', '#']) {
+            return Err("Яндекс вернул некорректный путь аудио".into());
+        }
+        // ts is an opaque URL segment, often hexadecimal, NOT necessarily a decimal integer.
+        if self.ts.is_empty()
+            || self.ts.len() > 64
+            || !self
+                .ts
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || b"_-".contains(&c))
         {
-            return Err("Некорректные параметры аудио".into());
+            return Err("Яндекс вернул некорректную метку времени аудио".into());
         }
         validate_download_url(&format!("https://{}/", self.host))?;
         let sign = md5::compute(format!(
@@ -365,8 +389,8 @@ pub fn dispatch(token: &str, operation: &str, argument: &str) -> String {
             "wave" => client.wave(argument),
             "wave_feedback" => client.wave_feedback(argument),
             "stream_quality" => {
-                let options: Value =
-                    serde_json::from_str(argument).map_err(|_| "Некорректные параметры аудио")?;
+                let options: Value = serde_json::from_str(argument)
+                    .map_err(|_| "Не удалось прочитать запрос качества звука")?;
                 client
                     .stream_at(
                         options["id"].as_str().unwrap_or(""),
@@ -396,6 +420,7 @@ pub fn core_dispatch(operation: &str, argument: &str) -> String {
         match operation {
             "auth_start" => auth::start(&v),
             "auth_navigation" => auth::navigation(&v),
+            "settings_defaults" => Ok(storage::defaults()),
             "queue_next" => queue::next(&v),
             "upgrade_validate" => updates::validate_upgrade(&v),
             "daily_check_due" => Ok(json!(updates::daily_due(
@@ -696,5 +721,51 @@ mod ffi_tests {
             assert!(super::luma_request(std::ptr::null(), o.as_ptr(), a.as_ptr()).is_null());
             super::luma_free(std::ptr::null_mut());
         }
+    }
+}
+
+#[cfg(test)]
+mod audio_metadata_tests {
+    use super::*;
+    #[test]
+    fn xml_and_json_support_opaque_hex_and_decimal_timestamps() {
+        for ts in ["65ab01cd", "1712345678"] {
+            let xml=format!("<download-info><host>s1.storage.yandex.net</host><path>/track.mp3</path><ts>{ts}</ts><s>salt</s></download-info>");
+            let from_xml = parse_download_metadata(&xml).unwrap().signed_url().unwrap();
+            let from_json = parse_download_metadata(
+                &json!({"host":"s1.storage.yandex.net","path":"/track.mp3","ts":ts,"s":"salt"})
+                    .to_string(),
+            )
+            .unwrap()
+            .signed_url()
+            .unwrap();
+            assert_eq!(from_xml, from_json);
+            assert!(from_xml.ends_with(&format!("/{ts}/track.mp3")));
+        }
+        assert!(parse_download_metadata(
+            r#"{"host":"s1.storage.yandex.net","path":"/track.mp3","ts":1712345678,"s":"salt"}"#
+        )
+        .unwrap()
+        .signed_url()
+        .is_ok());
+    }
+    #[test]
+    fn rejects_url_injection_without_rejecting_valid_server_tokens() {
+        for ts in ["", "../", "a/b", "x?y", "a#b", "a%2fb", "bad value"] {
+            let info = Download {
+                host: "s1.storage.yandex.net".into(),
+                path: "/track.mp3".into(),
+                ts: ts.into(),
+                s: "salt".into(),
+            };
+            assert!(info.signed_url().is_err());
+        }
+        assert!(parse_download_metadata(&"x".repeat(256 * 1024 + 1)).is_err());
+        let malformed: Value =
+            serde_json::from_str(&dispatch("unit_token", "stream_quality", "{")).unwrap();
+        assert_eq!(
+            malformed["error"],
+            "Не удалось прочитать запрос качества звука"
+        );
     }
 }

@@ -27,6 +27,7 @@ class MainActivity : Activity() {
     private var dragging = false
     private var page = "Главная"
     private var creditScreen = false
+    private var settingsSection = ""
     private var pendingUpdate: java.io.File? = null
     private var lyricsDialog: AlertDialog? = null
     private var checkingUpdates = false
@@ -101,7 +102,7 @@ class MainActivity : Activity() {
         demo = state?.getBoolean("demo", false) ?: false
         page = state?.getString("page") ?: "Главная"
         if (token.isEmpty() && !demo) login() else shell(page)
-        if (state?.getBoolean("settings", false) == true) settings()
+        if (state?.getBoolean("settings", false) == true) settings(state.getString("settings_section").orEmpty())
         handleOAuth(intent)
         if (
             Build.VERSION.SDK_INT >= 33 &&
@@ -114,7 +115,7 @@ class MainActivity : Activity() {
     private fun text(value: String, size: Float = 16f, color: Int = white, bold: Boolean = false) =
         TextView(this).apply {
             text = value
-            textSize = size
+            textSize = size * preferences.getInt("font_size", 100) / 100f
             setTextColor(color)
             setPadding(0, dp(6), 0, dp(6))
             if (bold) typeface = Typeface.create("sans-serif", Typeface.BOLD)
@@ -758,7 +759,8 @@ class MainActivity : Activity() {
         body.addView(action("Текст песни · LrcLib") { showLyrics() })
         gap(body)
         body.addView(action("Очередь · к текущему треку") {fullPlayer()})
-        body.addView(action("Качество звука и таймер") {settings()})
+        body.addView(action("Качество звука") {settings("sound")})
+        body.addView(action("Таймер сна") {settings("player")})
         renderTracks(body, PlaybackService.queue)
         gap(body)
         body.addView(
@@ -827,234 +829,185 @@ class MainActivity : Activity() {
         time?.text = "${clock(service?.position() ?: 0)}   /   ${clock(service?.duration() ?: 0)}"
     }
 
-    private fun settings() {
+    private fun settingRow(parent: LinearLayout, title: String, summary: String, onClick: () -> Unit) {
+        val item = row().apply {
+            minimumHeight = dp(68)
+            setPadding(dp(4), dp(8), dp(4), dp(8))
+            isClickable = true
+            isFocusable = true
+            contentDescription = "$title. $summary"
+            setOnClickListener { onClick() }
+        }
+        val labels = column()
+        labels.addView(text(title, 17f, white, true))
+        labels.addView(text(summary, 13f, muted))
+        item.addView(labels, LinearLayout.LayoutParams(0, -2, 1f))
+        item.addView(text("›", 24f, muted), LinearLayout.LayoutParams(dp(24), -2))
+        parent.addView(item)
+    }
+
+    private fun settingSwitch(parent: LinearLayout, title: String, summary: String, key: String, default: Boolean,
+                              changed: (Boolean) -> Unit = {}) {
+        parent.addView(Switch(this).apply {
+            text = title
+            textSize = 16f * preferences.getInt("font_size", 100) / 100f
+            setTextColor(white)
+            minHeight = dp(52)
+            isChecked = preferences.getBoolean(key, default)
+            setOnCheckedChangeListener { _, enabled ->
+                preferences.edit().putBoolean(key, enabled).apply()
+                changed(enabled)
+            }
+        })
+        parent.addView(text(summary, 13f, muted))
+        gap(parent, 8)
+    }
+
+    private fun settings(section: String = "") {
         backdrop()
         creditScreen = true
-        root.addView(text("Настройки", 30f, white, true))
+        settingsSection = section
+        val titles = mapOf("sound" to "Звук и сеть", "appearance" to "Оформление", "player" to "Воспроизведение",
+            "storage" to "Хранилище", "updates" to "Обновления", "account" to "Аккаунт", "about" to "О приложении")
+        root.addView(action(if (section.isBlank()) "‹ К музыке" else "‹ Настройки") { navigateBack() })
+        root.addView(text(titles[section] ?: "Настройки", 30f, white, true))
         val scroll = ScrollView(this)
         body = column()
         scroll.addView(body)
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         status = text("", 13f, muted)
+        status.accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
         body.addView(status)
-        val appearance = panel(body)
-        appearance.addView(text("Оформление", 22f, white, true))
         val mode = preferences.getString("theme_mode", "system")
-        val labels =
-            arrayOf(
-                "Как в системе",
-                "Тёмная",
-                "Светлая",
-                "OLED · Чёрная",
-            )
         val modes = arrayOf("system", "dark", "light", "oled")
-        appearance.addView(
-            action("Тема: ${labels[modes.indexOf(mode).coerceAtLeast(0)]}") {
-                AlertDialog.Builder(this)
-                    .setTitle("Тема оформления")
-                    .setSingleChoiceItems(labels, modes.indexOf(mode).coerceAtLeast(0)) {
-                        dialog,
-                        index ->
-                        preferences.edit().putString("theme_mode", modes[index]).apply()
-                        setTheme(
-                            if (palette.light) R.style.Theme_Luma_Light
-                            else R.style.Theme_Luma_Dark
-                        )
-                        dialog.dismiss()
-                        settings()
-                    }
-                    .setNegativeButton("Отмена", null)
-                    .show()
-            }
-        )
-        val sound = panel(body)
-        sound.addView(text("Качество звука", 22f, white, true))
-        fun quality(title: String, key: String, default: Int) {
-            val values = intArrayOf(128, 192, 320)
-            val names =
-                arrayOf(
-                    "Экономия · до 128 кбит/с",
-                    "Баланс · до 192 кбит/с",
-                    "Высокое · до 320 кбит/с",
-                )
-            val selected = preferences.getInt(key, default)
-            sound.addView(
-                action("$title: до $selected кбит/с") {
-                    AlertDialog.Builder(this)
-                        .setTitle(title)
-                        .setSingleChoiceItems(names, values.indexOf(selected).coerceAtLeast(0)) {
-                            dialog,
-                            index ->
-                            preferences.edit().putInt(key, values[index]).apply()
-                            dialog.dismiss()
-                            settings()
-                        }
-                        .setNegativeButton("Отмена", null)
-                        .show()
-                }
-            )
-            gap(sound, 8)
+        val labels = arrayOf("Как в системе", "Тёмная", "Светлая", "OLED · Чёрная")
+        val current = packageManager.getPackageInfo(packageName, 0).versionName.orEmpty()
+        fun themed() {
+            setTheme(if (palette.light) R.style.Theme_Luma_Light else R.style.Theme_Luma_Dark)
+            settings(section)
         }
-        quality("Wi-Fi", "quality_wifi", 320)
-        quality("Сеть с лимитом", "quality_mobile", 128)
-        sound.addView(
-            text(
-                "Применяется к следующему треку. Формат MP3, доступность зависит от ответа Яндекса.",
-                13f,
-                muted,
-            )
-        )
-        sound.addView(
-            Switch(this).apply {
-                text = "Не загружать аудио в платной сети"
-                setTextColor(white)
-                minHeight = dp(54)
-                isChecked = preferences.getBoolean("unmetered_only", false)
-                setOnCheckedChangeListener { _, value ->
-                    preferences.edit().putBoolean("unmetered_only", value).apply()
-                }
-            }
-        )
-        val player = panel(body)
-        player.addView(text("Плеер", 22f, white, true))
-        fun toggle(title: String, key: String, checked: Boolean, changed: (Boolean) -> Unit = {}) {
-            player.addView(
-                Switch(this).apply {
-                    text = title
-                    setTextColor(white)
-                    minHeight = dp(54)
-                    isChecked = checked
-                    setOnCheckedChangeListener { _, enabled ->
-                        preferences.edit().putBoolean(key, enabled).apply()
-                        changed(enabled)
+        fun group(title: String): LinearLayout = panel(body).also { it.addView(text(title, 21f, white, true)) }
+        when (section) {
+            "sound" -> {
+                val network = getSystemService(android.net.ConnectivityManager::class.java)
+                val metered = network.isActiveNetworkMetered
+                val qualityKey = if (metered) "quality_mobile" else "quality_wifi"
+                val selected = preferences.getInt(qualityKey, if (metered) 128 else 320)
+                val state = if (network.activeNetwork == null) "Нет подключённой сети" else
+                    "${if (metered) "Сеть с лимитом" else "Сеть без лимита"} · до $selected кбит/с"
+                body.addView(text(state, 15f, mint, true))
+                val sound = group("Качество MP3")
+                fun quality(title: String, key: String, default: Int, detail: String) {
+                    settingRow(sound, "$title · до ${preferences.getInt(key, default)} кбит/с", detail) {
+                        val values = intArrayOf(128,192,320)
+                        AlertDialog.Builder(this).setTitle(title)
+                            .setSingleChoiceItems(arrayOf("Экономия · 128 кбит/с", "Баланс · 192 кбит/с", "Высокое · 320 кбит/с"),
+                                values.indexOf(preferences.getInt(key, default)).coerceAtLeast(0)) { dialog, index ->
+                                preferences.edit().putInt(key, values[index]).apply()
+                                dialog.dismiss(); settings("sound")
+                            }.setNegativeButton("Отмена", null).show()
                     }
                 }
-            )
-        }
-        toggle("Вибрация кнопок", "haptics", preferences.getBoolean("haptics", true))
-        toggle("Перемешивание", "shuffle", PlaybackService.shuffle) { PlaybackService.shuffle = it }
-        toggle("Повтор трека", "repeat", PlaybackService.repeat) { PlaybackService.repeat = it }
-        player.addView(
-            action("Таймер сна") {
-                val service = PlaybackService.instance
-                if (service == null) {
-                    status.text = "Сначала запустите трек"
-                    return@action
+                quality("Безлимитная сеть", "quality_wifi", 320, "Обычно Wi-Fi. Максимальное качество в пределах выбранного лимита.")
+                quality("Сеть с лимитом", "quality_mobile", 128, "Обычно мобильная связь. Android может считать Wi-Fi тарифицируемым.")
+                sound.addView(text("Применяется к следующему запуску трека. Если Яндекс предлагает только более высокий битрейт, Luma сообщит об этом и не превысит лимит автоматически.", 13f, muted))
+                val traffic = group("Трафик")
+                settingSwitch(traffic, "Только сеть без лимита", "В сети с лимитом сетевое аудио не загружается. Файлы с устройства доступны.", "unmetered_only", false)
+                body.addView(action("Повторить текущий трек", true) {
+                    if (PlaybackService.index !in PlaybackService.queue.indices) {status.text="Сначала выберите трек";return@action}
+                    PlaybackService.command(this, "play", PlaybackService.index)
+                    fullPlayer()
+                })
+            }
+            "appearance" -> {
+                val appearance = group("Ваш интерфейс")
+                settingRow(appearance, "Тема", labels[modes.indexOf(mode).coerceAtLeast(0)]) {
+                    AlertDialog.Builder(this).setTitle("Тема оформления")
+                        .setSingleChoiceItems(labels, modes.indexOf(mode).coerceAtLeast(0)) { dialog,index ->
+                            preferences.edit().putString("theme_mode", modes[index]).apply();dialog.dismiss();themed()
+                        }.setNegativeButton("Отмена",null).show()
                 }
-                val names = arrayOf("Выключить", "15 минут", "30 минут", "60 минут")
-                val minutes = intArrayOf(0, 15, 30, 60)
-                AlertDialog.Builder(this)
-                    .setTitle("Таймер сна")
-                    .setItems(names) { _, index ->
-                        service.setSleepTimer(minutes[index])
-                        status.text =
-                            if (index == 0) "Таймер выключен"
-                            else "Пауза через ${minutes[index]} минут"
-                    }
-                    .show()
+                settingRow(appearance, "Размер текста Luma", "${preferences.getInt("font_size",100)}% · вместе с системным размером текста") {
+                    val sizes=intArrayOf(90,100,115,130)
+                    AlertDialog.Builder(this).setTitle("Размер текста")
+                        .setSingleChoiceItems(arrayOf("Компактный · 90%","Обычный · 100%","Крупный · 115%","Очень крупный · 130%"),sizes.indexOf(preferences.getInt("font_size",100)).coerceAtLeast(0)) { dialog,index ->
+                            preferences.edit().putInt("font_size",sizes[index]).apply();dialog.dismiss();settings("appearance")
+                        }.setNegativeButton("Отмена",null).show()
+                }
+                settingSwitch(appearance,"Вибрация кнопок","Лёгкий тактильный отклик при нажатии.","haptics",true)
+                val performance=group("Быстродействие")
+                settingSwitch(performance,"Экономичный интерфейс","Меньше строк на странице и реже обновляется плеер. На малом объёме ОЗУ режим включается автоматически.","reduce_effects",false) {settings("appearance")}
+                performance.addView(text("Сейчас: ${if(renderPolicy.economy) "экономичный" else "обычный"} профиль · ${renderPolicy.pageSize} треков на странице. Анимации фона и размытие не используются.",13f,muted))
             }
-        )
-        gap(player, 8)
-        player.addView(
-            action("Уведомления Android") {
-                startActivity(
-                    Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                        .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, packageName)
-                )
-            }
-        )
-        val storage = panel(body)
-        storage.addView(text("Память и трафик", 22f, white, true))
-        storage.addView(
-            Switch(this).apply {
-                text = "Экономичный интерфейс"
-                setTextColor(white)
-                minHeight = dp(54)
-                isChecked = preferences.getBoolean("reduce_effects", false)
-                setOnCheckedChangeListener { _, value ->
-                    preferences.edit().putBoolean("reduce_effects", value).apply()
-                    settings()
+            "player" -> {
+                val player=group("Поведение плеера")
+                settingSwitch(player,"Перемешивание","Выбор следующего доступного трека в случайном порядке.","shuffle",false) {PlaybackService.shuffle=it}
+                settingSwitch(player,"Повтор трека","Повторять текущую композицию после окончания.","repeat",false) {PlaybackService.repeat=it}
+                settingSwitch(player,"Пауза без наушников","Останавливать звук при отключении проводных или Bluetooth-наушников.","pause_on_unplug",true)
+                val remaining=PlaybackService.instance?.sleepMinutesRemaining() ?: 0
+                settingRow(player,"Таймер сна",if(remaining>0) "Осталось около $remaining мин" else "Выключен") {
+                    val service=PlaybackService.instance
+                    if(service==null) {status.text="Сначала запустите трек";return@settingRow}
+                    val minutes=intArrayOf(0,15,30,60,90)
+                    AlertDialog.Builder(this).setTitle("Таймер сна")
+                        .setItems(arrayOf("Выключить","15 минут","30 минут","60 минут","90 минут")) { _,index ->
+                            service.setSleepTimer(minutes[index]);settings("player")
+                        }.show()
+                }
+                settingRow(player,"Уведомления и экран блокировки","Разрешения и категории уведомлений Android") {
+                    startActivity(Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE,packageName))
                 }
             }
-        )
-        storage.addView(
-            action("Удалить скачанные обновления") {
-                AlertDialog.Builder(this)
-                    .setTitle("Очистить файлы обновлений?")
-                    .setMessage("Аккаунт, музыка и очередь сохранятся.")
-                    .setNegativeButton("Отмена", null)
-                    .setPositiveButton("Очистить") { _, _ ->
-                        val version = generation
-                        executor.execute {
-                            val deleted =
-                                java.io
-                                    .File(cacheDir, "updates")
-                                    .listFiles()
-                                    ?.filter {
-                                        it.isFile && it.name in setOf("update.apk", "update.part")
-                                    }
-                                    ?.all { it.delete() } ?: true
-                            runOnUiThread {
-                                if (!destroyed && version == generation)
-                                    status.text =
-                                        if (deleted) "Файлы обновлений удалены"
-                                        else "Не все файлы удалось удалить"
+            "storage" -> {
+                val storage=group("Место на устройстве")
+                val files=java.io.File(cacheDir,"updates").listFiles()?.filter {it.isFile && it.name in setOf("update.apk","update.part")}.orEmpty()
+                val bytes=files.sumOf {it.length()}
+                storage.addView(text("Скачанные обновления: ${String.format(java.util.Locale.ROOT,"%.1f",bytes/1048576.0)} МиБ",16f,white))
+                storage.addView(text("Свободно: ${String.format(java.util.Locale.ROOT,"%.1f",android.os.StatFs(filesDir.path).availableBytes/1073741824.0)} ГиБ",14f,muted))
+                settingRow(storage,"Удалить файлы обновлений","Скачанные APK и незавершённая загрузка. Аккаунт и очередь сохранятся.") {
+                    AlertDialog.Builder(this).setTitle("Удалить скачанные обновления?").setNegativeButton("Отмена",null)
+                        .setPositiveButton("Удалить") { _,_ ->
+                            val version=generation
+                            executor.execute {
+                                val deleted=java.io.File(cacheDir,"updates").listFiles()?.filter {it.isFile && it.name in setOf("update.apk","update.part")}
+                                    ?.map {it.delete()}?.all {it} ?: true
+                                runOnUiThread {
+                                    if(!destroyed && version==generation) {pendingUpdate=null;settings("storage");status.text=if(deleted) "Файлы удалены" else "Не все файлы удалось удалить"}
+                                }
                             }
-                        }
-                    }
-                    .show()
-            }
-        )
-        val update = panel(body)
-        update.addView(text("Обновления", 22f, white, true))
-        val current = packageManager.getPackageInfo(packageName, 0).versionName
-        update.addView(text("Установлена версия $current", 14f, muted))
-        update.addView(
-            Switch(this).apply {
-                text = "Тестовые выпуски"
-                setTextColor(white)
-                minHeight = dp(54)
-                isChecked = preferences.getBoolean("test_updates", true)
-                setOnCheckedChangeListener { _, checked ->
-                    preferences.edit().putBoolean("test_updates", checked).apply()
+                        }.show()
                 }
+                storage.addView(text("Офлайн-загрузка каталога пока не реализована. Luma не удаляет выбранные вами аудиофайлы.",13f,muted))
             }
-        )
-        update.addView(action("Проверить обновления", true) { checkUpdates() })
-        gap(update, 8)
-        update.addView(
-            Switch(this).apply {
-                text = "Проверять при запуске"
-                setTextColor(white)
-                minHeight = dp(54)
-                isChecked = preferences.getBoolean("auto_update_check", true)
-                setOnCheckedChangeListener { _, enabled ->
-                    preferences.edit().putBoolean("auto_update_check", enabled).apply()
+            "updates" -> {
+                val update=group("Luma $current")
+                val preview=preferences.getBoolean("test_updates",true)
+                settingRow(update,"Канал обновлений",if(preview) "Предварительные · включая RC" else "Только стабильные выпуски") {
+                    AlertDialog.Builder(this).setTitle("Канал обновлений")
+                        .setSingleChoiceItems(arrayOf("Только стабильные","Предварительные и стабильные"),if(preview) 1 else 0) {dialog,index ->
+                            preferences.edit().putBoolean("test_updates",index==1).apply();dialog.dismiss();settings("updates")
+                        }.setNegativeButton("Отмена",null).show()
                 }
+                settingSwitch(update,"Проверять при запуске","Не чаще раза в сутки. Скачивание и установка требуют вашего действия.","auto_update_check",true)
+                val last=preferences.getLong("last_update_check",0)
+                update.addView(text(if(last<=0) "Проверка ещё не запускалась" else "Последняя попытка: ${java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT,java.text.DateFormat.SHORT).format(java.util.Date(last))}",13f,muted))
+                update.addView(action("Проверить обновления",true) {checkUpdates()})
+                gap(update,8)
+                update.addView(action("Установить APK из файла") {
+                    startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).setType("application/vnd.android.package-archive").addCategory(Intent.CATEGORY_OPENABLE),11)
+                })
+                update.addView(text("Перед установкой проверяются версия и подпись. Источник: GitHub Releases Luma-Music.",13f,muted))
             }
-        )
-        gap(update, 8)
-        update.addView(
-            action("Установить скачанный APK") {
-                startActivityForResult(
-                    Intent(Intent.ACTION_OPEN_DOCUMENT)
-                        .setType("application/vnd.android.package-archive")
-                        .addCategory(Intent.CATEGORY_OPENABLE),
-                    11,
-                )
+            "account" -> {
+                val account=group("Яндекс Музыка")
+                account.addView(text(if(token.isBlank()) "Вход не выполнен" else "Вход сохранён на устройстве",15f,muted))
+                account.addView(action(if(token.isBlank()) "Войти через Яндекс" else "Сменить аккаунт",true) {startActivityForResult(Intent(this,YandexLoginActivity::class.java),12)})
+                gap(account,8)
+                settingRow(account,"Дополнительный вход","Браузер со своим OAuth-клиентом") {configureOAuth()}
+                if(token.isNotBlank()) account.addView(action("Выйти из аккаунта") {logout()})
+                account.addView(text("Токен хранится зашифрованным на этом устройстве. Для каталога и прослушивания нужна действующая подписка.",13f,muted))
             }
-        )
-        val account = panel(body)
-        account.addView(text("Аккаунт", 22f, white, true))
-        account.addView(action("Вход / смена аккаунта Яндекса") {
-            startActivityForResult(Intent(this, YandexLoginActivity::class.java), 12)
-        })
-        gap(account, 8)
-        account.addView(action("Свой OAuth-клиент для браузера") { configureOAuth() })
-        gap(account, 8)
-        account.addView(
-            action(if (demo) "Войти" else "Выйти из аккаунта") { if (demo) login() else logout() }
-        )
+            "about" -> {
         val about = panel(body)
         about.addView(text(getString(R.string.app_name), 22f, white, true))
         about.addView(
@@ -1091,6 +1044,68 @@ class MainActivity : Activity() {
                     startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/Romeo13card-sys/Luma-Music")))
                 }.show()
         })
+                gap(body,8)
+                body.addView(action("Скопировать сведения для поддержки") {
+                    val network=getSystemService(android.net.ConnectivityManager::class.java)
+                    val report="Luma $current\nAndroid ${Build.VERSION.RELEASE} / API ${Build.VERSION.SDK_INT}\n${Build.MANUFACTURER} ${Build.MODEL}\nABI: ${Build.SUPPORTED_ABIS.joinToString()}\nТема: ${mode ?: "system"}\nЭкономичный профиль: ${renderPolicy.economy}\nКачество безлимитной сети: ${preferences.getInt("quality_wifi",320)}\nКачество сети с лимитом: ${preferences.getInt("quality_mobile",128)}\nТарифицируемая сеть: ${network.isActiveNetworkMetered}"
+                    getSystemService(android.content.ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Luma · сведения",report))
+                    status.text="Сведения скопированы. Токенов и адресов аудио в них нет."
+                })
+            }
+            else -> {
+                val categories=listOf(
+                    Triple("sound","Звук и сеть","Качество MP3, лимиты трафика, повторный запуск трека"),
+                    Triple("appearance","Оформление","Тема, размер текста, вибрация и быстродействие"),
+                    Triple("player","Воспроизведение","Повтор, перемешивание, наушники и таймер сна"),
+                    Triple("storage","Хранилище","Свободное место и файлы обновлений"),
+                    Triple("updates","Обновления","Канал выпусков, проверка и установка APK"),
+                    Triple("account","Аккаунт","Вход через Яндекс и выход из аккаунта"),
+                    Triple("about","О приложении","Телефон, текущая тема, автор и сведения для поддержки")
+                )
+                val keywords=mapOf(
+                    "sound" to "128 192 320 битрейт wifi wi-fi мобильная mp3 лимит",
+                    "appearance" to "oled светлая тёмная черная чёрная шрифт текст масштаб",
+                    "player" to "пауза bluetooth наушники сон таймер 15 30 60 90",
+                    "storage" to "кэш память apk удалить очистить место",
+                    "updates" to "ota github rc релизы версия стабильная",
+                    "account" to "авторизация oauth токен логин пароль",
+                    "about" to "telegram телеграм донат поддержка телефон android api ram озу"
+                )
+                val search=EditText(this).apply {
+                    hint="Найти настройку";setTextColor(white);setHintTextColor(muted);setSingleLine()
+                    background=surface(dp(14).toFloat());setPadding(dp(14),dp(8),dp(14),dp(8))
+                }
+                body.addView(search)
+                val rows=panel(body)
+                fun filter(query:String) {
+                    rows.removeAllViews()
+                    val found=categories.filter {(id,title,summary)->("$title $summary ${keywords[id].orEmpty()}").contains(query.trim(),ignoreCase=true)}
+                    found.forEach {(id,title,summary)->settingRow(rows,title,summary) {
+                        (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).hideSoftInputFromWindow(search.windowToken,0)
+                        settings(id)
+                    }}
+                    if(found.isEmpty()) rows.addView(text("Настройка не найдена",15f,muted))
+                }
+                search.addTextChangedListener(object:android.text.TextWatcher {
+                    override fun beforeTextChanged(s:CharSequence?,start:Int,count:Int,after:Int) {}
+                    override fun onTextChanged(s:CharSequence?,start:Int,before:Int,count:Int) {filter(s?.toString().orEmpty())}
+                    override fun afterTextChanged(s:android.text.Editable?) {}
+                })
+                filter("")
+                body.addView(action("Сбросить настройки") {
+                    AlertDialog.Builder(this).setTitle("Вернуть настройки по умолчанию?")
+                        .setMessage("Тема, качество и поведение плеера будут сброшены. Аккаунт, очередь и ваши файлы сохранятся.")
+                        .setNegativeButton("Отмена",null).setPositiveButton("Сбросить") {_,_->
+                            preferences.reset {saved->if(!destroyed && creditScreen) status.text=if(saved) "Настройки сброшены" else "Не удалось сохранить сброс. Проверьте свободное место."}
+                            PlaybackService.shuffle=false;PlaybackService.repeat=false
+                            PlaybackService.instance?.setSleepTimer(0)
+                            setTheme(if(palette.light) R.style.Theme_Luma_Light else R.style.Theme_Luma_Dark)
+                            settings()
+                        }.show()
+                })
+                body.addView(text("Luma Music · $current",12f,muted))
+            }
+        }
     }
 
     private fun openAuthorLink(url: String) {
@@ -1212,8 +1227,10 @@ class MainActivity : Activity() {
 
     private fun navigateBack() {
         if (creditScreen) {
-            creditScreen = false
-            shell(page)
+            if (settingsSection.isNotBlank()) settings() else {
+                creditScreen = false
+                shell(page)
+            }
         } else finish()
     }
 
@@ -1337,6 +1354,7 @@ class MainActivity : Activity() {
         outState.putBoolean("demo", demo)
         outState.putString("page", page)
         outState.putBoolean("settings", creditScreen)
+        outState.putString("settings_section", settingsSection)
         super.onSaveInstanceState(outState)
     }
 
