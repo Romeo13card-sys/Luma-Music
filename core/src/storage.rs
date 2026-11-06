@@ -252,11 +252,9 @@ mod tests {
     fn stable_is_default_but_existing_preview_choice_survives_reopen() {
         let tmp = Temp::new();
         let path = tmp.path();
-        assert_eq!(
-            dispatch(&path, "settings_load", "{}").unwrap()["test_updates"],
-            false
-        );
+        assert_eq!(defaults()["test_updates"], false);
         dispatch(&path, "settings_patch", r#"{"test_updates":true}"#).unwrap();
+        dispatch(&path, "settings_import", &defaults().to_string()).unwrap();
         assert_eq!(
             dispatch(&path, "settings_load", "{}").unwrap()["test_updates"],
             true
