@@ -13,6 +13,15 @@ use std::time::Duration;
 
 const API: &str = "https://api.music.yandex.net";
 type Result<T> = std::result::Result<T, String>;
+fn trusted_api(raw: &str) -> bool {
+    reqwest::Url::parse(raw).is_ok_and(|url| {
+        url.scheme() == "https"
+            && url.host_str() == Some("api.music.yandex.net")
+            && url.username().is_empty()
+            && url.password().is_none()
+            && url.port().is_none()
+    })
+}
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Track {
@@ -53,10 +62,21 @@ impl MusicClient {
         if token.trim().is_empty() || token.chars().any(char::is_whitespace) {
             return Err("Введите OAuth-токен без пробелов".into());
         }
+        if token.len() > 4096 || !token.bytes().all(|b| b.is_ascii_graphic()) {
+            return Err("Недопустимый OAuth-токен".into());
+        }
         let client = Client::builder()
             .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(30))
             .user_agent("YaMusicRust/0.1")
+            .pool_max_idle_per_host(1)
+            .redirect(reqwest::redirect::Policy::custom(|attempt| {
+                if attempt.previous().len() >= 3 || !trusted_api(attempt.url().as_str()) {
+                    attempt.error("Untrusted authenticated API redirect")
+                } else {
+                    attempt.follow()
+                }
+            }))
             .build()
             .map_err(|_| "Не удалось создать HTTP-клиент")?;
         Ok(Self {
@@ -449,6 +469,7 @@ pub fn core_dispatch(operation: &str, argument: &str) -> String {
             "auth_start" => auth::start(&v),
             "auth_navigation" => auth::navigation(&v),
             "settings_defaults" => Ok(storage::defaults()),
+            "version_channel" => updates::channel(v["version"].as_str().unwrap_or("")),
             "support_report" => diagnostics::report(&v),
             "locale_resolve" => Ok(localization::info(&v)),
             "locale_catalog" => localization::catalog(&v),
@@ -741,6 +762,30 @@ pub unsafe extern "C" fn luma_free(value: *mut std::ffi::c_char) {
 
 #[cfg(test)]
 mod ffi_tests {
+    #[test]
+    fn authenticated_requests_reject_untrusted_redirects_and_invalid_tokens() {
+        assert!(super::trusted_api(
+            "https://api.music.yandex.net/account/status"
+        ));
+        for url in [
+            "http://api.music.yandex.net",
+            "https://api.music.yandex.net.evil.test/",
+            "https://user@api.music.yandex.net/",
+            "https://api.music.yandex.net:8443/",
+            "https://storage.yandex.net/",
+        ] {
+            assert!(!super::trusted_api(url));
+        }
+        for token in [
+            "x".repeat(4097),
+            "токен".into(),
+            "bad\u{7f}".into(),
+            "bad\nvalue".into(),
+        ] {
+            assert!(super::MusicClient::new(&token).is_err());
+        }
+        assert!(super::MusicClient::new("valid_token-123").is_ok());
+    }
     #[test]
     fn apple_bridge_returns_owned_json_and_handles_null() {
         use std::ffi::{CStr, CString};

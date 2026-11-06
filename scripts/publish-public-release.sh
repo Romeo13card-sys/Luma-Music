@@ -27,6 +27,8 @@ if [[ "$visibility" != false ]]; then
     echo 'Distribution repository must be public' >&2
     exit 1
 fi
+flags=(--latest)
+if [[ "$release_tag" == *-* ]]; then flags=(--prerelease); fi
 gh release create "$release_tag" "$release_dir"/*.apk "$release_dir/SHA256SUMS.txt" "$release_dir/certificate.sha256" \
-    --repo "$repository" --prerelease --title "Luma Music $release_tag" \
+    --repo "$repository" "${flags[@]}" --title "Luma Music $release_tag" \
     --notes 'Luma Music · made by Romeo13card. APKs signed with the persistent family release key. Android requests installation confirmation.'

@@ -1,11 +1,15 @@
-name: Android RC integration
+name: Android release integration
 on:
   push:
     branches: ['verify-android/**']
 permissions:
   contents: read
 jobs:
-  android-11:
+  android:
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [30, 33]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -26,7 +30,7 @@ jobs:
         run: test -e /dev/kvm && sudo chmod a+rw /dev/kvm
       - uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 30
+          api-level: ${{ matrix.api }}
           target: google_apis
           arch: x86_64
           ram-size: 2048M
@@ -36,6 +40,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: Android-RC8-integration
+          name: Android-release-integration-API-${{ matrix.api }}
           path: android-integration/*
           if-no-files-found: ignore

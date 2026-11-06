@@ -21,6 +21,13 @@ android {
         }
     }
     buildTypes {
+        getByName("release") {
+            isDebuggable = false
+            isJniDebuggable = false
+            isMinifyEnabled = false
+            if (!System.getenv("LUMA_KEYSTORE_PATH").isNullOrBlank())
+                signingConfig = signingConfigs.getByName("persistent")
+        }
         getByName("debug") {
             if (!System.getenv("LUMA_KEYSTORE_PATH").isNullOrBlank())
                 signingConfig = signingConfigs.getByName("persistent")
@@ -36,11 +43,11 @@ android {
         require(sourceCommit == "local" || sourceCommit.matches(Regex("[a-f0-9]{40}")))
         buildConfigField("String", "SOURCE_COMMIT", "\"$sourceCommit\"")
         applicationId = "org.luma.music"
-        testInstrumentationRunner = "org.luma.music.RC8Instrumentation"
+        testInstrumentationRunner = "org.luma.music.LumaInstrumentation"
         minSdk = 30
         targetSdk = 36
-        versionCode = 17
-        versionName = "0.5.0-rc.8"
+        versionCode = 18
+        versionName = "0.5.0"
         ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64") }
     }
     splits {

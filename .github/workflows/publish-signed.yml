@@ -30,12 +30,13 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/verify-release-payload.py >> "$GITHUB_OUTPUT"
-      - name: Publish immutable candidate release
+      - name: Publish immutable release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
           SOURCE_COMMIT: ${{ steps.release.outputs.commit }}
+          PREVIEW: ${{ steps.release.outputs.prerelease }}
         shell: bash
         run: |
           set -euo pipefail
@@ -43,8 +44,10 @@ jobs:
             echo 'Release already exists; refusing to replace signed assets' >&2
             exit 1
           fi
+          flags=(--latest)
+          if [[ "$PREVIEW" == true ]]; then flags=(--prerelease); fi
           gh release create "$RELEASE_TAG" .release-input/*.apk .release-input/SHA256SUMS.txt .release-input/certificate.sha256 \
-            --target "$SOURCE_COMMIT" --prerelease --title "Luma Music $RELEASE_TAG" --notes-file .release-input/notes.md
+            --target "$SOURCE_COMMIT" "${flags[@]}" --title "Luma Music $RELEASE_TAG" --notes-file .release-input/notes.md
       - name: Remove completed transport branch
         if: success()
         env:

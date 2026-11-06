@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Name distributable APKs using Gradle metadata, keeping Gradle outputs intact."""
 import hashlib
+import argparse
 import json
 import re
 import shutil
@@ -40,6 +41,9 @@ def package(source: Path, destination: Path) -> Path:
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--variant', choices=['release', 'debug'], default='release')
+    args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
-    output = package(root / 'android/app/build/outputs/apk/debug', root / 'android/app/build/outputs/distribution')
+    output = package(root / 'android/app/build/outputs/apk' / args.variant, root / 'android/app/build/outputs/distribution')
     print(f'directory={output.relative_to(root)}')

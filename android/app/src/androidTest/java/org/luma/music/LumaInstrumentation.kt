@@ -10,7 +10,7 @@ import android.widget.*
 import org.json.JSONObject
 
 /** Offline integration checks: actual activities, JNI, MediaPlayer and Android font fallback. */
-class RC8Instrumentation:Instrumentation() {
+class LumaInstrumentation:Instrumentation() {
     private var checks=0
     override fun onCreate(arguments:Bundle?) {super.onCreate(arguments);start()}
     private fun verify(value:Boolean,message:String) {check(value){message};checks++}
@@ -28,14 +28,16 @@ class RC8Instrumentation:Instrumentation() {
         val results=Bundle()
         try {
             runChecks()
-            results.putString("stream","PASS RC8: "+checks+" integration assertions")
+            results.putString("stream","PASS Luma: "+checks+" integration assertions")
             finish(Activity.RESULT_OK,results)
         } catch(error:Throwable) {
-            results.putString("stream","FAIL RC8: "+error.stackTraceToString())
+            results.putString("stream","FAIL Luma: "+error.stackTraceToString())
             finish(Activity.RESULT_CANCELED,results)
         }
     }
     private fun runChecks() {
+        verify(targetContext.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE == 0,
+            "Target application is debuggable")
         runOnMainSync {
             SettingsStore.get(targetContext).edit().putString("language","en")
                 .putBoolean("auto_update_check",false).apply()
@@ -131,7 +133,7 @@ class RC8Instrumentation:Instrumentation() {
             verify(labels.any {it=="التطبيق"},"About language not applied")
         }
         uiAutomation.takeScreenshot()?.let {bitmap ->
-            java.io.File(targetContext.filesDir,"about-ar.png").outputStream().use {
+            java.io.File(targetContext.getExternalFilesDir(null),"about-ar.png").outputStream().use {
                 bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)
             }
             bitmap.recycle()

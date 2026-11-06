@@ -28,4 +28,9 @@ for entry in \
     "$ndk_bin/llvm-strip" --strip-unneeded "android/app/src/main/jniLibs/$abi/libyamusic_core.so"
 done
 cd android
-if [[ -x ./gradlew ]]; then ./gradlew --no-daemon assembleDebug; else "${GRADLE_BIN:-gradle}" --no-daemon assembleDebug; fi
+case "${LUMA_ANDROID_BUILD_TYPE:-release}" in
+    release) task=assembleRelease ;;
+    debug) task=assembleDebug ;;
+    *) echo 'LUMA_ANDROID_BUILD_TYPE must be release or debug' >&2; exit 1 ;;
+esac
+if [[ -x ./gradlew ]]; then ./gradlew --no-daemon "$task"; else "${GRADLE_BIN:-gradle}" --no-daemon "$task"; fi

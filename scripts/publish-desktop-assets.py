@@ -1,6 +1,7 @@
 """Upload desktop assets immutably; keep existing verified builds of the same source."""
 import hashlib,json,re,subprocess,tempfile,zipfile
 from pathlib import Path
+from release_identity import release_identity
 
 def gh(*args):return subprocess.check_output(['gh',*args],text=True)
 def metadata(path):
@@ -9,7 +10,7 @@ def metadata(path):
         return json.loads(z.read('build-info.json'))
 
 tag=__import__('os').environ['RELEASE_BRANCH'].rsplit('/',1)[-1]
-if not re.fullmatch(r'v\d+\.\d+\.\d+-rc\.\d+',tag):raise SystemExit('Invalid release tag')
+release_identity(tag)
 source=subprocess.check_output(['git','rev-parse',f'{tag}^{{commit}}'],text=True).strip()
 release=json.loads(gh('release','view',tag,'--json','assets'))
 existing={a['name'] for a in release['assets']}

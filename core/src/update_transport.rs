@@ -118,6 +118,9 @@ pub fn select_release(
         let Some(candidate) = version(tag) else {
             continue;
         };
+        if !include_test && !candidate.pre.is_empty() {
+            continue;
+        }
         if candidate.cmp_precedence(&current) != std::cmp::Ordering::Greater {
             continue;
         }
@@ -282,5 +285,17 @@ mod tests {
         }
         assert!(trusted("https://release-assets.githubusercontent.com/a"));
         assert!(asset_url(&json!({"id":-1})).is_err());
+    }
+    #[test]
+    fn stable_channel_rejects_semantic_preview_even_if_github_flag_is_wrong() {
+        let list = json!([release("v0.6.0-rc.1", false), release("v0.5.0", false)]);
+        assert_eq!(
+            select_release(&list, "0.5.0-rc.8", false, &json!(["arm64-v8a"])).unwrap()["tag"],
+            "v0.5.0"
+        );
+        assert_eq!(
+            select_release(&list, "0.5.0-rc.8", true, &json!(["arm64-v8a"])).unwrap()["tag"],
+            "v0.6.0-rc.1"
+        );
     }
 }

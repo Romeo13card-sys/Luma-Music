@@ -5,12 +5,14 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from release_identity import release_identity
 
 branch = os.environ['GITHUB_REF_NAME']
-match = re.fullmatch(r'resume-desktop/(\d+)/(v\d+\.\d+\.\d+-rc\.\d+)', branch)
+match = re.fullmatch(r'resume-desktop/(\d+)/(v[^/]+)', branch)
 if not match:
     raise SystemExit('Invalid recovery branch')
 run_id, tag = match.groups()
+release_identity(tag)
 repo = os.environ['GITHUB_REPOSITORY']
 env = dict(os.environ, GITHUB_REF_NAME='publish-desktop/' + tag, RELEASE_BRANCH=branch)
 subprocess.run([sys.executable, 'scripts/desktop-release-context.py'], env=env, check=True)

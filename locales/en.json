@@ -312,5 +312,9 @@
   "Нет названия трека": "Track title missing",
   "Нет исполнителя": "Artist missing",
   "Ошибка клиента текстов": "Lyrics client error",
-  "Язык устройства не поддерживается — используется английский.": "Your device language is unsupported; English is used."
+  "Язык устройства не поддерживается — используется английский.": "Your device language is unsupported; English is used.",
+  "Выпуск": "Release",
+  "Стабильный": "Stable",
+  "Предварительный": "Preview",
+  "Недопустимый OAuth-токен": "Invalid OAuth token"
 }

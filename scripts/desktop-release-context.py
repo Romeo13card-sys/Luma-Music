@@ -1,10 +1,11 @@
 """Validate immutable source/tag identity for an owner-pushed desktop release transport."""
 import os,re,subprocess,tomllib
 from pathlib import Path
+from release_identity import release_identity
 branch=os.environ['GITHUB_REF_NAME'];tag=branch.rsplit('/',1)[-1]
-if not branch.startswith('publish-desktop/') or not re.fullmatch(r'v\d+\.\d+\.\d+-rc\.\d+',tag):raise SystemExit('Invalid desktop release branch')
+if not branch.startswith('publish-desktop/'):raise SystemExit('Invalid desktop release branch')
 version=tomllib.loads(Path('desktop/Cargo.toml').read_text())['package']['version']
-if tag!='v'+version:raise SystemExit('Desktop version/tag mismatch')
+release_identity(tag,version)
 source=subprocess.check_output(['git','rev-parse',f'{tag}^{{commit}}'],text=True).strip()
 subprocess.run(['git','merge-base','--is-ancestor',source,'HEAD'],check=True)
 subprocess.run(['git','diff','--quiet',source,'HEAD','--','core','desktop','locales','vendor','Cargo.toml','Cargo.lock','LICENSE','NOTICE'],check=True)

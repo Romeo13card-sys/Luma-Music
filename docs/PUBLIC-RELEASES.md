@@ -28,8 +28,8 @@
 ```sh
 python3 scripts/sign-local-apks.py --init-key \
   --key-dir /secure/path/luma-signing \
-  --input android/app/build/outputs/distribution/0.5.0-rc.1 \
-  --output android/app/build/outputs/family/0.5.0-rc.1
+  --input android/app/build/outputs/distribution/0.5.0 \
+  --output android/app/build/outputs/family/0.5.0
 ```
 
 Для следующих версий та же команда без `--init-key` и с тем же key-dir.
@@ -42,14 +42,19 @@ python3 scripts/sign-local-apks.py --init-key \
 На машине с обычной авторизацией автора `gh auth login` (браузер, не секрет в CI):
 
 ```sh
-scripts/publish-public-release.sh v0.5.0-rc.1 android/app/build/outputs/family/0.5.0-rc.1
+scripts/publish-public-release.sh v0.5.0 android/app/build/outputs/family/0.5.0
 ```
 
 Скрипт проверяет контрольные суммы, сертификаты и публичность целевого репозитория,
-создаёт GitHub Pre-release. В этой среде вызов GitHub API пока заблокирован,
-поэтому подписанные APK доступны локально, но публичная публикация не подтверждена.
-Альтернатива — Releases → Draft a new release → загрузить подписанные файлы
-из выходной папки, включая SHA256SUMS.txt.
+создаёт стабильный Latest Release или Pre-release в зависимости от тега.
+В этой среде прямой GitHub API заблокирован. Рабочий маршрут — временная ветка
+`publish-apk/v<версия>` с подписанными файлами в `.release-input/`, release.json
+(tag, commit исходников, version, versionCode), notes.md, certificate.sha256
+и SHA256SUMS.txt. Workflow `Publish signed APKs` проверяет pin, подписи,
+пакет/версию, контрольные суммы и 16-КБ выравнивание, затем создаёт выпуск
+на указанном коммите и удаляет транспортную ветку. Для стабильной версии
+дополнительно запрещён debug-режим и проверяется встроенный SHA исходников.
+Готовые выпуски доступны в публичных Releases; закрытый ключ не покидает среду.
 
 Старые GitHub debug-APK имеют другой ключ. Новый постоянный семейный ключ не
 обновит их поверх: для первоначального перехода потребуется отдельное решение

@@ -60,51 +60,30 @@ jobs:
           log-accepted-android-sdk-licenses: false
       - name: Install Android build dependencies
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;27.2.12479018" "platform-tools"
-      - name: Configure persistent signing
+      - name: Configure optional browser OAuth client
         env:
-          KEYSTORE_BASE64: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.LUMA_KEYSTORE_BASE64 || '' }}
-          STORE_PASSWORD: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.LUMA_KEYSTORE_PASSWORD || '' }}
-          KEY_ALIAS: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.LUMA_KEY_ALIAS || '' }}
-          KEY_PASSWORD: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.LUMA_KEY_PASSWORD || '' }}
           OAUTH_CLIENT: ${{ vars.LUMA_YANDEX_CLIENT_ID }}
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -n "$KEYSTORE_BASE64" && -n "$STORE_PASSWORD" && -n "$KEY_ALIAS" && -n "$KEY_PASSWORD" ]]; then
-            umask 077
-            printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/luma-signing.keystore"
-            echo "LUMA_KEYSTORE_PATH=$RUNNER_TEMP/luma-signing.keystore" >> "$GITHUB_ENV"
-          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            echo "::error::Release blocked: configure all four LUMA signing secrets. Fresh debug keys cannot provide compatible OTA updates."
-            exit 1
-          fi
           if [[ -n "$OAUTH_CLIENT" && ! "$OAUTH_CLIENT" =~ ^[A-Za-z0-9_-]{8,128}$ ]]; then
-            echo "::error::Invalid LUMA_YANDEX_CLIENT_ID repository variable"
+            echo '::error::Invalid LUMA_YANDEX_CLIENT_ID repository variable'
             exit 1
           fi
           echo "LUMA_YANDEX_CLIENT_ID=$OAUTH_CLIENT" >> "$GITHUB_ENV"
-      - name: Build optimized native libraries and APKs
-        env:
-          LUMA_KEYSTORE_PASSWORD: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.LUMA_KEYSTORE_PASSWORD || '' }}
-          LUMA_KEY_ALIAS: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.LUMA_KEY_ALIAS || '' }}
-          LUMA_KEY_PASSWORD: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.LUMA_KEY_PASSWORD || '' }}
+      - name: Build optimized native libraries and unsigned release APKs
         run: bash scripts/build-android.sh
-      - name: Android Lint
+      - name: Android unit tests and Lint
         working-directory: android
-        env:
-          LUMA_KEYSTORE_PASSWORD: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.LUMA_KEYSTORE_PASSWORD || '' }}
-          LUMA_KEY_ALIAS: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.LUMA_KEY_ALIAS || '' }}
-          LUMA_KEY_PASSWORD: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.LUMA_KEY_PASSWORD || '' }}
-        run: ./gradlew --no-daemon testDebugUnitTest lintDebug
+        run: ./gradlew --no-daemon testReleaseUnitTest lintRelease
       - name: Name APKs for distribution
         id: package
         run: python3 scripts/package-apks.py >> "$GITHUB_OUTPUT"
-      - name: Verify APK signatures and 16 KB alignment
+      - name: Verify unsigned APKs and 16 KB alignment
         shell: bash
         run: |
           set -euo pipefail
           for apk in "${{ steps.package.outputs.directory }}"/*.apk; do
-            "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify "$apk"
             "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 4 "$apk"
           done
           cd "${{ steps.package.outputs.directory }}"
@@ -112,57 +91,16 @@ jobs:
       - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
-          name: luma-music-apk-${{ github.run_number }}
+          name: luma-music-unsigned-apks-${{ github.run_number }}
           path: |
             ${{ steps.package.outputs.directory }}/*.apk
             ${{ steps.package.outputs.directory }}/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
-      - name: Remove signing material
-        if: always()
-        run: rm -f "$RUNNER_TEMP/luma-signing.keystore"
       - name: Upload Lint report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: android-lint-${{ github.run_number }}
-          path: android/app/build/reports/lint-results-debug.*
+          path: android/app/build/reports/lint-results-release.*
           if-no-files-found: ignore
-
-  publish-test-release:
-    name: Publish candidate APKs
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: test-and-build
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    steps:
-      - name: Download verified APKs
-        uses: actions/download-artifact@v4
-        with:
-          name: luma-music-apk-${{ github.run_number }}
-          path: release
-      - name: Publish GitHub prerelease
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.ref_name }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          cat > notes.md <<'NOTES'
-          Luma Music — кандидат в релиз для Android 11+, обычные светлая и тёмная темы.
-          made by Romeo13card
-
-          Настройки плеера, вход через Яндекс и проверяемые OTA-обновления GitHub.
-          SDK 36, четыре архитектуры, автоматический экономичный режим для устройств с небольшим объёмом ОЗУ.
-
-          Для телефона ARM64 выберите Luma-Music-*-arm64-v8a.apk.
-          Без аккаунта можно открыть деморежим и локальный тестовый звук.
-
-          APK подписан постоянным ключом проекта. Для обновления поверх старой версии её сертификат должен совпадать. Работа настоящего аккаунта и полный диапазон Android 11–16 ещё не проверены. Основное окно входа использует сценарий YAYMA; для дополнительного браузерного метода нужен свой Client ID. «Моя волна» добавлена экспериментально; требуется проверка на аккаунте. Офлайн-загрузка каталога пока не реализована.
-          Новый идентификатор org.luma.music: устанавливается отдельно от предыдущих версий.
-          NOTES
-          gh release create "$RELEASE_TAG" release/*.apk release/SHA256SUMS.txt \
-            --prerelease --verify-tag --title "Luma Music ($RELEASE_TAG)" \
-            --notes-file notes.md

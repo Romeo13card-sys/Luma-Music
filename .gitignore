@@ -24,3 +24,5 @@ __pycache__/
 
 .smoke-input/
 android-integration/
+
+.release-input/

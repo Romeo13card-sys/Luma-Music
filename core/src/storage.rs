@@ -23,7 +23,7 @@ fn valid_setting(key: &str, value: &Value) -> bool {
 pub fn defaults() -> Value {
     json!({"language":"system","theme_mode":"system","quality_wifi":320,"quality_mobile":128,
         "reduce_effects":false,"unmetered_only":false,"haptics":true,"shuffle":false,
-        "repeat":false,"test_updates":true,"auto_update_check":true,"last_update_check":0,
+        "repeat":false,"test_updates":false,"auto_update_check":true,"last_update_check":0,
         "font_size":100,"pause_on_unplug":true})
 }
 fn open(path: &Path) -> Result<Connection> {
@@ -246,6 +246,20 @@ mod tests {
                 .pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))
                 .unwrap(),
             42
+        );
+    }
+    #[test]
+    fn stable_is_default_but_existing_preview_choice_survives_reopen() {
+        let tmp = Temp::new();
+        let path = tmp.path();
+        assert_eq!(
+            dispatch(&path, "settings_load", "{}").unwrap()["test_updates"],
+            false
+        );
+        dispatch(&path, "settings_patch", r#"{"test_updates":true}"#).unwrap();
+        assert_eq!(
+            dispatch(&path, "settings_load", "{}").unwrap()["test_updates"],
+            true
         );
     }
 }

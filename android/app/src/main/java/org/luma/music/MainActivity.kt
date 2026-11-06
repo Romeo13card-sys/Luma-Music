@@ -52,10 +52,11 @@ class MainActivity : Activity() {
 
     private var token = ""
     private var demo = false
-    private var generation = 0
+    @Volatile private var generation = 0
     private val executor = Executors.newSingleThreadExecutor()
+    private val apiRequests = LatestRequests()
     private val handler = Handler(Looper.getMainLooper())
-    private var destroyed = false
+    @Volatile private var destroyed = false
     private var visible = false
     private val tick =
         object : Runnable {
@@ -172,6 +173,7 @@ class MainActivity : Activity() {
         body = column()
         status = text("")
         generation++
+        apiRequests.invalidate()
         playerTitle = null
         playerSubtitle = null
         playButton = null
@@ -209,7 +211,8 @@ class MainActivity : Activity() {
         val version = generation
         val credential = token
         status.text = "Загрузка…"
-        executor.execute {
+        apiRequests.submit {ticket ->
+            if(destroyed || version!=generation || !ticket.valid) return@submit
             val result =
                 try {
                     JSONObject(Native.request(credential, op, arg))
@@ -217,7 +220,7 @@ class MainActivity : Activity() {
                     JSONObject().put("ok", false).put("error", "Не удалось обработать ответ")
                 }
             runOnUiThread {
-                if (destroyed || version != generation) return@runOnUiThread
+                if (destroyed || version != generation || !ticket.valid) return@runOnUiThread
                 finished?.invoke()
                 if (result.optBoolean("ok")) {
                     status.text = ""
@@ -267,6 +270,7 @@ class MainActivity : Activity() {
         card.addView(text("Личный OAuth-токен", 13f, mint, true))
         val input =
             EditText(this).apply {
+                filters = arrayOf(android.text.InputFilter.LengthFilter(4096))
                 hint = t("Вставьте токен")
                 setTextColor(white)
                 setHintTextColor(muted)
@@ -980,7 +984,7 @@ class MainActivity : Activity() {
             }
             "updates" -> {
                 val update=group("Luma $current")
-                val preview=preferences.getBoolean("test_updates",true)
+                val preview=preferences.getBoolean("test_updates",false)
                 settingRow(update,"Канал обновлений",if(preview) "Предварительные · включая RC" else "Только стабильные выпуски") {
                     LumaDialog(this).setTitle("Канал обновлений")
                         .setSingleChoiceItems(arrayOf("Только стабильные","Предварительные и стабильные"),if(preview) 1 else 0) {dialog,index ->
@@ -1074,7 +1078,8 @@ class MainActivity : Activity() {
         }
         val app=group("Приложение")
         info(app,"Версия",version)
-        info(app,"Канал обновлений","Release candidate")
+        val channel=NativeCore.call("version_channel",JSONObject().put("version",version).toString()) as String
+        info(app,"Выпуск",t(if(channel=="stable") "Стабильный" else "Предварительный"))
         info(app,"Сборка",BuildConfig.SOURCE_COMMIT.take(8))
         info(app,"Пакет",packageName)
         val appearance=group("Оформление")
@@ -1105,6 +1110,9 @@ class MainActivity : Activity() {
                 .put("android",Build.VERSION.RELEASE).put("api",Build.VERSION.SDK_INT)
                 .put("device",Build.MANUFACTURER+" "+Build.MODEL).put("abis",Build.SUPPORTED_ABIS.joinToString())
                 .put("theme",mode).put("language",L10n.code(this)).put("economy",renderPolicy.economy)
+                .put("channel",channel).put("quality_wifi",preferences.getInt("quality_wifi",320))
+                .put("quality_mobile",preferences.getInt("quality_mobile",128))
+                .put("metered",getSystemService(android.net.ConnectivityManager::class.java).isActiveNetworkMetered)
             val report=NativeCore.call("support_report",data.toString()) as String
             getSystemService(android.content.ClipboardManager::class.java)
                 .setPrimaryClip(ClipData.newPlainText("Luma Music",report))
@@ -1138,7 +1146,7 @@ class MainActivity : Activity() {
         executor.execute {
             try {
                 val updater = GitHubUpdater(this)
-                val release = updater.check(preferences.getBoolean("test_updates", true))
+                val release = updater.check(preferences.getBoolean("test_updates", false))
                 runOnUiThread {
                     checkingUpdates = false
                     if (destroyed || version != generation) return@runOnUiThread
@@ -1383,6 +1391,7 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         destroyed = true
+        apiRequests.close()
         executor.shutdownNow()
         super.onDestroy()
     }

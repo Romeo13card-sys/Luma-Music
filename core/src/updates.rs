@@ -1,5 +1,17 @@
 //! Release metadata policy, independent of networking and Android installation APIs.
 use serde_json::Value;
+pub fn channel(version: &str) -> Result<Value, String> {
+    let parsed = semver::Version::parse(version.strip_prefix('v').unwrap_or(version))
+        .map_err(|_| "Некорректная версия приложения")?;
+    Ok(Value::String(
+        if parsed.pre.is_empty() {
+            "stable"
+        } else {
+            "preview"
+        }
+        .into(),
+    ))
+}
 const MAX_APK: u64 = 100 * 1024 * 1024;
 fn version(raw: &str) -> Option<[u64; 3]> {
     let raw = raw.strip_prefix('v').unwrap_or(raw);
@@ -96,6 +108,12 @@ pub fn asset(assets: &Value, abis: &Value) -> Result<Value, String> {
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn classifies_channels_from_actual_version() {
+        assert_eq!(channel("0.5.0").unwrap(), json!("stable"));
+        assert_eq!(channel("v0.5.0-rc.8").unwrap(), json!("preview"));
+        assert!(channel("invalid").is_err());
+    }
     #[test]
     fn compares_numeric_versions_and_rejects_malformed_versions() {
         assert_eq!(compare("v0.10.0-test.1", "0.4.0-test"), Some(1));

@@ -5,20 +5,20 @@ import json
 import os
 import re
 import subprocess
+import zipfile
 from pathlib import Path
+from release_identity import release_identity
 
 
 def verify(root: Path):
     payload = root / '.release-input'
     info = json.loads((payload / 'release.json').read_text())
     tag, commit, version = info['tag'], info['commit'], info['version']
-    if not re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+-(?:test|rc)\.[0-9]+', tag):
-        raise ValueError('Invalid candidate tag')
+    preview = release_identity(tag, version)
     if not re.fullmatch(r'[a-f0-9]{40}', commit) or not re.fullmatch(r'[A-Za-z0-9._-]+', version):
         raise ValueError('Invalid release identity')
-    if tag != 'v'+version and not tag.startswith('v'+version+'.'):
-        raise ValueError('Tag/version mismatch')
     subprocess.run(['git', 'merge-base', '--is-ancestor', commit, 'HEAD'], cwd=root, check=True)
+    subprocess.run(['git', 'diff', '--quiet', commit, 'HEAD', '--', 'android', 'core', 'locales', 'vendor', 'Cargo.toml', 'Cargo.lock', 'scripts/build-android.sh'], cwd=root, check=True)
     expected = (root / '.github/family-certificate.sha256').read_text().strip()
     if not re.fullmatch(r'[a-f0-9]{64}', expected) or (payload/'certificate.sha256').read_text().strip() != expected:
         raise ValueError('Certificate pin mismatch')
@@ -43,6 +43,12 @@ def verify(root: Path):
         if re.findall(r'Signer #\d+ certificate SHA-256 digest: (\S+)', report) != [expected]:
             raise ValueError('APK signer mismatch')
         metadata = subprocess.check_output([str(tools/'aapt'), 'dump', 'badging', str(apk)], text=True)
+        if not preview and ('application-debuggable' in metadata or 'application-testOnly' in metadata):
+            raise ValueError('Stable APK must be a non-debuggable production build')
+        if not preview:
+            with zipfile.ZipFile(apk) as archive:
+                if not any(commit.encode() in archive.read(name) for name in archive.namelist() if name.endswith('.dex')):
+                    raise ValueError('APK compiled source identity mismatch')
         if "name='org.luma.music'" not in metadata or f"versionName='{version}'" not in metadata or f"versionCode='{int(info['versionCode'])}'" not in metadata:
             raise ValueError('APK package/version mismatch')
         subprocess.run([str(tools/'zipalign'), '-c', '-P', '16', '4', str(apk)], check=True)
@@ -51,4 +57,4 @@ def verify(root: Path):
 
 if __name__ == '__main__':
     tag, commit = verify(Path.cwd())
-    print(f'tag={tag}\ncommit={commit}')
+    print(f'tag={tag}\ncommit={commit}\nprerelease={str(release_identity(tag)).lower()}')
