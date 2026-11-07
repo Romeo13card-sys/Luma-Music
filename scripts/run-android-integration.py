@@ -15,7 +15,7 @@ try:
     source=info['commit']
     assert re.fullmatch(r'[a-f0-9]{40}',source),'Invalid compiled source identity'
     run('git','merge-base','--is-ancestor',source,'HEAD')
-    run('git','diff','--quiet',source,'HEAD','--','android','core','locales','vendor','Cargo.toml','Cargo.lock','scripts/build-android.sh')
+    run('git','diff','--quiet',source,'HEAD','--','android','core','locales','vendor','Cargo.toml','Cargo.lock','scripts/build-android.sh', 'CHANGELOG.md')
     with zipfile.ZipFile(payload/'app.apk') as apk:
         assert any(source.encode() in apk.read(n) for n in apk.namelist() if n.endswith('.dex')),'APK build identity differs from payload source'
     sums=json.loads((payload/'SHA256.json').read_text())

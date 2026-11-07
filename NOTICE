@@ -11,3 +11,11 @@ Luma adaptations are separate from the original upstream files. This combined
 work is distributed under GPL-3.0 (see LICENSE), without warranty. Complete
 corresponding source, including build scripts and modifications, is provided in
 this repository. Dependency licenses and notices continue to apply.
+
+Material Components for Android (Google), AndroidX/AppCompat and their contributors:
+Apache License 2.0, https://github.com/material-components/material-components-android
+and https://android.googlesource.com/platform/frameworks/support/.
+Apache-2.0 license text is included in android/app/src/main/assets/licenses/.
+Rust base64 contributors: MIT OR Apache-2.0; dependency versions are pinned in Cargo.lock.
+Spotify integration implements OAuth PKCE and Web API calls; no proprietary audio SDK
+or Spotify recordings are bundled.

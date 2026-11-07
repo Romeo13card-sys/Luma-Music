@@ -21,9 +21,10 @@ class SpotifyActivity:MaterialActivity() {
     private var epoch=0
     private fun t(s:String)=L10n.text(this,s)
     private val auth get()=TokenStore(this,"spotify_auth")
+    private val stamp get()=TokenStore(this,"spotify_epoch")
     private val pending get()=TokenStore(this,"spotify_pending")
     private val config get()=getSharedPreferences("spotify_config",MODE_PRIVATE)
-    private fun label(value:String,size:Float=16f)=TextView(this).apply {text=value;textSize=size;setPadding(0,10,0,10)}
+    private fun label(value:String,size:Float=16f)=TextView(this).apply {text=value;textSize=size;setPadding(0,10,0,10);setTextIsSelectable(true)}
     private fun button(name:String,raw:Boolean=false,action:()->Unit){
         content.addView(MaterialButton(this).apply {text=if(raw)name else t(name);setOnClickListener {if(!busy)action()}})
     }
@@ -50,6 +51,7 @@ class SpotifyActivity:MaterialActivity() {
                 val session=JSONObject().put("client_id",id).put("state",secret()).put("verifier",secret())
                     .put("started",System.currentTimeMillis()/1000)
                 val data=NativeCore.call("spotify_start",session.toString()) as JSONObject
+                stamp.save(session.getString("state"))
                 pending.save(session.toString())
                 config.edit().putString("client_id",id).apply()
                 startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(data.getString("url"))))
@@ -58,7 +60,7 @@ class SpotifyActivity:MaterialActivity() {
         if(!auth.load().isNullOrBlank()){
             button("Мои плейлисты"){library("spotify_playlists",0)}
             button("Избранное Spotify"){library("spotify_likes",0)}
-            button("Отключить Spotify"){auth.clear();pending.clear();draw()}
+            button("Отключить Spotify"){stamp.save(java.util.UUID.randomUUID().toString());auth.clear();pending.clear();draw()}
         }
         button("Открыть Spotify"){openSpotify("spotify:app:home")}
         button("Назад"){finish()}
@@ -79,10 +81,13 @@ class SpotifyActivity:MaterialActivity() {
         }
     }
     private fun credentials():JSONObject{
-        var data=JSONObject(auth.load() ?: error(t("Войдите в Spotify")))
+        val original=auth.load() ?: error(t("Войдите в Spotify"))
+        val epoch=stamp.load()
+        var data=JSONObject(original)
         if(data.optLong("expires_at")<=System.currentTimeMillis()/1000+60){
             data=NativeCore.call("spotify_refresh",data.toString()) as JSONObject
             data.put("expires_at",System.currentTimeMillis()/1000+data.getLong("expires_in"))
+            check(stamp.load()==epoch && auth.load()==original) {"Сессия Spotify изменилась"}
             auth.save(data.toString())
         }
         return data
@@ -101,6 +106,7 @@ class SpotifyActivity:MaterialActivity() {
                 val tokens=NativeCore.call("spotify_exchange",session.toString()) as JSONObject
                 tokens.put("expires_at",System.currentTimeMillis()/1000+tokens.getLong("expires_in"))
                 val profile=NativeCore.call("spotify_profile",tokens.toString()) as JSONObject
+                check(stamp.load()==session.getString("state")) {"Вход Spotify отменён"}
                 auth.save(tokens.toString())
                 profile
             }){profile->draw();status.text=profile.optString("name","Spotify")}

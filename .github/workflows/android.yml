@@ -49,6 +49,7 @@ jobs:
             ~/.cargo/git
             target
           key: rust-android-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'Cargo.toml', 'core/Cargo.toml', 'scripts/build-android.sh') }}
+          restore-keys: rust-android-${{ runner.os }}-
       - name: Check Rust formatting
         run: cargo fmt --all -- --check
       - name: Verify pinned YAYMA source and license

@@ -40,6 +40,7 @@ class LumaInstrumentation:Instrumentation() {
             "Target application is debuggable")
         runOnMainSync {SettingsStore.get(targetContext).edit().putBoolean("auto_update_check",false).apply()}
         val initial=startActivitySync(Intent(targetContext,MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
+        TokenStore(targetContext).save("fixtureAccountA")
         val root=java.io.File(targetContext.filesDir,"offline")
         val dir=java.io.File(root,"999999999").apply {mkdirs()}
         val audio=java.io.File(dir,"999999998.mp3")
@@ -58,8 +59,10 @@ class LumaInstrumentation:Instrumentation() {
         verify((PlaybackService.instance?.duration() ?: 0) in 2000..4000,"Unexpected offline MP3 duration")
         PlaybackService.command(targetContext,"stop")
         waitUntil("Offline service did not stop"){PlaybackService.instance==null}
-        NativeCore.call("offline_clear",OfflineDownloads.arguments(targetContext).toString())
-        TokenStore(targetContext,"offline_owner").clear()
+        TokenStore(targetContext).save("fixtureAccountB")
+        verify(TokenStore(targetContext,"offline_owner").load()==null,"Changing Yandex identity retained offline owner")
+        waitUntil("Changing Yandex identity retained private audio"){!dir.exists()}
+        TokenStore(targetContext).clear()
         runOnMainSync {initial.finish()}
         runOnMainSync {
             SettingsStore.get(targetContext).edit().putString("language","en")

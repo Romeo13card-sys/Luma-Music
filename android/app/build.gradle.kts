@@ -24,7 +24,9 @@ android {
         getByName("release") {
             isDebuggable = false
             isJniDebuggable = false
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"),"proguard-rules.pro")
             if (!System.getenv("LUMA_KEYSTORE_PATH").isNullOrBlank())
                 signingConfig = signingConfigs.getByName("persistent")
         }

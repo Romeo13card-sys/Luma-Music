@@ -11,6 +11,8 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 class TokenStore(context: Context, namespace: String = "auth") {
+    private val app = context.applicationContext
+    private val yandexAuth = namespace == "auth"
     private val prefs = context.getSharedPreferences(namespace, Context.MODE_PRIVATE)
     private val alias = if (namespace == "auth") "yamusic.oauth" else "luma.$namespace"
 
@@ -35,6 +37,8 @@ class TokenStore(context: Context, namespace: String = "auth") {
     }
 
     fun save(token: String) {
+        // Changing Yandex identity invalidates its offline cache, never the Spotify session.
+        if (yandexAuth && load() != token) OfflineDownloads.forgetAccount(app)
         val cipher =
             Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()) }
         val bytes = cipher.doFinal(token.toByteArray(Charsets.UTF_8))

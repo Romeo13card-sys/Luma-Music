@@ -18,7 +18,7 @@ def verify(root: Path):
     if not re.fullmatch(r'[a-f0-9]{40}', commit) or not re.fullmatch(r'[A-Za-z0-9._-]+', version):
         raise ValueError('Invalid release identity')
     subprocess.run(['git', 'merge-base', '--is-ancestor', commit, 'HEAD'], cwd=root, check=True)
-    subprocess.run(['git', 'diff', '--quiet', commit, 'HEAD', '--', 'android', 'core', 'locales', 'vendor', 'Cargo.toml', 'Cargo.lock', 'scripts/build-android.sh'], cwd=root, check=True)
+    subprocess.run(['git', 'diff', '--quiet', commit, 'HEAD', '--', 'android', 'core', 'locales', 'vendor', 'Cargo.toml', 'Cargo.lock', 'scripts/build-android.sh', 'CHANGELOG.md'], cwd=root, check=True)
     expected = (root / '.github/family-certificate.sha256').read_text().strip()
     if not re.fullmatch(r'[a-f0-9]{64}', expected) or (payload/'certificate.sha256').read_text().strip() != expected:
         raise ValueError('Certificate pin mismatch')

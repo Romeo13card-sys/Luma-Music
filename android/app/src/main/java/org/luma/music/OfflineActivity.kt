@@ -19,11 +19,12 @@ class OfflineActivity:MaterialActivity() {
     private var tracks=JSONArray()
     private var visible=false
     private var loading=false
+    private var loadError:String?=null
     private var seen=-1L
     private val tick=object:Runnable{
         override fun run(){
             if(!visible)return
-            status.text=L10n.text(this@OfflineActivity,DownloadService.message)
+            status.text=loadError ?: L10n.text(this@OfflineActivity,DownloadService.message)
             progress.isIndeterminate=DownloadService.percent<0
             if(!progress.isIndeterminate)progress.progress=DownloadService.percent
             progress.visibility=if(DownloadService.busy)View.VISIBLE else View.GONE
@@ -93,11 +94,12 @@ class OfflineActivity:MaterialActivity() {
                 loading=false
                 if(isDestroyed)return@runOnUiThread
                 result.onSuccess {data->
+                    loadError=null
                     tracks=data.getJSONArray("items")
                     adapter.clear();adapter.addAll((0 until tracks.length()).map {i->val t=tracks.getJSONObject(i);t.getString("title")+"\n"+t.getString("artists")})
                     storage.text=if(tracks.length()==0)L10n.text(this,"Скачанных треков пока нет") else
                         tracks.length().toString()+" · "+(data.optLong("bytes")/1048576).toString()+" МБ / "+SettingsStore.get(this).getInt("download_limit_mb",1024).toString()+" МБ"
-                }.onFailure {status.text=it.message}
+                }.onFailure {loadError=it.message;status.text=it.message}
             }
         }
     }
