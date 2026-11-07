@@ -1,0 +1,5 @@
+17572a3c95bbc84b6511bbd6adefccdf25a0a5c4b6d6fcda34b770264751966e  Luma-Music-1.0.0-dev.1-arm64-v8a.apk
+26c0c226e15432b0d8d3a6d15b46bcbfbf371e5b3b15cc395ead7c946cf916a7  Luma-Music-1.0.0-dev.1-armeabi-v7a.apk
+c1dfc769d0059a19ebd2822a118aeb9b5967cd66715e5a10eaac15f5458a8e76  Luma-Music-1.0.0-dev.1-universal.apk
+8c024a9a1bef709b0758cdf947e7c3b1446c3ef56d4a24c5c2ff75b46f5f2774  Luma-Music-1.0.0-dev.1-x86.apk
+74af4bb4bd3ca0749a8f1c57a4afe55069e215c9deb0ad9256c8e0b3937b7825  Luma-Music-1.0.0-dev.1-x86_64.apk
