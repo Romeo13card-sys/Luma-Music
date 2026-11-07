@@ -1,5 +1,5 @@
 <resources>
-    <style name="Theme.Luma.Dark" parent="android:style/Theme.Material.NoActionBar">
+    <style name="Theme.Luma.Dark" parent="Theme.Material3.Dark.NoActionBar">
         <item name="android:fontFamily">sans-serif</item>
         <item name="android:colorAccent">#FFE04A</item>
         <item name="android:windowLightStatusBar">false</item>
@@ -8,7 +8,7 @@
         <item name="android:navigationBarColor">#121212</item>
         <item name="android:windowBackground">#121212</item>
     </style>
-    <style name="Theme.Luma.Light" parent="android:style/Theme.Material.Light.NoActionBar">
+    <style name="Theme.Luma.Light" parent="Theme.Material3.Light.NoActionBar">
         <item name="android:fontFamily">sans-serif</item>
         <item name="android:colorAccent">#7C5700</item>
         <item name="android:windowLightStatusBar">true</item>

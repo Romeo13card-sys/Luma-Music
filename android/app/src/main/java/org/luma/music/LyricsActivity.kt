@@ -19,7 +19,7 @@ private object LyricsRequests {
 }
 
 /** Android renders and seeks; parsing, caching and timeline selection belong to Rust. */
-class LyricsActivity : Activity() {
+class LyricsActivity : MaterialActivity() {
     private val preferences by lazy { SettingsStore.get(this) }
     private val colors get() = AppThemes.resolve(preferences.getString("theme_mode","system").orEmpty(),
         resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK ==

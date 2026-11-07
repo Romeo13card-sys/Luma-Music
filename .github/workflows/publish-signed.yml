@@ -1,11 +1,14 @@
 name: Publish signed APKs
 on:
   push:
-    branches: ['publish-apk/**']
+    branches: [main]
+    paths: ['.release-input/**']
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
   publish:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -48,10 +51,3 @@ jobs:
           if [[ "$PREVIEW" == true ]]; then flags=(--prerelease); fi
           gh release create "$RELEASE_TAG" .release-input/*.apk .release-input/SHA256SUMS.txt .release-input/certificate.sha256 \
             --target "$SOURCE_COMMIT" "${flags[@]}" --title "Luma Music $RELEASE_TAG" --notes-file .release-input/notes.md
-      - name: Remove completed transport branch
-        if: success()
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          TRANSPORT_BRANCH: ${{ github.ref_name }}
-        run: gh api --method DELETE "repos/$GH_REPO/git/refs/heads/$TRANSPORT_BRANCH"

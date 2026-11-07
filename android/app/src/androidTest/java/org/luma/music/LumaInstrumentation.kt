@@ -38,12 +38,41 @@ class LumaInstrumentation:Instrumentation() {
     private fun runChecks() {
         verify(targetContext.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE == 0,
             "Target application is debuggable")
+        runOnMainSync {SettingsStore.get(targetContext).edit().putBoolean("auto_update_check",false).apply()}
+        val initial=startActivitySync(Intent(targetContext,MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
+        val root=java.io.File(targetContext.filesDir,"offline")
+        val dir=java.io.File(root,"999999999").apply {mkdirs()}
+        val audio=java.io.File(dir,"999999998.mp3")
+        context.assets.open("offline-fixture.mp3").use {source->audio.outputStream().use {source.copyTo(it)}}
+        val digest=java.security.MessageDigest.getInstance("SHA-256").digest(audio.readBytes())
+            .joinToString("") {String.format(java.util.Locale.ROOT,"%02x",it.toInt() and 255)}
+        java.io.File(dir,"index.json").writeText(org.json.JSONArray().put(JSONObject()
+            .put("id","999999998").put("title","Offline fixture").put("artists","Luma")
+            .put("bytes",audio.length()).put("sha256",digest).put("quality",128)).toString())
+        TokenStore(targetContext,"offline_owner").save("999999999")
+        verify(OfflineDownloads.list(targetContext).getJSONArray("items").length()==1,"Offline library missing")
+        verify(OfflineDownloads.ready(targetContext,"999999998")==audio.absolutePath,"JNI did not verify cached audio")
+        PlaybackService.queue=listOf(Song("999999998","Offline fixture","Luma"))
+        PlaybackService.command(targetContext,"play",0)
+        waitUntil("Downloaded MP3 did not play without an account") {(PlaybackService.instance?.duration() ?: 0)>1000}
+        verify((PlaybackService.instance?.duration() ?: 0) in 2000..4000,"Unexpected offline MP3 duration")
+        PlaybackService.command(targetContext,"stop")
+        waitUntil("Offline service did not stop"){PlaybackService.instance==null}
+        NativeCore.call("offline_clear",OfflineDownloads.arguments(targetContext).toString())
+        TokenStore(targetContext,"offline_owner").clear()
+        runOnMainSync {initial.finish()}
         runOnMainSync {
             SettingsStore.get(targetContext).edit().putString("language","en")
                 .putBoolean("auto_update_check",false).apply()
         }
         val main=startActivitySync(Intent(targetContext,MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)) as MainActivity
+        val whatsNew=startActivitySync(Intent(targetContext,WhatsNewActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        runOnMainSync {whatsNew.finish()}
+        val downloads=startActivitySync(Intent(targetContext,OfflineActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        runOnMainSync {downloads.finish()}
+        val spotify=startActivitySync(Intent(targetContext,SpotifyActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        runOnMainSync {spotify.finish()}
         runOnMainSync {main.javaClass.getDeclaredMethod("playDemo").apply {isAccessible=true}.invoke(main)}
         waitUntil("Demo MediaPlayer did not prepare") {(PlaybackService.instance?.duration() ?: 0)>0}
         runOnMainSync {if(PlaybackService.playing) PlaybackService.command(main,"toggle")}

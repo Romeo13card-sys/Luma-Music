@@ -24,7 +24,7 @@ class AlbumArt(context: Context) : View(context) {
         paint.color=0xFF303030.toInt();c.drawCircle(w/2,h/2,r,paint)
         paint.style=Paint.Style.STROKE;paint.strokeWidth=1.5f;paint.color=0xFF505050.toInt()
         for(i in 1..4)c.drawCircle(w/2,h/2,r*(.5f+i*.09f),paint)
-        paint.style=Paint.Style.FILL;paint.color=0xFFFFE04A.toInt();c.drawCircle(w/2,h/2,r*.22f,paint)
+        paint.style=Paint.Style.FILL;paint.color=AppThemes.active.accent;c.drawCircle(w/2,h/2,r*.22f,paint)
         paint.color=0xFF191919.toInt();c.drawCircle(w/2,h/2,r*.045f,paint)
     }
 }

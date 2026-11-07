@@ -11,10 +11,17 @@ fn valid_setting(key: &str, value: &Value) -> bool {
             .as_str()
             .is_some_and(|s| s == "system" || crate::localization::supported(s)),
         "theme_mode" => matches!(value.as_str(), Some("system" | "dark" | "light" | "oled")),
-        "quality_wifi" | "quality_mobile" => matches!(value.as_i64(), Some(128 | 192 | 320)),
+        "quality_wifi" | "quality_mobile" | "download_quality" => {
+            matches!(value.as_i64(), Some(128 | 192 | 320))
+        }
         "reduce_effects" | "unmetered_only" | "haptics" | "shuffle" | "repeat" | "test_updates"
         | "auto_update_check" => value.is_boolean(),
         "font_size" => matches!(value.as_i64(), Some(90 | 100 | 115 | 130)),
+        "download_wifi_only" => value.is_boolean(),
+        "download_limit_mb" => matches!(
+            value.as_u64(),
+            Some(256 | 512 | 1024 | 2048 | 4096 | 8192 | 16384)
+        ),
         "pause_on_unplug" => value.is_boolean(),
         "last_update_check" => value.as_i64().is_some_and(|n| n >= 0),
         _ => false,
@@ -24,7 +31,7 @@ pub fn defaults() -> Value {
     json!({"language":"system","theme_mode":"system","quality_wifi":320,"quality_mobile":128,
         "reduce_effects":false,"unmetered_only":false,"haptics":true,"shuffle":false,
         "repeat":false,"test_updates":false,"auto_update_check":true,"last_update_check":0,
-        "font_size":100,"pause_on_unplug":true})
+        "download_wifi_only":true,"download_limit_mb":1024,"download_quality":192,"font_size":100,"pause_on_unplug":true})
 }
 fn open(path: &Path) -> Result<Connection> {
     let db = Connection::open(path).map_err(|_| "Не удалось открыть базу Luma")?;

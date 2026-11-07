@@ -7,6 +7,7 @@ class ReleaseIdentityTests(unittest.TestCase):
         self.assertFalse(release_identity('v0.5.0', '0.5.0'))
         self.assertTrue(release_identity('v0.5.0-rc.8', '0.5.0-rc.8'))
         self.assertTrue(release_identity('v0.4.0-test.2'))
+        self.assertTrue(release_identity('v1.0.0-dev.1', '1.0.0-dev.1'))
 
     def test_rejects_mismatched_and_unsafe_identity(self):
         for tag in ('v0.5', '0.5.0', 'v0.5.0-rc.8/../x', 'v0.5.0-rc', 'v0.5.0+extra'):

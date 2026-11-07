@@ -2,7 +2,12 @@ name: Luma Music Android APK
 
 on:
   push:
-    branches: [main, work]
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - '.smoke-input/**'
+      - '.release-input/**'
+      - '.github/release-request.json'
     tags: ['v*']
   pull_request:
   workflow_dispatch:
@@ -63,6 +68,7 @@ jobs:
       - name: Configure optional browser OAuth client
         env:
           OAUTH_CLIENT: ${{ vars.LUMA_YANDEX_CLIENT_ID }}
+          SPOTIFY_CLIENT: ${{ vars.LUMA_SPOTIFY_CLIENT_ID }}
         shell: bash
         run: |
           set -euo pipefail
@@ -71,6 +77,11 @@ jobs:
             exit 1
           fi
           echo "LUMA_YANDEX_CLIENT_ID=$OAUTH_CLIENT" >> "$GITHUB_ENV"
+          if [[ -n "$SPOTIFY_CLIENT" && ! "$SPOTIFY_CLIENT" =~ ^[A-Fa-f0-9]{32}$ ]]; then
+            echo '::error::Invalid LUMA_SPOTIFY_CLIENT_ID'
+            exit 1
+          fi
+          echo "LUMA_SPOTIFY_CLIENT_ID=$SPOTIFY_CLIENT" >> "$GITHUB_ENV"
       - name: Build optimized native libraries and unsigned release APKs
         run: bash scripts/build-android.sh
       - name: Android unit tests and Lint

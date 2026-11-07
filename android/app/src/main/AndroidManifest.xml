@@ -3,9 +3,21 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <application android:icon="@drawable/ic_music" android:dataExtractionRules="@xml/extraction_rules" android:label="@string/app_name" android:theme="@style/Theme.Luma.Dark" android:allowBackup="false" android:fullBackupContent="@xml/backup_rules" android:usesCleartextTraffic="false" android:supportsRtl="true">
+        <activity android:name=".SpotifyActivity" android:exported="true" android:launchMode="singleTask">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="org.luma.music" android:host="spotify-callback" />
+            </intent-filter>
+        </activity>
+        <activity android:name=".WhatsNewActivity" android:exported="false" />
+        <activity android:name=".OfflineActivity" android:exported="false" />
+        <service android:name=".DownloadService" android:exported="false" android:foregroundServiceType="dataSync" />
         <activity android:name=".LyricsActivity" android:exported="false" />
         <activity android:name=".YandexLoginActivity" android:exported="false" android:enableOnBackInvokedCallback="true" />
         <provider android:name=".UpdateProvider" android:authorities="${applicationId}.updates" android:exported="false" android:grantUriPermissions="true" />

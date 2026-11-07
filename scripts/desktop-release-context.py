@@ -2,8 +2,8 @@
 import os,re,subprocess,tomllib
 from pathlib import Path
 from release_identity import release_identity
-branch=os.environ['GITHUB_REF_NAME'];tag=branch.rsplit('/',1)[-1]
-if not branch.startswith('publish-desktop/'):raise SystemExit('Invalid desktop release branch')
+from release_request import requested_tag
+tag=requested_tag()
 version=tomllib.loads(Path('desktop/Cargo.toml').read_text())['package']['version']
 release_identity(tag,version)
 source=subprocess.check_output(['git','rev-parse',f'{tag}^{{commit}}'],text=True).strip()

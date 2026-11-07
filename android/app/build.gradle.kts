@@ -42,12 +42,15 @@ android {
         val sourceCommit = System.getenv("LUMA_SOURCE_COMMIT") ?: System.getenv("GITHUB_SHA") ?: "local"
         require(sourceCommit == "local" || sourceCommit.matches(Regex("[a-f0-9]{40}")))
         buildConfigField("String", "SOURCE_COMMIT", "\"$sourceCommit\"")
+        val spotifyClient=(System.getenv("LUMA_SPOTIFY_CLIENT_ID") ?: "").trim()
+        require(spotifyClient.isEmpty() || spotifyClient.matches(Regex("[A-Fa-f0-9]{32}")))
+        buildConfigField("String", "SPOTIFY_CLIENT_ID", "\"$spotifyClient\"")
         applicationId = "org.luma.music"
         testInstrumentationRunner = "org.luma.music.LumaInstrumentation"
         minSdk = 30
         targetSdk = 36
-        versionCode = 18
-        versionName = "0.5.0"
+        versionCode = 19
+        versionName = "1.0.0-dev.1"
         ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64") }
     }
     splits {
@@ -67,6 +70,15 @@ android {
 kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }
 
 dependencies {
+    implementation("com.google.android.material:material:1.13.0")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
 }
+
+val releaseNotesAssets = layout.buildDirectory.dir("generated/releaseNotesAssets")
+val copyReleaseNotes by tasks.registering(Copy::class) {
+    from(rootProject.projectDir.parentFile.resolve("CHANGELOG.md"))
+    into(releaseNotesAssets)
+}
+android.sourceSets.getByName("main").assets.srcDir(releaseNotesAssets)
+tasks.named("preBuild") { dependsOn(copyReleaseNotes) }

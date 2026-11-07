@@ -1,12 +1,24 @@
 name: Desktop release recovery
 on:
-  push:
-    branches: ['resume-desktop/**']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing release tag'
+        required: true
+        type: string
+      run_id:
+        description: 'Desktop release workflow run to recover'
+        required: true
+        type: string
+env:
+  RELEASE_TAG: ${{ inputs.tag }}
+  RECOVERY_RUN_ID: ${{ inputs.run_id }}
 permissions:
   contents: write
   actions: read
 jobs:
   recover:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:

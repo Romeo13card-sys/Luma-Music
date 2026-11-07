@@ -2,7 +2,9 @@ mod auth;
 mod diagnostics;
 pub mod localization;
 mod lyrics;
+mod offline;
 mod queue;
+mod spotify;
 mod storage;
 mod update_transport;
 mod updates;
@@ -466,6 +468,13 @@ pub fn core_dispatch(operation: &str, argument: &str) -> String {
         }
         let v: Value = serde_json::from_str(argument).map_err(|_| "Некорректный запрос ядра")?;
         match operation {
+            "spotify_start" | "spotify_callback" | "spotify_exchange" | "spotify_refresh"
+            | "spotify_profile" | "spotify_playlists" | "spotify_likes" => {
+                spotify::dispatch(operation, &v)
+            }
+            "offline_list" | "offline_ready" | "offline_remove" | "offline_clear" => {
+                offline::dispatch(operation, &v)
+            }
             "auth_start" => auth::start(&v),
             "auth_navigation" => auth::navigation(&v),
             "settings_defaults" => Ok(storage::defaults()),
@@ -584,6 +593,47 @@ pub extern "system" fn Java_org_luma_music_Native_download(
     }
     .to_string();
     env.new_string(value)
+        .map(|s| s.into_raw())
+        .unwrap_or(std::ptr::null_mut())
+}
+
+#[cfg(target_os = "android")]
+#[no_mangle]
+pub extern "system" fn Java_org_luma_music_Native_offlineDownload(
+    mut env: jni::JNIEnv,
+    _object: jni::objects::JObject,
+    token: jni::objects::JString,
+    argument: jni::objects::JString,
+    progress: jni::objects::JObject,
+) -> jni::sys::jstring {
+    let result: Result<Value> = (|| {
+        let token: String = env.get_string(&token).map_err(|_| "Ошибка JNI")?.into();
+        let raw: String = env.get_string(&argument).map_err(|_| "Ошибка JNI")?.into();
+        if raw.len() > queue::MAX_BYTES {
+            return Err("Запрос загрузки слишком велик".into());
+        }
+        let data: Value = serde_json::from_str(&raw).map_err(|_| "Некорректная загрузка")?;
+        offline::download(&token, &data, |percent| {
+            match env.call_method(
+                &progress,
+                "onProgress",
+                "(I)Z",
+                &[jni::objects::JValue::Int(percent)],
+            ) {
+                Ok(v) => v.z().unwrap_or(false),
+                Err(_) => {
+                    let _ = env.exception_clear();
+                    false
+                }
+            }
+        })
+    })();
+    let reply = match result {
+        Ok(data) => json!({"ok":true,"data":data}),
+        Err(error) => json!({"ok":false,"error":error}),
+    }
+    .to_string();
+    env.new_string(reply)
         .map(|s| s.into_raw())
         .unwrap_or(std::ptr::null_mut())
 }

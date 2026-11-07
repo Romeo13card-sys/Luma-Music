@@ -1,7 +1,16 @@
 name: Desktop release
 on:
   push:
-    branches: ['publish-desktop/**']
+    branches: [main]
+    paths: ['.github/release-request.json']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing immutable release tag, for example v1.0.0-dev.1'
+        required: true
+        type: string
+env:
+  RELEASE_TAG: ${{ github.event.inputs.tag }}
 permissions:
   contents: read
 concurrency:
@@ -9,10 +18,15 @@ concurrency:
   cancel-in-progress: true
 jobs:
   desktop:
+    if: github.ref == 'refs/heads/main'
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(startsWith(github.ref_name, 'publish-desktop/linux/') && '[{"os":"ubuntu-22.04","platform":"Linux","arch":"x64"}]' || '[{"os":"ubuntu-22.04","platform":"Linux","arch":"x64"},{"os":"windows-latest","platform":"Windows-10-11","arch":"x64"},{"os":"macos-15-intel","platform":"macOS","arch":"x64"},{"os":"macos-latest","platform":"macOS","arch":"arm64"}]') }}
+        include:
+          - {os: ubuntu-22.04, platform: Linux, arch: x64}
+          - {os: windows-latest, platform: Windows-10-11, arch: x64}
+          - {os: macos-15-intel, platform: macOS, arch: x64}
+          - {os: macos-latest, platform: macOS, arch: arm64}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     env:
@@ -75,7 +89,7 @@ jobs:
           path: dist/*
           if-no-files-found: error
   legacy:
-    if: ${{ !startsWith(github.ref_name, 'publish-desktop/linux/') }}
+    if: github.ref == 'refs/heads/main'
     strategy:
       fail-fast: false
       matrix:
@@ -123,7 +137,7 @@ jobs:
           path: dist/*
           if-no-files-found: error
   publish:
-    if: ${{ always() && !cancelled() }}
+    if: ${{ always() && !cancelled() && github.ref == 'refs/heads/main' }}
     needs: desktop
     runs-on: ubuntu-24.04
     permissions:

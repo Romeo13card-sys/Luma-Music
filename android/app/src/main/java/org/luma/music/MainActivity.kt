@@ -11,7 +11,7 @@ import android.widget.*
 import java.util.concurrent.Executors
 import org.json.*
 
-class MainActivity : Activity() {
+class MainActivity : MaterialActivity() {
     private lateinit var root: LinearLayout
     private lateinit var body: LinearLayout
     private lateinit var status: TextView
@@ -41,14 +41,14 @@ class MainActivity : Activity() {
         get() =
             if (preferences.getBoolean("reduce_effects", false)) economyPolicy else hardwarePolicy
 
-    private val palette
-        get() =
-            AppThemes.resolve(
-                preferences.getString("theme_mode", "system").orEmpty(),
-                resources.configuration.uiMode and
-                    android.content.res.Configuration.UI_MODE_NIGHT_MASK ==
-                    android.content.res.Configuration.UI_MODE_NIGHT_YES,
-            )
+    private val palette get() =
+        AppThemes.resolve(preferences.getString("theme_mode","system").orEmpty(),
+            resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK ==
+                android.content.res.Configuration.UI_MODE_NIGHT_YES).let {
+            if(Build.VERSION.SDK_INT>=31)it.copy(accent=getColor(
+                if(it.light)android.R.color.system_accent1_600 else android.R.color.system_accent1_200))
+            else it
+        }
 
     private var token = ""
     private var demo = false
@@ -93,13 +93,9 @@ class MainActivity : Activity() {
         super.onCreate(state)
         // Public update feed no longer uses stored GitHub credentials.
         TokenStore(this, "github_auth").clear()
-        if (Build.VERSION.SDK_INT >= 33) {
-            onBackInvokedDispatcher.registerOnBackInvokedCallback(
-                android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT
-            ) {
-                navigateBack()
-            }
-        }
+        onBackPressedDispatcher.addCallback(this,object:androidx.activity.OnBackPressedCallback(true){
+            override fun handleOnBackPressed(){navigateBack()}
+        })
         PlaybackService.shuffle = preferences.getBoolean("shuffle", false)
         PlaybackService.repeat = preferences.getBoolean("repeat", false)
         PlaybackService.restore(this)
@@ -140,18 +136,21 @@ class MainActivity : Activity() {
     }
 
     private fun action(label: String, accent: Boolean = false, click: () -> Unit) =
-        text(label, 16f, if (accent) Color.rgb(25, 25, 25) else white, true).apply {
-            gravity = Gravity.CENTER
+        LumaButton(this).apply {
+            text = t(label)
+            textSize = 15f * preferences.getInt("font_size",100)/100f
+            isAllCaps = false
             minHeight = dp(48)
-            setPadding(dp(16), dp(10), dp(16), dp(10))
-            background = surface(dp(14).toFloat(), accent)
-            isClickable = true
-            isFocusable = true
-            contentDescription = t(label)
+            cornerRadius = dp(24)
+            setTextColor(if(accent) {
+                if(com.google.android.material.color.MaterialColors.isColorLight(mint)) Color.BLACK else Color.WHITE
+            } else white)
+            backgroundTintList = android.content.res.ColorStateList.valueOf(if(accent) mint else
+                com.google.android.material.color.MaterialColors.getColor(this,com.google.android.material.R.attr.colorSurfaceContainer,0xFF303030.toInt()))
+            setPadding(dp(16),dp(8),dp(16),dp(8))
+            contentDescription=t(label)
             setOnClickListener {
-                if (preferences.getBoolean("haptics", true)) {
-                    performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-                }
+                if(preferences.getBoolean("haptics",true))performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
                 click()
             }
         }
@@ -251,6 +250,8 @@ class MainActivity : Activity() {
             startActivityForResult(Intent(this, YandexLoginActivity::class.java), 12)
         })
         gap(body, 8)
+        body.addView(action("Spotify") {startActivity(Intent(this,SpotifyActivity::class.java))})
+        body.addView(action("Загрузки") {startActivity(Intent(this,OfflineActivity::class.java))})
         body.addView(action("Браузер · свой OAuth-клиент") { browserLogin() })
         body.addView(
             text(
@@ -261,6 +262,8 @@ class MainActivity : Activity() {
         )
         val alternative = action("Другой способ: OAuth-токен") {}
         body.addView(alternative)
+        body.addView(action("Spotify") {startActivity(Intent(this,SpotifyActivity::class.java))})
+        body.addView(action("Загрузки") {startActivity(Intent(this,OfflineActivity::class.java))})
         val card = panel(body)
         card.visibility = View.GONE
         alternative.setOnClickListener {
@@ -491,16 +494,15 @@ class MainActivity : Activity() {
         miniBar.addView(miniToggle,LinearLayout.LayoutParams(dp(52),dp(52)))
         root.addView(miniBar)
         gap(root, 8)
-        val nav =
-            row().apply {
-                background = surface(dp(18).toFloat())
-                setPadding(dp(4), dp(4), dp(4), dp(4))
-            }
-        listOf("Главная", "Поиск", "Медиатека").forEach { name ->
-            nav.addView(
-                action(name, name == page) { shell(name) },
-                LinearLayout.LayoutParams(0, -2, 1f),
-            )
+        val nav = com.google.android.material.bottomnavigation.BottomNavigationView(this)
+        val destinations=listOf("Главная","Поиск","Медиатека")
+        val icons=listOf(android.R.drawable.ic_menu_view,android.R.drawable.ic_menu_search,android.R.drawable.ic_menu_agenda)
+        destinations.forEachIndexed {i,name -> nav.menu.add(0,i+1,i,t(name)).setIcon(icons[i])}
+        nav.selectedItemId=destinations.indexOf(page).coerceAtLeast(0)+1
+        nav.setOnItemSelectedListener {item->
+            val destination=destinations[item.itemId-1]
+            if(destination!=page)shell(destination)
+            true
         }
         root.addView(nav)
         if (loadContent)
@@ -536,6 +538,10 @@ class MainActivity : Activity() {
             resume.addView(action(t("Открыть очередь · %1\$d треков",PlaybackService.queue.size)) {fullPlayer()})
         }
         body.addView(text("Ваша музыка",22f,white,true));gap(body,8)
+        body.addView(action("Загрузки") {startActivity(Intent(this,OfflineActivity::class.java))})
+        gap(body,8)
+        body.addView(action("Spotify") {startActivity(Intent(this,SpotifyActivity::class.java))})
+        gap(body,8)
         body.addView(action("Избранное") {if(demo) playDemo() else showTracks(t("Избранное"),"likes")})
         gap(body,8)
         body.addView(action("Музыка с устройства") {openFile()})
@@ -648,6 +654,14 @@ class MainActivity : Activity() {
                     PlaybackService.queue = songs
                     PlaybackService.command(this, "play", i)
                     refreshPlayer()
+                }
+                item.setOnLongClickListener {
+                    LumaDialog(this).setTitle(song.title).setItems(arrayOf("Скачать для офлайн","Загрузки")) {_,choice->
+                        if(choice==1)startActivity(Intent(this,OfflineActivity::class.java))
+                        else try {OfflineDownloads.enqueue(this,song);status.text="Загрузка началась"}
+                        catch(e:Exception){status.text=e.message}
+                    }.show()
+                    true
                 }
                 host.addView(item, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
             }
@@ -765,6 +779,12 @@ class MainActivity : Activity() {
             }
         )
         gap(body, 8)
+        body.addView(action("Скачать для офлайн") {
+            val song=PlaybackService.queue.getOrNull(PlaybackService.index) ?: return@action
+            try {OfflineDownloads.enqueue(this,song);status.text="Загрузка началась";startActivity(Intent(this,OfflineActivity::class.java))}
+            catch(e:Exception){status.text=e.message}
+        })
+        gap(body,8)
         body.addView(action("Текст песни · LrcLib") { showLyrics() })
         gap(body)
         body.addView(action("Очередь · к текущему треку") {fullPlayer()})
@@ -838,7 +858,7 @@ class MainActivity : Activity() {
 
     private fun settingSwitch(parent: LinearLayout, title: String, summary: String, key: String, default: Boolean,
                               changed: (Boolean) -> Unit = {}) {
-        parent.addView(Switch(this).apply {
+        parent.addView(com.google.android.material.materialswitch.MaterialSwitch(this).apply {
             text = t(title)
             textSize = 16f * preferences.getInt("font_size", 100) / 100f
             setTextColor(white)
@@ -1002,6 +1022,9 @@ class MainActivity : Activity() {
                 update.addView(text("Перед установкой проверяются версия и подпись. Источник: GitHub Releases Luma-Music.",13f,muted))
             }
             "account" -> {
+                val spotify=group("Spotify")
+                spotify.addView(action("Подключить Spotify") {startActivity(Intent(this,SpotifyActivity::class.java))})
+                spotify.addView(text("Аккаунты Spotify и Яндекса подключаются независимо.",13f,muted))
                 val account=group("Яндекс Музыка")
                 account.addView(text(if(token.isBlank()) "Вход не выполнен" else "Вход сохранён на устройстве",15f,muted))
                 account.addView(action(if(token.isBlank()) "Войти через Яндекс" else "Сменить аккаунт",true) {startActivityForResult(Intent(this,YandexLoginActivity::class.java),12)})
@@ -1078,6 +1101,7 @@ class MainActivity : Activity() {
         }
         val app=group("Приложение")
         info(app,"Версия",version)
+        app.addView(action("Что нового") {startActivity(Intent(this,WhatsNewActivity::class.java))})
         val channel=NativeCore.call("version_channel",JSONObject().put("version",version).toString()) as String
         info(app,"Выпуск",t(if(channel=="stable") "Стабильный" else "Предварительный"))
         info(app,"Сборка",BuildConfig.SOURCE_COMMIT.take(8))
@@ -1237,13 +1261,6 @@ class MainActivity : Activity() {
         }
     }
 
-    // Legacy Android 11/12 only; API 33+ uses the native dispatcher registered in onCreate.
-    @android.annotation.SuppressLint("GestureBackNavigation")
-    @Deprecated("Platform back navigation")
-    override fun onBackPressed() {
-        navigateBack()
-    }
-
     private fun navigateBack() {
         if (creditScreen) {
             if (settingsSection.isNotBlank()) settings() else {
@@ -1262,6 +1279,7 @@ class MainActivity : Activity() {
                 stopService(Intent(this, PlaybackService::class.java))
                 PlaybackService.forgetQueue(this)
                 TokenStore(this).clear()
+                OfflineDownloads.forgetAccount(this)
                 token = ""
                 demo = false
                 login()

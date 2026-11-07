@@ -13,7 +13,7 @@ import java.util.UUID
 import java.util.concurrent.Executors
 
 /** Native adaptation of YAYMA's login window. Never reads page fields or injects JavaScript. */
-class YandexLoginActivity : Activity() {
+class YandexLoginActivity : MaterialActivity() {
     private var web: WebView? = null
     private lateinit var content: LinearLayout
     private lateinit var message: TextView
@@ -69,7 +69,9 @@ class YandexLoginActivity : Activity() {
         }, LinearLayout.LayoutParams(0, -2, 1f))
         content.addView(actions)
         setContentView(content)
-        if (Build.VERSION.SDK_INT >= 33) onBackInvokedDispatcher.registerOnBackInvokedCallback(0) { back() }
+        onBackPressedDispatcher.addCallback(this,object:androidx.activity.OnBackPressedCallback(true){
+            override fun handleOnBackPressed(){back()}
+        })
         restart()
     }
 
@@ -194,9 +196,6 @@ class YandexLoginActivity : Activity() {
 
     private fun back() { if (!checking && web?.canGoBack() == true) web?.goBack() else finish() }
     // Android 11/12 fallback only; Android 13+ uses the native dispatcher above.
-    @android.annotation.SuppressLint("GestureBackNavigation")
-    @Deprecated("Platform back navigation")
-    override fun onBackPressed() { back() }
     override fun onPause() { web?.onPause(); super.onPause() }
     override fun onResume() { super.onResume(); web?.onResume() }
 

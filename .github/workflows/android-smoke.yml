@@ -1,11 +1,14 @@
 name: Android release integration
 on:
   push:
-    branches: ['verify-android/**']
+    branches: [main]
+    paths: ['.smoke-input/**']
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
   android:
+    if: github.ref == 'refs/heads/main'
     strategy:
       fail-fast: false
       matrix:

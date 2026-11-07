@@ -6,15 +6,14 @@ import subprocess
 import sys
 from pathlib import Path
 from release_identity import release_identity
+from release_request import requested_tag
 
-branch = os.environ['GITHUB_REF_NAME']
-match = re.fullmatch(r'resume-desktop/(\d+)/(v[^/]+)', branch)
-if not match:
-    raise SystemExit('Invalid recovery branch')
-run_id, tag = match.groups()
-release_identity(tag)
+tag = requested_tag()
+run_id = os.environ.get('RECOVERY_RUN_ID', '')
+if not re.fullmatch(r'\d+', run_id):
+    raise SystemExit('Invalid recovery workflow run')
 repo = os.environ['GITHUB_REPOSITORY']
-env = dict(os.environ, GITHUB_REF_NAME='publish-desktop/' + tag, RELEASE_BRANCH=branch)
+env = dict(os.environ, RELEASE_TAG=tag)
 subprocess.run([sys.executable, 'scripts/desktop-release-context.py'], env=env, check=True)
 
 
@@ -23,10 +22,8 @@ def gh(*args):
 
 
 run = json.loads(gh('api', f'repos/{repo}/actions/runs/{run_id}'))
-if run['name'] != 'Desktop release' or not run['head_branch'].startswith('publish-desktop/'):
-    raise SystemExit('Recovery requires an owner-pushed desktop release run')
-if run['head_branch'].rsplit('/', 1)[-1] != tag:
-    raise SystemExit('Recovery run tag mismatch')
+if run['name'] != 'Desktop release' or run['head_branch'] != 'main':
+    raise SystemExit('Recovery requires a desktop release run on main')
 
 jobs = json.loads(gh('api', f'repos/{repo}/actions/runs/{run_id}/jobs?per_page=100'))['jobs']
 for job in jobs:

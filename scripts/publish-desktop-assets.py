@@ -2,6 +2,7 @@
 import hashlib,json,re,subprocess,tempfile,zipfile
 from pathlib import Path
 from release_identity import release_identity
+from release_request import requested_tag
 
 def gh(*args):return subprocess.check_output(['gh',*args],text=True)
 def metadata(path):
@@ -9,7 +10,7 @@ def metadata(path):
         if z.getinfo('build-info.json').file_size>65536:raise ValueError('Oversized build identity')
         return json.loads(z.read('build-info.json'))
 
-tag=__import__('os').environ['RELEASE_BRANCH'].rsplit('/',1)[-1]
+tag=requested_tag()
 release_identity(tag)
 source=subprocess.check_output(['git','rev-parse',f'{tag}^{{commit}}'],text=True).strip()
 release=json.loads(gh('release','view',tag,'--json','assets'))

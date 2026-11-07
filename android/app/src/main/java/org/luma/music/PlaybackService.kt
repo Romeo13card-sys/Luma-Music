@@ -345,6 +345,7 @@ class PlaybackService : Service() {
                         waveSessionStarted = true
                     }
                     song.uri
+                        ?: OfflineDownloads.ready(this,song.id)
                         ?: JSONObject(
                                 Native.request(
                                     TokenStore(this).load().orEmpty(),

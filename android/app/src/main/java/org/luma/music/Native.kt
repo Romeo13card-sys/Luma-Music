@@ -11,6 +11,8 @@ object Native {
 
     external fun store(path: String, operation: String, argument: String): String
 
+    external fun offlineDownload(token: String, argument: String, progress: Progress): String
+
     external fun download(argument: String, progress: Progress): String
 
     external fun core(operation: String, argument: String): String

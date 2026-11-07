@@ -41,13 +41,13 @@ object L10n {
         return context.createConfigurationContext(config)
     }
 }
-class LumaTextView(context:Context):TextView(context) {
+class LumaTextView(context:Context):androidx.appcompat.widget.AppCompatTextView(context) {
     var localize=true
     override fun setText(value:CharSequence?,type:BufferType?) {
         super.setText(if(localize && value is String) L10n.text(context,value) else value,type)
     }
 }
-class LumaButton(context:Context):Button(context) {
+class LumaButton(context:Context):com.google.android.material.button.MaterialButton(context) {
     private var ready=true
     override fun setText(value:CharSequence?,type:BufferType?) {
         super.setText(if(ready && value is String) L10n.text(context,value) else value,type)
