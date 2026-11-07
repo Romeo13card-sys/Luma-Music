@@ -1,9 +1,3 @@
-* text=auto
-*.sh text eol=lf
-gradlew text eol=lf
-*.bat text eol=crlf
-*.jar binary
-*.wav binary
-
-# Preserve exact upstream bytes and classify this reference as vendor code.
-vendor/yayma/** -text linguist-vendored
+# Generated payloads are temporary CI inputs, not distributable source.
+/.smoke-input export-ignore
+/.release-input export-ignore

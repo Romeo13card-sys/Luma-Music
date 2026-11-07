@@ -7,8 +7,24 @@ on:
 permissions:
   contents: read
 jobs:
-  android:
+  payload:
     if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        shell: bash
+        run: |
+          if [[ -f .smoke-input/source.json ]]; then
+            echo 'ready=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'ready=false' >> "$GITHUB_OUTPUT"
+          fi
+  android:
+    needs: payload
+    if: needs.payload.outputs.ready == 'true'
     strategy:
       fail-fast: false
       matrix:

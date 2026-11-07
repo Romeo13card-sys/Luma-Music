@@ -18,22 +18,35 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Check signed payload presence
+        id: payload
+        shell: bash
+        run: |
+          if [[ -f .release-input/release.json ]]; then
+            echo 'ready=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'ready=false' >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/setup-java@v4
+        if: steps.payload.outputs.ready == 'true'
         with:
           distribution: temurin
           java-version: '21'
       - uses: android-actions/setup-android@v3
+        if: steps.payload.outputs.ready == 'true'
         with:
           cmdline-tools-version: '13114758'
           packages: 'platform-tools build-tools;36.0.0'
           log-accepted-android-sdk-licenses: false
       - name: Validate signed payload
+        if: steps.payload.outputs.ready == 'true'
         id: release
         shell: bash
         run: |
           set -euo pipefail
           python3 scripts/verify-release-payload.py >> "$GITHUB_OUTPUT"
       - name: Publish immutable release
+        if: steps.payload.outputs.ready == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
