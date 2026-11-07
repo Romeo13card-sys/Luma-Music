@@ -75,7 +75,9 @@ class DownloadService:Service() {
         worker.execute {
             try {
                 val network=getSystemService(android.net.ConnectivityManager::class.java)
-                check(!wifi || !network.isActiveNetworkMetered) {"Для загрузки требуется Wi-Fi без тарификации"}
+                fun allowed() = !wifi || (network.getNetworkCapabilities(network.activeNetwork)
+                    ?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)==true && !network.isActiveNetworkMetered)
+                check(allowed()) {"Для загрузки требуется Wi-Fi без тарификации"}
                 val account=JSONObject(Native.request(token,"account",""))
                 check(account.optBoolean("ok")) {account.optString("error","Не удалось проверить аккаунт")}
                 val owner=account.getJSONObject("data").get("uid").toString()
@@ -86,7 +88,7 @@ class DownloadService:Service() {
                     .put("quality",quality).put("quota",quota)
                 var last=-2
                 val result=JSONObject(Native.offlineDownload(token,args.toString()) {value ->
-                    val proceed=!cancelled.get() && (!wifi || !network.isActiveNetworkMetered)
+                    val proceed=!cancelled.get() && allowed()
                     if(value!=last){last=value;percent=value;getSystemService(NotificationManager::class.java).notify(2,notification())}
                     proceed
                 })

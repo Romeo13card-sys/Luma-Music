@@ -12,6 +12,8 @@ import java.security.SecureRandom
 import java.util.concurrent.Executors
 import android.util.Base64
 
+private object SpotifyCredentialLock { val value=Any() }
+
 /** Separate OAuth credentials; playback is explicitly handed to the installed Spotify app. */
 class SpotifyActivity:MaterialActivity() {
     private val worker=Executors.newSingleThreadExecutor()
@@ -51,8 +53,10 @@ class SpotifyActivity:MaterialActivity() {
                 val session=JSONObject().put("client_id",id).put("state",secret()).put("verifier",secret())
                     .put("started",System.currentTimeMillis()/1000)
                 val data=NativeCore.call("spotify_start",session.toString()) as JSONObject
-                stamp.save(session.getString("state"))
-                pending.save(session.toString())
+                synchronized(SpotifyCredentialLock.value) {
+                    stamp.save(session.getString("state"))
+                    pending.save(session.toString())
+                }
                 config.edit().putString("client_id",id).apply()
                 startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(data.getString("url"))))
             }catch(e:Exception){status.text=e.message}
@@ -60,7 +64,10 @@ class SpotifyActivity:MaterialActivity() {
         if(!auth.load().isNullOrBlank()){
             button("Мои плейлисты"){library("spotify_playlists",0)}
             button("Избранное Spotify"){library("spotify_likes",0)}
-            button("Отключить Spotify"){stamp.save(java.util.UUID.randomUUID().toString());auth.clear();pending.clear();draw()}
+            button("Отключить Spotify"){
+                synchronized(SpotifyCredentialLock.value){stamp.save(java.util.UUID.randomUUID().toString());auth.clear();pending.clear()}
+                draw()
+            }
         }
         button("Открыть Spotify"){openSpotify("spotify:app:home")}
         button("Назад"){finish()}
@@ -87,8 +94,10 @@ class SpotifyActivity:MaterialActivity() {
         if(data.optLong("expires_at")<=System.currentTimeMillis()/1000+60){
             data=NativeCore.call("spotify_refresh",data.toString()) as JSONObject
             data.put("expires_at",System.currentTimeMillis()/1000+data.getLong("expires_in"))
-            check(stamp.load()==epoch && auth.load()==original) {"Сессия Spotify изменилась"}
-            auth.save(data.toString())
+            synchronized(SpotifyCredentialLock.value) {
+                check(stamp.load()==epoch && auth.load()==original) {"Сессия Spotify изменилась"}
+                auth.save(data.toString())
+            }
         }
         return data
     }
@@ -106,8 +115,10 @@ class SpotifyActivity:MaterialActivity() {
                 val tokens=NativeCore.call("spotify_exchange",session.toString()) as JSONObject
                 tokens.put("expires_at",System.currentTimeMillis()/1000+tokens.getLong("expires_in"))
                 val profile=NativeCore.call("spotify_profile",tokens.toString()) as JSONObject
-                check(stamp.load()==session.getString("state")) {"Вход Spotify отменён"}
-                auth.save(tokens.toString())
+                synchronized(SpotifyCredentialLock.value) {
+                    check(stamp.load()==session.getString("state")) {"Вход Spotify отменён"}
+                    auth.save(tokens.toString())
+                }
                 profile
             }){profile->draw();status.text=profile.optString("name","Spotify")}
         }catch(e:Exception){status.text=e.message}

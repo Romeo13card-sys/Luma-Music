@@ -343,5 +343,8 @@
   "Здесь пока нет музыки": "No music here yet",
   "Для воспроизведения установите Spotify": "Install Spotify to play music",
   "Аккаунты Spotify и Яндекса подключаются независимо.": "Spotify and Yandex accounts connect independently.",
-  "Загрузок пока нет": "No downloads yet"
+  "Загрузок пока нет": "No downloads yet",
+  "Удалить все загрузки": "Delete all downloads",
+  "Удалить все загрузки?": "Delete all downloads?",
+  "Будут удалены скачанные и незавершённые файлы этого аккаунта.": "Downloaded and unfinished files for this account will be deleted."
 }

@@ -82,6 +82,17 @@ class OfflineActivity:MaterialActivity() {
         }
         root.addView(list,LinearLayout.LayoutParams(-1,0,1f))
         button("Обновить список",root){reload()}
+        button("Удалить все загрузки",root){
+            LumaDialog(this).setTitle("Удалить все загрузки?").setMessage("Будут удалены скачанные и незавершённые файлы этого аккаунта.")
+                .setNegativeButton("Отмена",null).setPositiveButton("Удалить") {_,_->
+                    DownloadService.cancel()
+                    val args=OfflineDownloads.arguments(this)
+                    worker.execute {
+                        val result=runCatching {NativeCore.call("offline_clear",args.toString())}
+                        runOnUiThread {if(!isDestroyed){loadError=result.exceptionOrNull()?.message;reload()}}
+                    }
+                }.show()
+        }
         button("Назад",root){finish()}
         root.setOnApplyWindowInsetsListener {v,i->val b=i.getInsets(WindowInsets.Type.systemBars());v.setPadding(20+b.left,20+b.top,20+b.right,20+b.bottom);i}
         setContentView(root);root.requestApplyInsets()
