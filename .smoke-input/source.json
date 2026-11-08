@@ -7,5 +7,6 @@
   "candidate": {
     "version": "1.0",
     "versionCode": 20
-  }
+  },
+  "attempt": "fresh-emulator-after-android11-launch-timeout"
 }

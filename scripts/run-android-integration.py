@@ -6,10 +6,17 @@ payload=Path('.smoke-input')
 output=Path('android-integration');output.mkdir(exist_ok=True)
 pin=Path('.github/family-certificate.sha256').read_text().strip()
 tools=Path(os.environ['ANDROID_HOME'])/'build-tools/36.0.0'
+stage='payload validation'
 def run(*args,timeout=180):
     r=subprocess.run(list(args),capture_output=True,timeout=timeout)
     if r.returncode:raise RuntimeError(r.stdout.decode(errors='replace')[-3000:]+'\n'+r.stderr.decode(errors='replace')[-3000:])
     return r.stdout.decode(errors='replace')
+def launch(label):
+    global stage
+    stage=label
+    print('Android launch stage: '+label,flush=True)
+    run('adb','shell','am','start','-W','-n','org.luma.music/.MainActivity')
+
 try:
     info=json.loads((payload/'source.json').read_text())
     source=info['commit']
@@ -32,13 +39,14 @@ try:
     assert 'application-debuggable' not in report,'Release target is debuggable'
     assert info['candidate']['versionCode']>info['baseline']['versionCode'],'Upgrade must advance versionCode'
     run('adb','install','-r','-g',str(payload/'baseline.apk'))
-    run('adb','shell','am','start','-W','-n','org.luma.music/.MainActivity')
+    launch('baseline 0.5.0 startup')
     assert run('adb','shell','pidof','org.luma.music').strip(),'Baseline did not start'
     # Deliberately retain application data and package identity.
     run('adb','install','-r','-g',str(payload/'app.apk'))
-    run('adb','shell','am','start','-W','-n','org.luma.music/.MainActivity')
+    launch('candidate 1.0 startup')
     assert run('adb','shell','pidof','org.luma.music').strip(),'Release did not start after upgrade'
     run('adb','install','-r',str(payload/'instrumentation.apk'))
+    stage='instrumentation checks'
     report=run('adb','shell','am','instrument','-w','org.luma.music.test/org.luma.music.LumaInstrumentation',timeout=300)
     (output/'results.txt').write_text(report)
     assert 'PASS Luma:' in report and 'FAIL Luma:' not in report,report
@@ -49,13 +57,21 @@ try:
             (output/name).write_bytes(result.stdout)
     # Confirm persisted locale loads after process death, independent of the in-memory catalogue.
     run('adb','shell','am','force-stop','org.luma.music')
-    run('adb','shell','am','start','-W','-n','org.luma.music/.MainActivity')
+    launch('candidate process restart')
     assert run('adb','shell','pidof','org.luma.music').strip(),'Restart after locale selection failed'
     print('::notice title=Android release::Signed baseline to release upgrade, integration suite and process restart passed')
 except Exception as error:
-    message=str(error)
+    message=stage+': '+str(error)
+    print('::error title=Android verification stage::'+stage)
     crash=subprocess.run(['adb','logcat','-d','-b','crash','-t','60'],capture_output=True,timeout=20)
     message+='\n'+crash.stdout.decode(errors='replace')
+    for label,args in [('last ANR',['adb','shell','dumpsys','activity','lastanr']),('recent events',['adb','logcat','-d','-b','events','-t','30'])]:
+        try:
+            extra=subprocess.run(args,capture_output=True,timeout=15)
+            message+='\n'+label+':\n'+extra.stdout.decode(errors='replace')[-6000:]
+        except subprocess.TimeoutExpired:
+            message+='\n'+label+': diagnostic command timed out'
+
     (output/'failure.txt').write_text(message)
     lines=message.splitlines()
     important=[line for line in lines if re.search(r'FAIL Luma|Caused by|org\.luma\.music|Exception:',line)]
