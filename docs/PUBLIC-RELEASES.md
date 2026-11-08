@@ -52,7 +52,20 @@ scripts/publish-public-release.sh v0.5.0 android/app/build/outputs/family/0.5.0
 (tag, commit исходников, version, versionCode), notes.md, certificate.sha256
 и SHA256SUMS.txt. Workflow `Publish signed APKs` проверяет pin, подписи,
 пакет/версию, контрольные суммы и 16-КБ выравнивание, затем создаёт выпуск
-на указанном коммите. Файлы удаляются следующим коммитом main. Для стабильной версии
+по заранее созданному тегу на указанном коммите. Перед отправкой payload создайте
+и отправьте тег из локального checkout main:
+
+```sh
+git tag v1.0.0 <проверенный-source-commit>
+git push origin refs/tags/v1.0.0
+```
+
+CI сверяет коммит тега с release.json и вызывает gh release create с --verify-tag.
+Параметр --target не передаётся: GitHub возвращал HTTP 403 для target_commitish
+прошлого коммита с отличающимися workflow даже при существующем теге.
+Для 1.0 технический тег — v1.0.0, version в release.json и имена APK — 1.0:
+так сохраняется совместимость со строгим SemVer-обновлятором 0.5.0.
+Файлы удаляются следующим коммитом main. Для стабильной версии
 дополнительно запрещён debug-режим и проверяется встроенный SHA исходников.
 Готовые выпуски доступны в публичных Releases; закрытый ключ не покидает среду.
 
