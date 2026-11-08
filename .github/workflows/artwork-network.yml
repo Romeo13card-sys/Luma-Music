@@ -1,0 +1,30 @@
+name: Artwork CDN diagnostics
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/artwork-network.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  public-artwork:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Check public music artwork without account credentials
+        shell: python
+        run: |
+          import os, subprocess
+          from pathlib import Path
+          samples = {
+              'album': 'https://avatars.yandex.net/get-music-content/28589/daef4251.a.1193829-1/100x100',
+              'default': 'https://avatars.yandex.net/get-music-content/default/m/100x100',
+          }
+          for name, url in samples.items():
+              file = Path(os.environ['RUNNER_TEMP']) / (name + '.image')
+              result = subprocess.run(['curl', '-sSL', '--proto', '=https', '--proto-redir', '=https', '--max-time', '12', '--max-filesize', '1048576', '-o', str(file), '-w', '%{http_code}', url], capture_output=True, text=True)
+              data = file.read_bytes() if file.exists() else b''
+              supported = data.startswith(b'\xff\xd8\xff') or data.startswith(b'\x89PNG\r\n\x1a\n') or (data[:4] == b'RIFF' and data[8:12] == b'WEBP')
+              level = 'notice' if result.returncode == 0 and result.stdout == '200' and supported else 'warning'
+              print(f'::{level} title=Public {name} artwork::HTTP {result.stdout}; {len(data)} bytes; supported raster image={supported}; no account token')
