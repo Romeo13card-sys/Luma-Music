@@ -19,7 +19,8 @@ def launch(label):
     global stage
     stage=label
     print('Android launch stage: '+label,flush=True)
-    run('adb','shell','am','start','-W','-n','org.luma.music/.MainActivity',timeout=60)
+    print(run('adb','shell','am','start','-W','-a','android.intent.action.MAIN',
+        '-c','android.intent.category.LAUNCHER','-n','org.luma.music/.MainActivity',timeout=60),flush=True)
 
 try:
     info=json.loads((payload/'source.json').read_text())
@@ -43,11 +44,21 @@ try:
     assert 'application-debuggable' not in report,'Release target is debuggable'
     assert info['candidate']['versionCode']>info['baseline']['versionCode'],'Upgrade must advance versionCode'
     run('adb','install','-r','-g',str(payload/'baseline.apk'))
-    launch('baseline 0.5.0 startup')
+    launch('baseline '+info['baseline']['version']+' startup')
     assert run('adb','shell','pidof','org.luma.music').strip(),'Baseline did not start'
+    def installed_identity():
+        report=run('adb','shell','dumpsys','package','org.luma.music')
+        return tuple(re.search(r'\b'+field+r'=([^\r\n]+)',report).group(1).strip()
+            for field in ('userId','firstInstallTime'))
+    before=installed_identity()
     # Deliberately retain application data and package identity.
-    run('adb','install','-r','-g',str(payload/'app.apk'))
-    launch('candidate 1.0 startup')
+    stage='candidate install'
+    print(run('adb','install','-r','-g',str(payload/'app.apk')),flush=True)
+    assert installed_identity()==before,'Upgrade replaced the application UID or installation record'
+    # A launcher cold start after replacement must not inherit the retired Activity task.
+    # force-stop closes a process; it neither clears application data nor uninstalls the APK.
+    run('adb','shell','am','force-stop','org.luma.music')
+    launch('candidate '+info['candidate']['version']+' cold startup')
     assert run('adb','shell','pidof','org.luma.music').strip(),'Release did not start after upgrade'
     run('adb','install','-r',str(payload/'instrumentation.apk'))
     stage='instrumentation checks'
@@ -79,7 +90,7 @@ except Exception as error:
     for label,args in [
         ('activity state',['adb','shell','dumpsys','activity','activities']),
         ('window state',['adb','shell','dumpsys','window','windows']),
-        ('app log',['adb','logcat','-d','-t','600']),
+        ('app log',['adb','logcat','-d','ActivityTaskManager:I','ActivityManager:I','PackageManager:I','AndroidRuntime:E','Luma:V','*:S']),
     ]:
         try:
             report=run(*args,timeout=15)

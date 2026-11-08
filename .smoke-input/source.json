@@ -8,7 +8,5 @@
     "version": "1.0",
     "versionCode": 20
   },
-  "attempt": "retrieve-complete-diagnostic-annotations",
-  "diagnostic_run": "42452354819",
-  "diagnostic_only": true
+  "attempt": "launcher-cold-start-after-replacement-with-installation-identity-check"
 }
