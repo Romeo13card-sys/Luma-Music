@@ -6,7 +6,6 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
-  actions: read
 jobs:
   payload:
     if: github.ref == 'refs/heads/main'
@@ -15,35 +14,10 @@ jobs:
       ready: ${{ steps.check.outputs.ready }}
     steps:
       - uses: actions/checkout@v4
-      - name: Inspect previous integration failure
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          previous=$(python3 -c "import json; print(json.load(open('.smoke-input/source.json')).get('diagnostic_run',''))" 2>/dev/null || true)
-          if [[ -n "$previous" ]]; then
-            [[ "$previous" =~ ^[0-9]+$ ]]
-            gh run download "$previous" --name Android-release-integration-API-30 --dir "$RUNNER_TEMP/prior-android"
-            python3 - <<'PYTHON'
-          import os,re
-          from pathlib import Path
-          folder=Path(os.environ['RUNNER_TEMP'])/'prior-android'
-          for file in folder.glob('*.txt'):
-              lines=file.read_text(errors='replace').splitlines()
-              if file.name=='app-log.txt':
-                  lines=[line for line in lines if re.search(r'Luma|luma|ActivityTaskManager|AndroidRuntime|PackageManager',line)][-50:]
-              elif file.name in ('activity-state.txt','window-state.txt'):
-                  lines=[line for line in lines if re.search(r'luma|Resumed|Focus|Task|Hist',line)][-30:]
-              value=chr(10).join(lines)[-18000:].replace('%','%25').replace(chr(13),'%0D').replace(chr(10),'%0A')
-              print('::warning title=Prior '+file.name+'::'+value)
-          PYTHON
-          fi
       - id: check
         shell: bash
         run: |
-          if [[ -f .smoke-input/source.json ]] && python3 -c "import json; raise SystemExit(bool(json.load(open('.smoke-input/source.json')).get('diagnostic_only')))"; then
+          if [[ -f .smoke-input/source.json ]]; then
             echo 'ready=true' >> "$GITHUB_OUTPUT"
           else
             echo 'ready=false' >> "$GITHUB_OUTPUT"
