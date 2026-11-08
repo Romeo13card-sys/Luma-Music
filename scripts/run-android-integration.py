@@ -15,7 +15,7 @@ def launch(label):
     global stage
     stage=label
     print('Android launch stage: '+label,flush=True)
-    run('adb','shell','am','start','-W','-n','org.luma.music/.MainActivity')
+    run('adb','shell','am','start','-W','-n','org.luma.music/.MainActivity',timeout=60)
 
 try:
     info=json.loads((payload/'source.json').read_text())
@@ -72,6 +72,20 @@ except Exception as error:
         except subprocess.TimeoutExpired:
             message+='\n'+label+': diagnostic command timed out'
 
+    for label,args in [
+        ('activity state',['adb','shell','dumpsys','activity','activities']),
+        ('window state',['adb','shell','dumpsys','window','windows']),
+        ('app log',['adb','logcat','-d','-t','600']),
+    ]:
+        try:
+            report=run(*args,timeout=15)
+            (output/(label.replace(' ','-')+'.txt')).write_text(report)
+            selected=[line for line in report.splitlines() if re.search(r'org[.]luma[.]music|ActivityTaskManager|Displayed|ANR|FATAL|mCurrentFocus|mFocusedApp|mResumedActivity',line)]
+            for line in selected[-12:]:
+                value=line[-1100:].replace('%','%25').replace('\r','%0D').replace('\n','%0A')
+                print('::warning title=Startup '+label+'::'+value)
+        except Exception as diagnostic:
+            print('Diagnostic failed: '+str(diagnostic),flush=True)
     (output/'failure.txt').write_text(message)
     lines=message.splitlines()
     important=[line for line in lines if re.search(r'FAIL Luma|Caused by|org\.luma\.music|Exception:',line)]
