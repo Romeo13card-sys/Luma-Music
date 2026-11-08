@@ -216,14 +216,21 @@ class LumaInstrumentation:Instrumentation() {
         image.recycle()
     }
     private fun screenshot(activity:Activity,name:String) {
-        runOnMainSync {activity.window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)}
-        waitForIdleSync()
-        uiAutomation.takeScreenshot()?.let {original->
-            val small=android.graphics.Bitmap.createScaledBitmap(original,600,original.height*600/original.width,true)
+        val decor=activity.window.decorView
+        waitUntil("Screenshot window was not laid out") {
+            var ready=false;runOnMainSync {ready=decor.isLaidOut && decor.width>0 && decor.height>0};ready
+        }
+        var original:android.graphics.Bitmap?=null
+        runOnMainSync {
+            val bitmap=android.graphics.Bitmap.createBitmap(decor.width,decor.height,android.graphics.Bitmap.Config.ARGB_8888)
+            decor.draw(android.graphics.Canvas(bitmap));original=bitmap
+        }
+        original?.let {bitmap->
+            val small=android.graphics.Bitmap.createScaledBitmap(bitmap,400,bitmap.height*400/bitmap.width,true)
             java.io.File(targetContext.getExternalFilesDir(null),name).outputStream().use {
-                small.compress(android.graphics.Bitmap.CompressFormat.WEBP_LOSSY,75,it)
+                small.compress(android.graphics.Bitmap.CompressFormat.WEBP_LOSSY,55,it)
             }
-            if(small!==original)small.recycle();original.recycle()
+            if(small!==bitmap)small.recycle();bitmap.recycle()
         }
     }
     private fun checkArtwork(activity:MainActivity,cover:String,other:String) {
@@ -246,6 +253,15 @@ class LumaInstrumentation:Instrumentation() {
         val stored=QueueStore.decode(QueueStore.encode(QueueStore.Snapshot(PlaybackService.queue,0,0)))!!
         verify(stored.songs[0].cover==cover,"Saved queue lost artwork")
         screenshot(activity,"cover-dark.webp")
+        val held=art.image!!
+        val downloads=startActivitySync(Intent(targetContext,OfflineActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        waitUntil("Player window did not hide"){art.windowVisibility!=View.VISIBLE}
+        runOnMainSync {
+            art.artworkLoaded(CoverImages.key(cover,400),held)
+            verify(art.image==null,"Late artwork retained a bitmap in a hidden screen")
+            downloads.finish()
+        }
+        waitUntil("Player artwork did not return from background"){waitForIdleSync();art.image!=null}
         runOnMainSync {art.bind(other,true);art.bind(cover,true)}
         waitUntil("Artwork rebinding did not finish") {waitForIdleSync();art.image!=null}
         verify(android.graphics.Color.blue(art.image!!.bitmap.getPixel(0,0))>android.graphics.Color.red(art.image!!.bitmap.getPixel(0,0)),"A stale artwork request replaced the current track")

@@ -66,14 +66,18 @@ try:
     (output/'results.txt').write_text(report)
     assert 'PASS Luma:' in report and 'FAIL Luma:' not in report,report
     print(report)
+    summary=next((line for line in report.splitlines() if 'PASS Luma:' in line),'')
+    print('::notice title=Artwork integration::'+summary.replace('%','%25'))
     for name in ('about-ar.png','cover-dark.webp','cover-light.webp'):
         result=subprocess.run(['adb','exec-out','cat','/sdcard/Android/data/org.luma.music/files/'+name],capture_output=True)
         if result.returncode==0 and (result.stdout.startswith(b'\x89PNG') or result.stdout.startswith(b'RIFF')):
             (output/name).write_bytes(result.stdout)
-            if name.startswith('cover-') and len(result.stdout)<40000:
+            if name.startswith('cover-') and len(result.stdout)<9500:
                 import base64
-                print('::notice title='+name+'::'+base64.b64encode(result.stdout).decode())
-
+                encoded=base64.b64encode(result.stdout).decode()
+                chunks=[encoded[i:i+3200] for i in range(0,len(encoded),3200)]
+                for index,chunk in enumerate(chunks):
+                    print('::notice title='+name+' part '+str(index+1)+'/'+str(len(chunks))+'::'+chunk)
     # Confirm persisted locale loads after process death, independent of the in-memory catalogue.
     run('adb','shell','am','force-stop','org.luma.music')
     launch('candidate process restart')

@@ -45,7 +45,7 @@ class AlbumArt(context: Context) : View(context),CoverImages.Target {
     }
     override fun onDetachedFromWindow(){CoverImages.cancel(this);image=null;requested=false;super.onDetachedFromWindow()}
     override fun artworkLoaded(key:String,image:CoverImages.Image?) {
-        if(key!=cover?.let {CoverImages.key(it,size)} || !isAttachedToWindow)return
+        if(key!=cover?.let {CoverImages.key(it,size)} || !isAttachedToWindow || windowVisibility!=VISIBLE)return
         this.image=image;onImage?.invoke(image);invalidate()
     }
     override fun onSizeChanged(w:Int,h:Int,oldw:Int,oldh:Int) {
