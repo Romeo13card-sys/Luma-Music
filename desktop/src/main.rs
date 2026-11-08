@@ -1,4 +1,12 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+fn app_version() -> &'static str {
+    let v = env!("CARGO_PKG_VERSION");
+    if v.contains('-') {
+        v
+    } else {
+        v.strip_suffix(".0").unwrap_or(v)
+    }
+}
 mod engine;
 use eframe::egui;
 use engine::{Jobs, Ticket};
@@ -311,10 +319,7 @@ impl eframe::App for App {
         self.consume();
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("Luma Music");
-            ui.label(format!(
-                "{} · made by Romeo13card",
-                env!("CARGO_PKG_VERSION")
-            ));
+            ui.label(format!("{} · made by Romeo13card", app_version()));
             ui.horizontal(|ui| {
                 ui.label("OAuth-токен");
                 if ui
@@ -525,7 +530,7 @@ fn main() -> eframe::Result {
     if std::env::args().any(|a| a == "--self-check") {
         println!(
             "{}",
-            json!({"version":env!("CARGO_PKG_VERSION"),"os":std::env::consts::OS,"arch":std::env::consts::ARCH,"legacy_windows":cfg!(all(windows,target_vendor="win7"))})
+            json!({"version":app_version(),"os":std::env::consts::OS,"arch":std::env::consts::ARCH,"legacy_windows":cfg!(all(windows,target_vendor="win7"))})
         );
         return Ok(());
     }

@@ -57,4 +57,4 @@ def verify(root: Path):
 
 if __name__ == '__main__':
     tag, commit = verify(Path.cwd())
-    print(f'tag={tag}\ncommit={commit}\nprerelease={str(release_identity(tag)).lower()}')
+    print(f'tag={tag}\ncommit={commit}\nprerelease={str(release_identity(tag)).lower()}\nversion={json.loads((Path.cwd()/".release-input/release.json").read_text())["version"]}')

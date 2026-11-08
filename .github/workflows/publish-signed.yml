@@ -51,6 +51,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
           SOURCE_COMMIT: ${{ steps.release.outputs.commit }}
           PREVIEW: ${{ steps.release.outputs.prerelease }}
         shell: bash
@@ -63,4 +64,4 @@ jobs:
           flags=(--latest)
           if [[ "$PREVIEW" == true ]]; then flags=(--prerelease); fi
           gh release create "$RELEASE_TAG" .release-input/*.apk .release-input/SHA256SUMS.txt .release-input/certificate.sha256 \
-            --target "$SOURCE_COMMIT" "${flags[@]}" --title "Luma Music $RELEASE_TAG" --notes-file .release-input/notes.md
+            --target "$SOURCE_COMMIT" "${flags[@]}" --title "Luma Music $RELEASE_VERSION" --notes-file .release-input/notes.md

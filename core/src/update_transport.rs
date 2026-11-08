@@ -93,7 +93,7 @@ fn asset_url(asset: &Value) -> Result<String> {
     Ok(format!("{API}/releases/assets/{id}"))
 }
 fn version(tag: &str) -> Option<semver::Version> {
-    semver::Version::parse(tag.strip_prefix('v').unwrap_or(tag)).ok()
+    updates::semantic_version(tag).ok()
 }
 pub fn select_release(
     list: &Value,
@@ -271,6 +271,28 @@ mod tests {
             )
             .unwrap()["tag"],
             "v0.5.0"
+        );
+    }
+    #[test]
+    fn canonical_release_tag_upgrades_dev_and_short_display_does_not_update_itself() {
+        let list = json!([release("v1.0.0", false)]);
+        assert_eq!(
+            select_release(&list, "1.0.0-dev.1", false, &json!(["arm64-v8a"])).unwrap()["tag"],
+            "v1.0.0"
+        );
+        assert_eq!(
+            select_release(&list, "1.0", false, &json!(["arm64-v8a"])).unwrap(),
+            Value::Null
+        );
+        assert_eq!(
+            select_release(
+                &json!([release("v1.0.1", false)]),
+                "1.0",
+                false,
+                &json!(["arm64-v8a"])
+            )
+            .unwrap()["tag"],
+            "v1.0.1"
         );
     }
     #[test]

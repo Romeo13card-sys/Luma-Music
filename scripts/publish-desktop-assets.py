@@ -1,7 +1,7 @@
 """Upload desktop assets immutably; keep existing verified builds of the same source."""
 import hashlib,json,re,subprocess,tempfile,zipfile
 from pathlib import Path
-from release_identity import release_identity
+from release_identity import release_identity, display_version
 from release_request import requested_tag
 
 def gh(*args):return subprocess.check_output(['gh',*args],text=True)
@@ -17,7 +17,7 @@ release=json.loads(gh('release','view',tag,'--json','assets'))
 existing={a['name'] for a in release['assets']}
 for file in sorted(Path('release').glob('*.zip')):
     local=metadata(file)
-    if local['source']!=source or local['version']!=tag[1:]:raise SystemExit('Artifact source/version mismatch')
+    if local['source']!=source or local['version']!=display_version(tag[1:]):raise SystemExit('Artifact source/version mismatch')
     checksum=file.with_name(file.name+'.sha256')
     if hashlib.sha256(file.read_bytes()).hexdigest()!=checksum.read_text().split()[0]:raise SystemExit('Artifact checksum mismatch')
     if file.name in existing:

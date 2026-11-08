@@ -12,6 +12,7 @@ import tempfile
 import tomllib
 import zipfile
 from pathlib import Path
+from release_identity import display_version
 
 
 def main():
@@ -22,7 +23,7 @@ def main():
     parser.add_argument('--legacy', action='store_true')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
-    version = tomllib.loads((root/'desktop/Cargo.toml').read_text())['package']['version']
+    version = display_version(tomllib.loads((root/'desktop/Cargo.toml').read_text())['package']['version'])
     platform = args.platform or {'nt': 'Windows-10-11'}.get(os.name, 'macOS' if sys.platform == 'darwin' else 'Linux')
     arch = args.arch or os.environ.get('RUNNER_ARCH', 'X64').lower()
     if any(not re.fullmatch(r'[A-Za-z0-9._-]+', v) for v in (version, platform, arch)):

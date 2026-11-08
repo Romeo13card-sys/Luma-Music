@@ -1,8 +1,17 @@
 //! Release metadata policy, independent of networking and Android installation APIs.
 use serde_json::Value;
+pub(crate) fn semantic_version(raw: &str) -> Result<semver::Version, semver::Error> {
+    let raw = raw.strip_prefix('v').unwrap_or(raw);
+    let short =
+        raw.bytes().all(|b| b.is_ascii_digit() || b == b'.') && raw.matches('.').count() == 1;
+    semver::Version::parse(&if short {
+        format!("{raw}.0")
+    } else {
+        raw.to_string()
+    })
+}
 pub fn channel(version: &str) -> Result<Value, String> {
-    let parsed = semver::Version::parse(version.strip_prefix('v').unwrap_or(version))
-        .map_err(|_| "Некорректная версия приложения")?;
+    let parsed = semantic_version(version).map_err(|_| "Некорректная версия приложения")?;
     Ok(Value::String(
         if parsed.pre.is_empty() {
             "stable"
@@ -16,18 +25,8 @@ const MAX_APK: u64 = 100 * 1024 * 1024;
 fn version(raw: &str) -> Option<[u64; 3]> {
     let raw = raw.strip_prefix('v').unwrap_or(raw);
     let base = raw.split(['-', '+']).next()?;
-    let values: Vec<_> = base.split('.').collect();
-    if values.len() != 3 {
-        return None;
-    }
-    let mut result = [0; 3];
-    for (i, value) in values.iter().enumerate() {
-        if value.is_empty() || !value.bytes().all(|b| b.is_ascii_digit()) {
-            return None;
-        }
-        result[i] = value.parse().ok()?;
-    }
-    Some(result)
+    let parsed = semantic_version(base).ok()?;
+    Some([parsed.major, parsed.minor, parsed.patch])
 }
 pub fn compare(candidate: &str, installed: &str) -> Option<i32> {
     Some(match version(candidate)?.cmp(&version(installed)?) {
@@ -110,6 +109,7 @@ mod tests {
     use serde_json::json;
     #[test]
     fn classifies_channels_from_actual_version() {
+        assert_eq!(channel("1.0").unwrap(), json!("stable"));
         assert_eq!(channel("0.5.0").unwrap(), json!("stable"));
         assert_eq!(channel("v0.5.0-rc.8").unwrap(), json!("preview"));
         assert!(channel("invalid").is_err());
@@ -121,12 +121,22 @@ mod tests {
         assert_eq!(compare("v0.4.0-test.1", "0.4.0-test"), Some(0));
         for raw in [
             "other",
-            "1.2",
+            "1",
             "1.2.3.4",
             "1.2.bad",
             "99999999999999999999999999.1.1",
         ] {
             assert_eq!(compare(raw, "1.2.3"), None);
+        }
+    }
+    #[test]
+    fn short_display_versions_keep_numeric_update_order() {
+        assert_eq!(compare("1.0", "1.0.0-dev.1"), Some(0));
+        assert_eq!(compare("1.0.1", "1.0"), Some(1));
+        assert_eq!(compare("1.0", "0.5.0"), Some(1));
+        assert!(semantic_version("1.0").unwrap() > semantic_version("1.0.0-dev.1").unwrap());
+        for bad in ["1..0", "01.0", "1.0-dev.1", "1.0/0", "1.0 "] {
+            assert!(semantic_version(bad).is_err());
         }
     }
     #[test]
