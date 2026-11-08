@@ -8,7 +8,11 @@ pin=Path('.github/family-certificate.sha256').read_text().strip()
 tools=Path(os.environ['ANDROID_HOME'])/'build-tools/36.0.0'
 stage='payload validation'
 def run(*args,timeout=180):
-    r=subprocess.run(list(args),capture_output=True,timeout=timeout)
+    try:
+        r=subprocess.run(list(args),capture_output=True,timeout=timeout)
+    except subprocess.TimeoutExpired as error:
+        detail=(error.stdout or b'').decode(errors='replace')+(error.stderr or b'').decode(errors='replace')
+        raise RuntimeError(str(error)+'; partial output: '+detail[-3000:]) from error
     if r.returncode:raise RuntimeError(r.stdout.decode(errors='replace')[-3000:]+'\n'+r.stderr.decode(errors='replace')[-3000:])
     return r.stdout.decode(errors='replace')
 def launch(label):
