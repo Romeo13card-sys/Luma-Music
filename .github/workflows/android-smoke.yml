@@ -36,15 +36,14 @@ jobs:
                   lines=[line for line in lines if re.search(r'Luma|luma|ActivityTaskManager|AndroidRuntime|PackageManager',line)][-50:]
               elif file.name in ('activity-state.txt','window-state.txt'):
                   lines=[line for line in lines if re.search(r'luma|Resumed|Focus|Task|Hist',line)][-30:]
-              for line in lines[-50:]:
-                  value=line[-1600:].replace('%','%25').replace(chr(13),'%0D').replace(chr(10),'%0A')
-                  print('::warning title=Prior '+file.name+'::'+value)
+              value=chr(10).join(lines)[-18000:].replace('%','%25').replace(chr(13),'%0D').replace(chr(10),'%0A')
+              print('::warning title=Prior '+file.name+'::'+value)
           PYTHON
           fi
       - id: check
         shell: bash
         run: |
-          if [[ -f .smoke-input/source.json ]]; then
+          if [[ -f .smoke-input/source.json ]] && python3 -c "import json; raise SystemExit(bool(json.load(open('.smoke-input/source.json')).get('diagnostic_only')))"; then
             echo 'ready=true' >> "$GITHUB_OUTPUT"
           else
             echo 'ready=false' >> "$GITHUB_OUTPUT"

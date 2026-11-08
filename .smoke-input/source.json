@@ -8,6 +8,7 @@
     "version": "1.0",
     "versionCode": 20
   },
-  "attempt": "inspect-timeout-stdout-and-previous-activity-logs",
-  "diagnostic_run": "42452354819"
+  "attempt": "retrieve-complete-diagnostic-annotations",
+  "diagnostic_run": "42452354819",
+  "diagnostic_only": true
 }
