@@ -13,6 +13,7 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: write
+      actions: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -45,6 +46,26 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/verify-release-payload.py >> "$GITHUB_OUTPUT"
+      - name: Report previous publication failure
+        if: steps.payload.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          previous=$(python3 -c "import json; print(json.load(open('.release-input/release.json')).get('diagnostic_run',''))")
+          if [[ -n "$previous" ]]; then
+            [[ "$previous" =~ ^[0-9]+$ ]]
+            gh run view "$previous" --log-failed > "$RUNNER_TEMP/previous-publish.txt"
+            python3 - <<'PYTHON'
+          import os
+          from pathlib import Path
+          report=(Path(os.environ['RUNNER_TEMP'])/'previous-publish.txt').read_text(errors='replace')[-18000:]
+          value=report.replace('%','%25').replace(chr(13),'%0D').replace(chr(10),'%0A')
+          print('::warning title=Previous publication failure::'+value)
+          PYTHON
+          fi
       - name: Publish immutable release
         if: steps.payload.outputs.ready == 'true'
         env:
@@ -57,6 +78,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if python3 -c "import json; raise SystemExit(not bool(json.load(open('.release-input/release.json')).get('diagnostic_only')))"; then
+            echo 'Publication paused for diagnostics'
+            exit 0
+          fi
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             echo 'Release already exists; refusing to replace signed assets' >&2
             exit 1
