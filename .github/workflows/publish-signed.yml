@@ -88,5 +88,18 @@ jobs:
           fi
           flags=(--latest)
           if [[ "$PREVIEW" == true ]]; then flags=(--prerelease); fi
-          gh release create "$RELEASE_TAG" .release-input/*.apk .release-input/SHA256SUMS.txt .release-input/certificate.sha256 \
-            --target "$SOURCE_COMMIT" "${flags[@]}" --title "Luma Music $RELEASE_VERSION" --notes-file .release-input/notes.md
+          if [[ "$(git rev-parse "$RELEASE_TAG^{commit}")" != "$SOURCE_COMMIT" ]]; then
+            echo '::error::Release tag must point to the verified APK source commit'
+            exit 1
+          fi
+          if ! gh release create "$RELEASE_TAG" .release-input/*.apk .release-input/SHA256SUMS.txt .release-input/certificate.sha256 \
+            --verify-tag --target "$SOURCE_COMMIT" "${flags[@]}" --title "Luma Music $RELEASE_VERSION" --notes-file .release-input/notes.md \
+            2> "$RUNNER_TEMP/publish-error.txt"; then
+            python3 - <<'PYTHON'
+          import os
+          from pathlib import Path
+          report=(Path(os.environ['RUNNER_TEMP'])/'publish-error.txt').read_text(errors='replace')[-6000:]
+          print('::error title=Release publication::'+report.replace('%','%25').replace(chr(13),'%0D').replace(chr(10),'%0A'))
+          PYTHON
+            exit 1
+          fi

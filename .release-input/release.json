@@ -2,7 +2,5 @@
   "tag": "v1.0.0",
   "version": "1.0",
   "versionCode": 20,
-  "commit": "66db8558a6371e190d1fde44e92cde888387e7d2",
-  "diagnostic_run": "42453018699",
-  "diagnostic_only": true
+  "commit": "66db8558a6371e190d1fde44e92cde888387e7d2"
 }
