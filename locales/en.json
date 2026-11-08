@@ -346,5 +346,11 @@
   "Загрузок пока нет": "No downloads yet",
   "Удалить все загрузки": "Delete all downloads",
   "Удалить все загрузки?": "Delete all downloads?",
-  "Будут удалены скачанные и незавершённые файлы этого аккаунта.": "Downloaded and unfinished files for this account will be deleted."
+  "Будут удалены скачанные и незавершённые файлы этого аккаунта.": "Downloaded and unfinished files for this account will be deleted.",
+  "Цвет плеера по обложке": "Player colours from artwork",
+  "Акцентные кнопки и спокойный фон в цвет альбома. OLED сохраняет чёрный фон.": "Accent controls and a subtle album-coloured background. OLED keeps its black background.",
+  "Очистить кэш обложек": "Clear artwork cache",
+  "До 24 МиБ на диске. Скачанная музыка и аккаунты сохранятся.": "Up to 24 MiB on disk. Downloaded music and accounts are kept.",
+  "Кэш обложек очищен": "Artwork cache cleared",
+  "Не удалось очистить кэш обложек": "Could not clear artwork cache"
 }

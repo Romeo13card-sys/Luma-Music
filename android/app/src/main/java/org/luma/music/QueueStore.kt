@@ -36,7 +36,7 @@ class QueueStore(context: Context) {
                         .put("title", song.title)
                         .put("artists", song.artist)
                         .put("available", song.available)
-                        .apply { song.uri?.let { put("uri", it) } }
+                        .apply { song.uri?.let { put("uri", it) }; song.cover?.let {put("cover",it)} }
                 )
             }
             val raw =

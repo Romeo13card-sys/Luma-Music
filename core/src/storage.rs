@@ -17,7 +17,7 @@ fn valid_setting(key: &str, value: &Value) -> bool {
         "reduce_effects" | "unmetered_only" | "haptics" | "shuffle" | "repeat" | "test_updates"
         | "auto_update_check" => value.is_boolean(),
         "font_size" => matches!(value.as_i64(), Some(90 | 100 | 115 | 130)),
-        "download_wifi_only" => value.is_boolean(),
+        "download_wifi_only" | "cover_colors" => value.is_boolean(),
         "download_limit_mb" => matches!(
             value.as_u64(),
             Some(256 | 512 | 1024 | 2048 | 4096 | 8192 | 16384)
@@ -31,7 +31,7 @@ pub fn defaults() -> Value {
     json!({"language":"system","theme_mode":"system","quality_wifi":320,"quality_mobile":128,
         "reduce_effects":false,"unmetered_only":false,"haptics":true,"shuffle":false,
         "repeat":false,"test_updates":false,"auto_update_check":true,"last_update_check":0,
-        "download_wifi_only":true,"download_limit_mb":1024,"download_quality":192,"font_size":100,"pause_on_unplug":true})
+        "cover_colors":true,"download_wifi_only":true,"download_limit_mb":1024,"download_quality":192,"font_size":100,"pause_on_unplug":true})
 }
 fn open(path: &Path) -> Result<Connection> {
     let db = Connection::open(path).map_err(|_| "Не удалось открыть базу Luma")?;

@@ -15,7 +15,7 @@ class OfflineActivity:MaterialActivity() {
     private lateinit var status:TextView
     private lateinit var storage:TextView
     private lateinit var progress:LinearProgressIndicator
-    private lateinit var adapter:ArrayAdapter<String>
+    private lateinit var adapter:BaseAdapter
     private var tracks=JSONArray()
     private var visible=false
     private var loading=false
@@ -28,7 +28,7 @@ class OfflineActivity:MaterialActivity() {
             progress.isIndeterminate=DownloadService.percent<0
             if(!progress.isIndeterminate)progress.progress=DownloadService.percent
             progress.visibility=if(DownloadService.busy)View.VISIBLE else View.GONE
-            if(seen!=DownloadService.revision){seen=DownloadService.revision;reload()}
+            if(seen!=DownloadService.revision+OfflineDownloads.artworkRevision){seen=DownloadService.revision+OfflineDownloads.artworkRevision;reload()}
             handler.postDelayed(this,1000)
         }
     }
@@ -60,7 +60,17 @@ class OfflineActivity:MaterialActivity() {
                 prefs.edit().putInt("download_limit_mb",values[i]).apply();dialog.dismiss();reload()
             }.show()
         }
-        adapter=ArrayAdapter(this,android.R.layout.simple_list_item_1,mutableListOf<String>())
+        adapter=object:BaseAdapter(){
+            override fun getCount()=tracks.length()
+            override fun getItem(position:Int)=tracks.getJSONObject(position)
+            override fun getItemId(position:Int)=position.toLong()
+            override fun getView(position:Int,convert:View?,parent:ViewGroup):View {
+                val row=convert as? OfflineTrackRow ?: OfflineTrackRow(this@OfflineActivity)
+                val song=Song.from(getItem(position))
+                row.art.bind(song.cover);row.title.text=song.title;row.artist.text=song.artist
+                return row
+            }
+        }
         val list=ListView(this).apply {
             adapter=this@OfflineActivity.adapter
             emptyView=null
@@ -107,7 +117,7 @@ class OfflineActivity:MaterialActivity() {
                 result.onSuccess {data->
                     loadError=null
                     tracks=data.getJSONArray("items")
-                    adapter.clear();adapter.addAll((0 until tracks.length()).map {i->val t=tracks.getJSONObject(i);t.getString("title")+"\n"+t.getString("artists")})
+                    adapter.notifyDataSetChanged()
                     storage.text=if(tracks.length()==0)L10n.text(this,"Скачанных треков пока нет") else
                         tracks.length().toString()+" · "+(data.optLong("bytes")/1048576).toString()+" МБ / "+SettingsStore.get(this).getInt("download_limit_mb",1024).toString()+" МБ"
                 }.onFailure {loadError=it.message;status.text=it.message}
@@ -117,4 +127,18 @@ class OfflineActivity:MaterialActivity() {
     override fun onStart(){super.onStart();visible=true;handler.post(tick)}
     override fun onStop(){visible=false;handler.removeCallbacks(tick);super.onStop()}
     override fun onDestroy(){worker.shutdownNow();super.onDestroy()}
+}
+
+
+private class OfflineTrackRow(context:Context):LinearLayout(context) {
+    val art=AlbumArt(context)
+    val title=LumaTextView(context).apply {localize=false;textSize=16f;maxLines=2}
+    val artist=LumaTextView(context).apply {localize=false;textSize=13f;maxLines=1}
+    init {
+        fun dp(n:Int)=(n*resources.displayMetrics.density).toInt()
+        orientation=HORIZONTAL;gravity=Gravity.CENTER_VERTICAL;setPadding(dp(12),dp(8),dp(12),dp(8))
+        addView(art,LayoutParams(dp(48),dp(48)).apply {rightMargin=dp(12)})
+        val labels=LinearLayout(context).apply {orientation=VERTICAL;addView(title);addView(artist)}
+        addView(labels,LayoutParams(0,-2,1f))
+    }
 }

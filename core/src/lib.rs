@@ -1,3 +1,4 @@
+mod artwork;
 mod auth;
 mod diagnostics;
 pub mod localization;
@@ -31,6 +32,7 @@ pub struct Track {
     pub title: String,
     pub artists: String,
     pub available: bool,
+    pub cover: Option<String>,
 }
 
 fn track(value: &Value) -> Option<Track> {
@@ -52,6 +54,16 @@ fn track(value: &Value) -> Option<Track> {
             })
             .unwrap_or_default(),
         available: value["available"].as_bool().unwrap_or(false),
+        cover: ["ogImage", "coverUri"]
+            .iter()
+            .find_map(|key| value[key].as_str().and_then(artwork::normalize))
+            .or_else(|| {
+                value["albums"].as_array()?.iter().find_map(|a| {
+                    ["ogImage", "coverUri"]
+                        .iter()
+                        .find_map(|key| a[key].as_str().and_then(artwork::normalize))
+                })
+            }),
     })
 }
 
@@ -127,6 +139,18 @@ impl MusicClient {
             json!({"uid": account["uid"], "name": account["displayName"].as_str()
             .or(account["login"].as_str()).unwrap_or("Аккаунт Яндекса")}),
         )
+    }
+    pub fn track_info(&self, id: &str) -> Result<Value> {
+        if id.is_empty() || id.len() > 64 || !id.bytes().all(|b| b.is_ascii_digit()) {
+            return Err("Некорректный трек".into());
+        }
+        let result = self.get("/tracks", &[("track-ids", id)])?;
+        result
+            .as_array()
+            .and_then(|a| a.first())
+            .and_then(track)
+            .map(|t| json!(t))
+            .ok_or_else(|| "Трек не найден".into())
     }
     pub fn search(&self, text: &str) -> Result<Vec<Track>> {
         if text.trim().is_empty() {
@@ -432,6 +456,7 @@ pub fn dispatch(token: &str, operation: &str, argument: &str) -> String {
         let client = MusicClient::new(token)?;
         match operation {
             "account" => client.account(),
+            "track" => client.track_info(argument),
             "search" => client.search(argument).map(|tracks| json!(tracks)),
             "library" => client.library(),
             "playlist" => client.playlist(argument).map(|v| json!(v)),
@@ -468,13 +493,16 @@ pub fn core_dispatch(operation: &str, argument: &str) -> String {
         }
         let v: Value = serde_json::from_str(argument).map_err(|_| "Некорректный запрос ядра")?;
         match operation {
+            "cover_info" | "cover_load" | "cover_clear" | "cover_forget" => {
+                artwork::dispatch(operation, &v)
+            }
+            "cover_tones" => artwork::tones(&v),
             "spotify_start" | "spotify_callback" | "spotify_exchange" | "spotify_refresh"
             | "spotify_profile" | "spotify_playlists" | "spotify_likes" => {
                 spotify::dispatch(operation, &v)
             }
-            "offline_list" | "offline_ready" | "offline_remove" | "offline_clear" => {
-                offline::dispatch(operation, &v)
-            }
+            "offline_list" | "offline_ready" | "offline_remove" | "offline_clear"
+            | "offline_cover" => offline::dispatch(operation, &v),
             "auth_start" => auth::start(&v),
             "auth_navigation" => auth::navigation(&v),
             "settings_defaults" => Ok(storage::defaults()),
@@ -898,5 +926,30 @@ mod audio_metadata_tests {
             malformed["error"],
             "Не удалось прочитать запрос качества звука"
         );
+    }
+}
+
+#[cfg(test)]
+mod artwork_metadata_tests {
+    use super::*;
+    #[test]
+    fn keeps_track_cover_album_fallback_and_wave_metadata() {
+        let cover = "avatars.yandex.net/get-music-content/42/album/%%";
+        let song =
+            track(&json!({"id":42,"title":"Example","available":true,"coverUri":cover})).unwrap();
+        assert_eq!(song.cover, Some(format!("https://{cover}")));
+        let song = track(
+            &json!({"id":"43","coverUri":"https://bad.test/image","albums":[{"coverUri":cover}]}),
+        )
+        .unwrap();
+        assert_eq!(song.cover, Some(format!("https://{cover}")));
+        assert!(track(&json!({"id":44})).unwrap().cover.is_none());
+        let og =
+            track(&json!({"id":45,"ogImage":format!("//{cover}"),"coverUri":"invalid"})).unwrap();
+        assert_eq!(og.cover, Some(format!("https://{cover}")));
+
+        let wave=parse_wave(&json!({"batchId":"b","sequence":[{"track":{"id":42,"available":true,"coverUri":cover}}]})).unwrap();
+        assert_eq!(wave[0]["cover"], format!("https://{cover}"));
+        assert_eq!(wave[0]["waveBatch"], "b");
     }
 }

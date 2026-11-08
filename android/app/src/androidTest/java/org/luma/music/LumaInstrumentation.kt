@@ -12,6 +12,7 @@ import org.json.JSONObject
 /** Offline integration checks: actual activities, JNI, MediaPlayer and Android font fallback. */
 class LumaInstrumentation:Instrumentation() {
     private var checks=0
+    private var liveArtwork=false
     override fun onCreate(arguments:Bundle?) {super.onCreate(arguments);start()}
     private fun verify(value:Boolean,message:String) {check(value){message};checks++}
     private fun field(owner:Any,name:String):Any? =
@@ -28,7 +29,7 @@ class LumaInstrumentation:Instrumentation() {
         val results=Bundle()
         try {
             runChecks()
-            results.putString("stream","PASS Luma: "+checks+" integration assertions")
+            results.putString("stream","PASS Luma: "+checks+" integration assertions; live CDN artwork="+liveArtwork)
             finish(Activity.RESULT_OK,results)
         } catch(error:Throwable) {
             results.putString("stream","FAIL Luma: "+error.stackTraceToString())
@@ -38,8 +39,22 @@ class LumaInstrumentation:Instrumentation() {
     private fun runChecks() {
         verify(targetContext.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE == 0,
             "Target application is debuggable")
-        runOnMainSync {SettingsStore.get(targetContext).edit().putBoolean("auto_update_check",false).apply()}
+        runOnMainSync {SettingsStore.get(targetContext).edit().putBoolean("auto_update_check",false).putString("theme_mode","dark").putBoolean("cover_colors",true).apply()}
         val initial=startActivitySync(Intent(targetContext,MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
+        val cover="https://avatars.yandex.net/get-music-content/42/luma-fixture-a/%%"
+        val otherCover="https://avatars.yandex.net/get-music-content/42/luma-fixture-b/%%"
+        seedCover(cover,0xff267aad.toInt());seedCover(otherCover,0xffd34946.toInt())
+        // A live public default cover exercises Rust HTTPS without any account credentials.
+        runCatching {
+            val args=JSONObject().put("root",java.io.File(targetContext.cacheDir,"covers").absolutePath)
+                .put("cover","avatars.yandex.net/get-music-content/default/m/%%").put("size",100).put("network",true)
+            val path=NativeCore.call("cover_load",args.toString()) as? String
+            path?.let {android.graphics.BitmapFactory.decodeFile(it)}?.let {bitmap->
+                liveArtwork=bitmap.width>0 && bitmap.height>0
+                bitmap.recycle()
+            }
+        }
+
         TokenStore(targetContext).save("fixtureAccountA")
         val root=java.io.File(targetContext.filesDir,"offline")
         val dir=java.io.File(root,"999999999").apply {mkdirs()}
@@ -49,14 +64,16 @@ class LumaInstrumentation:Instrumentation() {
             .joinToString("") {String.format(java.util.Locale.ROOT,"%02x",it.toInt() and 255)}
         java.io.File(dir,"index.json").writeText(org.json.JSONArray().put(JSONObject()
             .put("id","999999998").put("title","Offline fixture").put("artists","Luma")
-            .put("bytes",audio.length()).put("sha256",digest).put("quality",128)).toString())
+            .put("bytes",audio.length()).put("sha256",digest).put("quality",128).put("cover",cover)).toString())
         TokenStore(targetContext,"offline_owner").save("999999999")
         verify(OfflineDownloads.list(targetContext).getJSONArray("items").length()==1,"Offline library missing")
         verify(OfflineDownloads.ready(targetContext,"999999998")==audio.absolutePath,"JNI did not verify cached audio")
-        PlaybackService.queue=listOf(Song("999999998","Offline fixture","Luma"))
+        verify(OfflineDownloads.list(targetContext).getJSONArray("items").getJSONObject(0).getString("cover")==cover,"Offline index lost artwork")
+        PlaybackService.queue=listOf(Song("999999998","Offline fixture","Luma",cover=cover))
         PlaybackService.command(targetContext,"play",0)
         waitUntil("Downloaded MP3 did not play without an account") {(PlaybackService.instance?.duration() ?: 0)>1000}
         verify((PlaybackService.instance?.duration() ?: 0) in 2000..4000,"Unexpected offline MP3 duration")
+        checkArtwork(initial,cover,otherCover)
         PlaybackService.command(targetContext,"stop")
         waitUntil("Offline service did not stop"){PlaybackService.instance==null}
         TokenStore(targetContext).save("fixtureAccountB")
@@ -78,6 +95,8 @@ class LumaInstrumentation:Instrumentation() {
         runOnMainSync {spotify.finish()}
         runOnMainSync {main.javaClass.getDeclaredMethod("playDemo").apply {isAccessible=true}.invoke(main)}
         waitUntil("Demo MediaPlayer did not prepare") {(PlaybackService.instance?.duration() ?: 0)>0}
+        verify((field(PlaybackService.instance!!,"session") as android.media.session.MediaSession).controller.metadata?.getBitmap(android.media.MediaMetadata.METADATA_KEY_ALBUM_ART)==null,"Previous track artwork remained in MediaSession")
+
         runOnMainSync {if(PlaybackService.playing) PlaybackService.command(main,"toggle")}
         waitUntil("Demo did not pause") {!PlaybackService.playing}
         val lyrics=startActivitySync(Intent(targetContext,LyricsActivity::class.java)
@@ -182,6 +201,72 @@ class LumaInstrumentation:Instrumentation() {
         waitUntil("Final language was not saved") {
             (NativeDatabase(targetContext).call("settings_load") as JSONObject).optString("language")=="ru"
         }
+    }
+    private fun seedCover(cover:String,color:Int) {
+        val root=java.io.File(targetContext.cacheDir,"covers").apply {mkdirs()}
+        val image=android.graphics.Bitmap.createBitmap(512,512,android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas=android.graphics.Canvas(image);canvas.drawColor(color)
+        val paint=android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {this.color=android.graphics.Color.WHITE;textSize=72f;typeface=android.graphics.Typeface.DEFAULT_BOLD}
+        canvas.drawText("LUMA",126f,280f,paint)
+        for(size in intArrayOf(100,400)) {
+            val info=NativeCore.call("cover_info",JSONObject().put("cover",cover).put("size",size).toString()) as JSONObject
+            java.io.File(root,info.getString("file")).outputStream().use {image.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)}
+            verify(NativeCore.call("cover_load",JSONObject().put("root",root.absolutePath).put("cover",cover).put("size",size).put("network",false).toString()) is String,"Artwork disk cache unavailable offline")
+        }
+        image.recycle()
+    }
+    private fun screenshot(activity:Activity,name:String) {
+        runOnMainSync {activity.window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)}
+        waitForIdleSync()
+        uiAutomation.takeScreenshot()?.let {original->
+            val small=android.graphics.Bitmap.createScaledBitmap(original,600,original.height*600/original.width,true)
+            java.io.File(targetContext.getExternalFilesDir(null),name).outputStream().use {
+                small.compress(android.graphics.Bitmap.CompressFormat.WEBP_LOSSY,75,it)
+            }
+            if(small!==original)small.recycle();original.recycle()
+        }
+    }
+    private fun checkArtwork(activity:MainActivity,cover:String,other:String) {
+        runOnMainSync {activity.javaClass.getDeclaredMethod("fullPlayer").apply {isAccessible=true}.invoke(activity)}
+        val art=field(activity,"playerCover") as AlbumArt
+        waitUntil("Player artwork did not decode") {waitForIdleSync();art.image!=null}
+        verify(art.image!!.bitmap.width<=400 && art.image!!.bitmap.height<=400,"Player decoded oversized artwork")
+        runOnMainSync {
+            val root=field(activity,"root") as LinearLayout
+            verify((root.background as android.graphics.drawable.ColorDrawable).color==art.image!!.dark.surface,"Player background does not follow artwork")
+            val play=field(activity,"playButton") as TextView
+            verify(play.backgroundTintList!!.defaultColor==art.image!!.dark.accent,"Play button lacks artwork accent")
+        }
+        waitUntil("MediaSession artwork missing") {
+            val service=PlaybackService.instance ?: return@waitUntil false
+            (field(service,"session") as android.media.session.MediaSession).controller.metadata?.getBitmap(android.media.MediaMetadata.METADATA_KEY_ALBUM_ART)!=null
+        }
+        val metadata=(field(PlaybackService.instance!!,"session") as android.media.session.MediaSession).controller.metadata!!
+        verify(metadata.getBitmap(android.media.MediaMetadata.METADATA_KEY_ALBUM_ART)!!.width<=100,"Notification artwork exceeds thumbnail bound")
+        val stored=QueueStore.decode(QueueStore.encode(QueueStore.Snapshot(PlaybackService.queue,0,0)))!!
+        verify(stored.songs[0].cover==cover,"Saved queue lost artwork")
+        screenshot(activity,"cover-dark.webp")
+        runOnMainSync {art.bind(other,true);art.bind(cover,true)}
+        waitUntil("Artwork rebinding did not finish") {waitForIdleSync();art.image!=null}
+        verify(android.graphics.Color.blue(art.image!!.bitmap.getPixel(0,0))>android.graphics.Color.red(art.image!!.bitmap.getPixel(0,0)),"A stale artwork request replaced the current track")
+        runOnMainSync {
+            art.bind(null,true)
+            verify(art.image==null,"Missing cover retained previous track artwork")
+            art.bind(cover,true)
+        }
+        waitUntil("Artwork not restored from memory cache") {waitForIdleSync();art.image!=null}
+        verify(CoverImages.memoryBytes() in 1..2*1024*1024,"Artwork memory cache exceeds cap")
+        verify(CoverImages.queuedJobs()<=63,"Artwork job queue exceeds cap")
+        // The fixture account is never sent to a service while checking the light screen.
+        TokenStore(targetContext).clear()
+        runOnMainSync {SettingsStore.get(targetContext).edit().putString("theme_mode","light").apply();activity.finish()}
+        val light=startActivitySync(Intent(targetContext,MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)) as MainActivity
+        runOnMainSync {light.javaClass.getDeclaredMethod("fullPlayer").apply {isAccessible=true}.invoke(light)}
+        val lightArt=field(light,"playerCover") as AlbumArt
+        waitUntil("Light player artwork missing") {waitForIdleSync();lightArt.image!=null}
+        runOnMainSync {verify(((field(light,"root") as LinearLayout).background as android.graphics.drawable.ColorDrawable).color==lightArt.image!!.light.surface,"Light artwork palette did not apply")}
+        screenshot(light,"cover-light.webp")
+        runOnMainSync {light.finish();SettingsStore.get(targetContext).edit().putString("theme_mode","system").apply()}
     }
     private fun screenImport(activity:LyricsActivity,key:String,file:java.io.File) {
         activity.javaClass.getDeclaredField("pendingImportKey").apply {isAccessible=true}.set(activity,key)

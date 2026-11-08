@@ -9,6 +9,8 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 object OfflineDownloads {
+    @Volatile var artworkRevision=0L;private set
+    fun artworkChanged(){artworkRevision++}
     fun arguments(context:Context):JSONObject = JSONObject()
         .put("root",File(context.filesDir,"offline").absolutePath)
         .put("owner",TokenStore(context,"offline_owner").load().orEmpty())
@@ -25,7 +27,7 @@ object OfflineDownloads {
         check(!TokenStore(context).load().isNullOrBlank()) {"Войдите в Яндекс Музыку"}
         check(!DownloadService.busy) {"Дождитесь завершения текущей загрузки"}
         context.startForegroundService(Intent(context,DownloadService::class.java).putExtra("id",song.id)
-            .putExtra("title",song.title).putExtra("artists",song.artist))
+            .putExtra("title",song.title).putExtra("artists",song.artist).putExtra("cover",song.cover))
     }
     fun forgetAccount(context:Context) {
         val args=arguments(context)
@@ -66,7 +68,7 @@ class DownloadService:Service() {
         busy=true;cancelled.set(false);percent=-1;message=intent?.getStringExtra("title").orEmpty()
         startForeground(2,notification())
         val id=intent?.getStringExtra("id").orEmpty()
-        val title=message;val artists=intent?.getStringExtra("artists").orEmpty()
+        val title=message;val artists=intent?.getStringExtra("artists").orEmpty();val cover=intent?.getStringExtra("cover").orEmpty()
         val token=TokenStore(this).load().orEmpty()
         val prefs=SettingsStore.get(this)
         val wifi=prefs.getBoolean("download_wifi_only",true)
@@ -85,7 +87,7 @@ class DownloadService:Service() {
                 check(!cancelled.get() && TokenStore(this).load()==token) {"Загрузка отменена"}
                 TokenStore(this,"offline_owner").save(owner)
                 val args=OfflineDownloads.arguments(this).put("id",id).put("title",title).put("artists",artists)
-                    .put("quality",quality).put("quota",quota)
+                    .put("quality",quality).put("quota",quota).put("cover",cover)
                 var last=-2
                 val result=JSONObject(Native.offlineDownload(token,args.toString()) {value ->
                     val proceed=!cancelled.get() && allowed()

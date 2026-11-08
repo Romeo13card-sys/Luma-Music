@@ -18,6 +18,8 @@ class MainActivity : MaterialActivity() {
     private var mini: TextView? = null
     private var miniArtist: TextView? = null
     private var miniToggle: TextView? = null
+    private var miniCover: AlbumArt? = null
+    private var playerCover: AlbumArt? = null
     private val trackMarkers = mutableListOf<Triple<List<Song>, Int, TextView>>()
     private var playerTitle: TextView? = null
     private var playerSubtitle: TextView? = null
@@ -168,6 +170,8 @@ class MainActivity : MaterialActivity() {
         mini = null
         miniArtist = null
         miniToggle = null
+        miniCover = null
+        playerCover = null
         trackMarkers.clear()
         body = column()
         status = text("")
@@ -485,6 +489,8 @@ class MainActivity : MaterialActivity() {
         scroll.addView(body)
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         val miniBar = row().apply { background = surface(dp(14).toFloat()); setPadding(dp(12),dp(4),dp(4),dp(4)) }
+        miniCover=AlbumArt(this).apply {prominent=true;setOnClickListener {fullPlayer()}}
+        miniBar.addView(miniCover,LinearLayout.LayoutParams(dp(44),dp(44)).apply {rightMargin=dp(12)})
         val miniLabels = column().apply { isClickable=true; isFocusable=true; setOnClickListener { fullPlayer() } }
         mini = text(t("Выберите трек"),15f,white,true,raw=true).apply { maxLines=1; ellipsize=android.text.TextUtils.TruncateAt.END }
         miniArtist = text(t("Открыть плеер"),12f,muted,raw=true).apply { maxLines=1; ellipsize=android.text.TextUtils.TruncateAt.END }
@@ -640,9 +646,11 @@ class MainActivity : MaterialActivity() {
                         setPadding(dp(12), dp(8), dp(12), dp(8))
                         background = surface(dp(20).toFloat())
                     }
-                val marker=text((i+1).toString(),13f,muted)
+                val art=AlbumArt(this).apply {bind(song.cover)}
+                item.addView(art,LinearLayout.LayoutParams(dp(48),dp(48)).apply {rightMargin=dp(12)})
+                val marker=text("",13f,mint).apply {visibility=View.GONE}
                 trackMarkers.add(Triple(songs,i,marker))
-                item.addView(marker,LinearLayout.LayoutParams(dp(36),-2))
+                item.addView(marker,LinearLayout.LayoutParams(dp(20),-2))
                 val labels = column()
                 labels.addView(text(song.title, 16f, white, true, raw=true).apply { maxLines=2; ellipsize=android.text.TextUtils.TruncateAt.END })
                 labels.addView(text(song.artist, 13f, muted, raw=true))
@@ -701,7 +709,11 @@ class MainActivity : MaterialActivity() {
         scroll.addView(body)
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         gap(body, 20)
-        body.addView(AlbumArt(this), LinearLayout.LayoutParams(-1, dp(220)))
+        val cover=AlbumArt(this)
+        playerCover=cover
+        cover.onImage={image->if(playerCover===cover)applyCoverTone(image)}
+        val coverSide=minOf(dp(resources.configuration.screenWidthDp-72),dp(320)).coerceAtLeast(dp(96))
+        body.addView(cover,LinearLayout.LayoutParams(coverSide,coverSide).apply {gravity=Gravity.CENTER_HORIZONTAL})
         gap(body, 24)
         playerTitle = text("", 27f, white, true,raw=true)
         body.addView(playerTitle)
@@ -814,16 +826,30 @@ class MainActivity : MaterialActivity() {
             .show()
     }
 
+    private fun applyCoverTone(image:CoverImages.Image?) {
+        val tone=if(preferences.getBoolean("cover_colors",true) && image!=null)
+            if(palette.oled)image.oled else if(palette.light)image.light else image.dark else null
+        val accent=tone?.accent ?: mint
+        root.setBackgroundColor(tone?.surface ?: palette.background)
+        seek?.progressTintList=android.content.res.ColorStateList.valueOf(accent)
+        seek?.thumbTintList=android.content.res.ColorStateList.valueOf(accent)
+        playButton?.backgroundTintList=android.content.res.ColorStateList.valueOf(accent)
+        playButton?.setTextColor(tone?.onAccent ?: if(com.google.android.material.color.MaterialColors.isColorLight(accent))Color.BLACK else Color.WHITE)
+    }
+
     private fun refreshPlayer() {
         val song = PlaybackService.queue.getOrNull(PlaybackService.index)
+        miniCover?.bind(song?.cover)
+        playerCover?.bind(song?.cover,true)
         mini?.text = song?.title ?: t("Выберите трек")
         miniArtist?.text = song?.artist ?: t("Музыка появится здесь")
         miniToggle?.text = if(PlaybackService.playing) "Ⅱ" else "▶"
         miniToggle?.isEnabled = song != null
         miniToggle?.contentDescription = t(if(PlaybackService.playing) "Приостановить" else "Воспроизвести")
         trackMarkers.forEach { (songs,index,view) ->
-            val current=songs === PlaybackService.queue && index==PlaybackService.index
-            view.text=if(current) "●" else (index+1).toString()
+            val current=index==PlaybackService.index && songs.getOrNull(index)?.id==song?.id && song!=null
+            view.text=if(current) "●" else ""
+            view.visibility=if(current)View.VISIBLE else View.GONE
             view.setTextColor(if(current) mint else muted)
         }
         playerTitle?.text = song?.title ?: t("Выберите трек")
@@ -967,6 +993,7 @@ class MainActivity : MaterialActivity() {
                 settingSwitch(player,"Перемешивание","Выбор следующего доступного трека в случайном порядке.","shuffle",false) {PlaybackService.shuffle=it}
                 settingSwitch(player,"Повтор трека","Повторять текущую композицию после окончания.","repeat",false) {PlaybackService.repeat=it}
                 settingSwitch(player,"Пауза без наушников","Останавливать звук при отключении проводных или Bluetooth-наушников.","pause_on_unplug",true)
+                settingSwitch(player,"Цвет плеера по обложке","Акцентные кнопки и спокойный фон в цвет альбома. OLED сохраняет чёрный фон.","cover_colors",true)
                 val remaining=PlaybackService.instance?.sleepMinutesRemaining() ?: 0
                 settingRow(player,"Таймер сна",if(remaining>0) t("Осталось около %1\$d мин",remaining) else "Выключен") {
                     val service=PlaybackService.instance
@@ -987,6 +1014,13 @@ class MainActivity : MaterialActivity() {
                 val bytes=files.sumOf {it.length()}
                 storage.addView(text(t("Скачанные обновления: %1\$s МиБ",String.format(java.util.Locale.ROOT,"%.1f",bytes/1048576.0)),16f,white))
                 storage.addView(text(t("Свободно: %1\$s ГиБ",String.format(java.util.Locale.ROOT,"%.1f",android.os.StatFs(filesDir.path).availableBytes/1073741824.0)),14f,muted))
+                settingRow(storage,"Очистить кэш обложек","До 24 МиБ на диске. Скачанная музыка и аккаунты сохранятся.") {
+                    val version=generation
+                    executor.execute {
+                        val ok=runCatching {CoverImages.clearDisk(applicationContext)}.isSuccess
+                        runOnUiThread {if(!destroyed && generation==version)status.text=t(if(ok)"Кэш обложек очищен" else "Не удалось очистить кэш обложек")}
+                    }
+                }
                 settingRow(storage,"Удалить файлы обновлений","Скачанные APK и незавершённая загрузка. Аккаунт и очередь сохранятся.") {
                     LumaDialog(this).setTitle("Удалить скачанные обновления?").setNegativeButton("Отмена",null)
                         .setPositiveButton("Удалить") { _,_ ->

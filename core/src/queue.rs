@@ -11,6 +11,8 @@ struct Song {
     available: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     uri: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cover: Option<String>,
 }
 #[derive(Deserialize, Serialize)]
 struct Snapshot {
@@ -36,6 +38,10 @@ pub fn normalize(raw: &str) -> Result<String, String> {
         limit(&mut song.id, 256);
         limit(&mut song.title, 512);
         limit(&mut song.artists, 512);
+        song.cover = song
+            .cover
+            .take()
+            .and_then(|raw| crate::artwork::normalize(&raw));
         song.uri = song
             .uri
             .take()
@@ -164,5 +170,22 @@ mod navigation_tests {
         assert_eq!(next(&v).unwrap(), serde_json::Value::Null);
         v["available"] = json!([]);
         assert_eq!(next(&v).unwrap(), serde_json::Value::Null);
+    }
+}
+
+#[cfg(test)]
+mod artwork_tests {
+    use super::*;
+    use serde_json::{json, Value};
+    #[test]
+    fn preserves_public_artwork_but_never_an_arbitrary_url() {
+        let cover = "avatars.yandex.net/get-music-content/42/album/%%";
+        let raw=json!({"songs":[{"id":"42","title":"A","artists":"B","cover":cover},{"id":"43","title":"C","artists":"D","cover":"https://evil.test/private?token=secret"}]}).to_string();
+        let result = normalize(&raw).unwrap();
+        let parsed: Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(parsed["songs"][0]["cover"], format!("https://{cover}"));
+        assert!(parsed["songs"][1]["cover"].is_null());
+        assert!(!result.contains("secret"));
+        assert_eq!(normalize(&result).unwrap(), result);
     }
 }

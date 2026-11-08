@@ -23,6 +23,8 @@ struct Entry {
     bytes: u64,
     sha256: String,
     quality: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cover: Option<String>,
 }
 fn number(raw: &str) -> Result<&str> {
     if raw.is_empty() || raw.len() > 64 || !raw.bytes().all(|b| b.is_ascii_digit()) {
@@ -180,6 +182,22 @@ pub fn dispatch(op: &str, v: &Value) -> Result<Value> {
             }
             Ok(json!(audio_file(&dir, id).to_string_lossy()))
         }
+        "offline_cover" => {
+            let _guard = WRITER.lock().map_err(|_| "Библиотека занята")?;
+            let id = number(v["id"].as_str().unwrap_or(""))?;
+            let cover = v["cover"]
+                .as_str()
+                .and_then(crate::artwork::normalize)
+                .ok_or("Некорректная обложка")?;
+            let mut entries = read_index(&dir)?;
+            if let Some(entry) = entries.iter_mut().find(|e| e.id == id) {
+                entry.cover = Some(cover);
+                write_index(&dir, &entries)?;
+                Ok(json!(true))
+            } else {
+                Ok(json!(false))
+            }
+        }
         "offline_remove" => {
             let _guard = WRITER.lock().map_err(|_| "Библиотека занята")?;
             let id = number(v["id"].as_str().unwrap_or(""))?;
@@ -294,6 +312,7 @@ pub fn download(token: &str, v: &Value, progress: impl FnMut(i32) -> bool) -> Re
             bytes,
             sha256,
             quality,
+            cover: v["cover"].as_str().and_then(crate::artwork::normalize),
         };
         fs::rename(&part, audio_file(&dir, id)).map_err(|_| "Не удалось завершить загрузку")?;
         entries.retain(|e| e.id != id);
@@ -366,6 +385,7 @@ mod tests {
             bytes: bytes.len() as u64,
             sha256: format!("{:x}", Sha256::digest(&bytes)),
             quality: 128,
+            cover: None,
         };
         write_index(&dir, &[e]).unwrap();
         let v = json!({"root":root,"owner":"2","id":"3"});
@@ -379,6 +399,18 @@ mod tests {
             .unwrap()
             .is_empty());
         assert!(dispatch("offline_ready", &v).unwrap().is_string());
+        // A 1.0 index without artwork can be enriched without redownloading its audio.
+        let cover = "avatars.yandex.net/get-music-content/42/album/%%";
+        let mut patch = v.clone();
+        patch["cover"] = json!(cover);
+        assert_eq!(dispatch("offline_cover", &patch).unwrap(), json!(true));
+        assert_eq!(
+            dispatch("offline_list", &v).unwrap()["items"][0]["cover"],
+            format!("https://{cover}")
+        );
+        assert!(dispatch("offline_ready", &v).unwrap().is_string());
+        patch["cover"] = json!("https://evil.test/private");
+        assert!(dispatch("offline_cover", &patch).is_err());
         let mut broken = bytes;
         broken[5] = 9;
         fs::write(dir.join("3.mp3"), broken).unwrap();

@@ -14,10 +14,54 @@ fun surface(radius: Float = 20f, accent: Boolean = false): GradientDrawable =
 
     }
 
-/** Static record placeholder; no bitmap cache, network cover downloads or animation. */
-class AlbumArt(context: Context) : View(context) {
+/** A single small bitmap, weak asynchronous delivery and a static fallback when artwork is absent. */
+class AlbumArt(context: Context) : View(context),CoverImages.Target {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val clip = Path()
+    private val destination = RectF()
+    private var cover:String?=null
+    private var size=100
+    private var requested=false
+    var image:CoverImages.Image?=null;private set
+    var onImage:((CoverImages.Image?)->Unit)?=null
+    var prominent=false
+    init {importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_NO;paint.isFilterBitmap=true}
+    fun bind(value:String?,large:Boolean=false) {
+        val next=value?.takeIf {it.isNotBlank()};val pixels=if(large)400 else 100
+        if(next==cover && size==pixels)return
+        CoverImages.cancel(this);cover=next;size=pixels;image=null;requested=false
+        onImage?.invoke(null);invalidate();request()
+    }
+    private fun request() {
+        if(!isAttachedToWindow || windowVisibility!=VISIBLE || requested)return
+        val value=cover ?: return
+        requested=true;CoverImages.request(context,value,size,this,prominent)
+    }
+    override fun onAttachedToWindow(){super.onAttachedToWindow();request()}
+    override fun onWindowVisibilityChanged(visibility:Int){
+        super.onWindowVisibilityChanged(visibility)
+        if(visibility==VISIBLE)request()
+        else {CoverImages.cancel(this);requested=false;image=null}
+    }
+    override fun onDetachedFromWindow(){CoverImages.cancel(this);image=null;requested=false;super.onDetachedFromWindow()}
+    override fun artworkLoaded(key:String,image:CoverImages.Image?) {
+        if(key!=cover?.let {CoverImages.key(it,size)} || !isAttachedToWindow)return
+        this.image=image;onImage?.invoke(image);invalidate()
+    }
+    override fun onSizeChanged(w:Int,h:Int,oldw:Int,oldh:Int) {
+        super.onSizeChanged(w,h,oldw,oldh)
+        val radius=12*resources.displayMetrics.density
+        clip.reset();clip.addRoundRect(0f,0f,w.toFloat(),h.toFloat(),radius,radius,Path.Direction.CW)
+    }
     override fun onDraw(c: Canvas) {
+        image?.bitmap?.let {bitmap->
+            val scale=maxOf(width.toFloat()/bitmap.width,height.toFloat()/bitmap.height)
+            val w=bitmap.width*scale;val h=bitmap.height*scale
+            val save=c.save();c.clipPath(clip)
+            destination.set((width-w)/2,(height-h)/2,(width+w)/2,(height+h)/2)
+            c.drawBitmap(bitmap,null,destination,paint)
+            c.restoreToCount(save);return
+        }
         val w=width.toFloat();val h=height.toFloat();val r=minOf(w,h)*.38f
         paint.color=if(AppThemes.active.light) 0xFFE8E8E8.toInt() else 0xFF202020.toInt()
         c.drawRoundRect(0f,0f,w,h,24f,24f,paint)

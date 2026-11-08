@@ -15,6 +15,7 @@ data class Song(
     val available: Boolean = true,
     val uri: String? = null,
     val waveBatch: String? = null,
+    val cover: String? = null,
 ) {
     companion object {
         fun from(v: JSONObject) =
@@ -24,11 +25,12 @@ data class Song(
                 v.getString("artists"),
                 v.optBoolean("available"),
                 waveBatch = v.optString("waveBatch").takeIf { it.isNotBlank() },
+                cover = v.optString("cover").takeIf {it.isNotBlank() && it!="null"},
             )
     }
 }
 
-class PlaybackService : Service() {
+class PlaybackService : Service(),CoverImages.Target {
     companion object {
         var instance: PlaybackService? = null
         var queue = listOf<Song>()
@@ -69,6 +71,8 @@ class PlaybackService : Service() {
 
     private val worker = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
+    private var coverKey:String?=null
+    private var coverImage:CoverImages.Image?=null
     private var player: MediaPlayer? = null
     private lateinit var session: MediaSession
     private lateinit var audio: AudioManager
@@ -388,6 +392,7 @@ class PlaybackService : Service() {
                                 worker.execute { feedback(song, "trackStarted") }
                             resume()
                             saveQueue()
+                            if(song.cover==null && song.uri==null && song.id.all {it.isDigit()})enrichArtwork(song,version)
                         }
                     }
                     media.setOnErrorListener { failed, _, _ ->
@@ -465,6 +470,39 @@ class PlaybackService : Service() {
         load(destination)
     }
 
+    private fun enrichArtwork(song:Song,version:Int) {
+        val token=TokenStore(this).load().orEmpty()
+        val network=getSystemService(android.net.ConnectivityManager::class.java)
+        if(token.isBlank() || network.getNetworkCapabilities(network.activeNetwork)?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)!=true)return
+        worker.execute {
+            val cover=runCatching {
+                val reply=JSONObject(Native.request(token,"track",song.id))
+                if(reply.optBoolean("ok"))Song.from(reply.getJSONObject("data")).cover else null
+            }.getOrNull() ?: return@execute
+            if(TokenStore(this).load()==token)runCatching {
+                val args=OfflineDownloads.arguments(this).put("id",song.id).put("cover",cover)
+                if(NativeCore.call("offline_cover",args.toString())==true)OfflineDownloads.artworkChanged()
+            }
+            main.post {
+                if(version!=generation || TokenStore(this).load()!=token)return@post
+                queue=queue.map {if(it.id==song.id)it.copy(cover=cover) else it}
+                saveQueue();publish()
+            }
+        }
+    }
+    private fun requestArtwork(song:Song?) {
+        val key=song?.cover?.let {CoverImages.key(it,100)}
+        if(key==coverKey)return
+        CoverImages.cancel(this);coverKey=key;coverImage=null
+        song?.cover?.let {CoverImages.request(this,it,100,this,true)}
+    }
+    override fun artworkLoaded(key:String,image:CoverImages.Image?) {
+        if(instance!==this || key!=coverKey)return
+        coverImage=image;publish()
+    }
+    private fun currentArtwork():CoverImages.Image? =
+        coverImage.takeIf {coverKey==queue.getOrNull(index)?.cover?.let {CoverImages.key(it,100)}}
+
     private fun notification(): Notification {
         val song = queue.getOrNull(index)
         fun action(name: String) =
@@ -489,6 +527,7 @@ class PlaybackService : Service() {
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setOngoing(playing)
             .setOnlyAlertOnce(true)
+            .apply {currentArtwork()?.let {setLargeIcon(it.bitmap);setColor(it.dark.accent)}}
             .addAction(
                 Notification.Action.Builder(
                         android.R.drawable.ic_media_previous,
@@ -524,11 +563,13 @@ class PlaybackService : Service() {
 
     private fun publish() {
         val song = queue.getOrNull(index)
+        requestArtwork(song)
         session.setMetadata(
             MediaMetadata.Builder()
                 .putString(MediaMetadata.METADATA_KEY_TITLE, song?.title)
                 .putString(MediaMetadata.METADATA_KEY_ARTIST, song?.artist)
                 .putLong(MediaMetadata.METADATA_KEY_DURATION, duration().toLong())
+                .apply {currentArtwork()?.let {putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART,it.bitmap);putBitmap(MediaMetadata.METADATA_KEY_ART,it.bitmap)}}
                 .build()
         )
         session.setPlaybackState(
@@ -553,6 +594,7 @@ class PlaybackService : Service() {
     }
 
     override fun onDestroy() {
+        CoverImages.cancel(this);coverImage=null;coverKey=null
         saveQueue()
         generation++
         main.removeCallbacksAndMessages(null)
