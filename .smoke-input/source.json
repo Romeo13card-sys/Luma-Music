@@ -1,0 +1,11 @@
+{
+  "commit": "1b168b3b4144794e02833ba776164683682fec5c",
+  "baseline": {
+    "version": "1.1",
+    "versionCode": 21
+  },
+  "candidate": {
+    "version": "1.2",
+    "versionCode": 22
+  }
+}
