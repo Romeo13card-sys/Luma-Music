@@ -33,17 +33,27 @@ class QueueActivity:MaterialActivity(){
             override fun getItemId(position:Int)=position.toLong()
             override fun getView(position:Int,recycled:View?,parent:ViewGroup):View {
                 val row=recycled as? SongRow ?: SongRow(this@QueueActivity)
-                val song=getItem(position);row.bind(song,position==PlaybackService.index)
-                row.more.setOnClickListener {TrackSheet.show(this@QueueActivity,song,position){seen=Long.MIN_VALUE}}
-                row.setOnLongClickListener {TrackSheet.show(this@QueueActivity,song,position){seen=Long.MIN_VALUE};true}
+                val song=getItem(position);val boundRevision=PlaybackService.revision
+                row.tag=boundRevision;row.bind(song,position==PlaybackService.index)
+                row.more.setOnClickListener {if(currentRow(boundRevision))TrackSheet.show(this@QueueActivity,song,position){seen=Long.MIN_VALUE}}
+                row.setOnLongClickListener {if(currentRow(boundRevision))TrackSheet.show(this@QueueActivity,song,position){seen=Long.MIN_VALUE};true}
                 return row
             }
         }
         val list=ListView(this).apply {
             adapter=this@QueueActivity.adapter;dividerHeight=MusicUi.dp(this@QueueActivity,6)
-            setOnItemClickListener {_,_,position,_->if(position==PlaybackService.index && PlaybackService.instance!=null)PlaybackService.command(this@QueueActivity,"toggle") else PlaybackService.command(this@QueueActivity,"play",position)}
+            setOnItemClickListener {_,view,position,_->if(currentRow(view.tag as? Long)){
+                if(position==PlaybackService.index && PlaybackService.instance!=null)PlaybackService.command(this@QueueActivity,"toggle")
+                else PlaybackService.command(this@QueueActivity,"play",position)
+            }}
         }
         root.addView(list,LinearLayout.LayoutParams(-1,0,1f));setContentView(root);MusicUi.insets(root)
+    }
+    private fun currentRow(boundRevision:Long?):Boolean {
+        if(boundRevision==PlaybackService.revision)return true
+        seen=Long.MIN_VALUE;adapter.notifyDataSetChanged()
+        Toast.makeText(this,L10n.text(this,"Очередь изменилась. Откройте меню заново."),Toast.LENGTH_SHORT).show()
+        return false
     }
     override fun onStart(){super.onStart();seen=Long.MIN_VALUE;handler.post(tick)}
     override fun onStop(){handler.removeCallbacks(tick);super.onStop()}

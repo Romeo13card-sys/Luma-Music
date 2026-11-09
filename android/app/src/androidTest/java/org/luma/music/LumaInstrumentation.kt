@@ -228,6 +228,20 @@ class LumaInstrumentation:Instrumentation() {
             verify(adapter.count==2,"Queue screen did not render items")
             val row=adapter.getView(1,null,LinearLayout(queue)) as SongRow
             verify(row.marker.visibility==View.VISIBLE && !row.more.isFocusable,"Queue current marker or row focus is wrong")
+            val stale=adapter.getView(0,null,LinearLayout(queue))
+            PlaybackService.editQueue(queue,"append",third)
+            fun findList(view:View):ListView? {
+                if(view is ListView)return view
+                if(view is ViewGroup)for(i in 0 until view.childCount)findList(view.getChildAt(i))?.let {return it}
+                return null
+            }
+            findList(queue.window.decorView)!!.performItemClick(stale,0,0)
+        }
+        waitForIdleSync();Thread.sleep(500)
+        runOnMainSync {
+            verify(!PlaybackService.playing && PlaybackService.index==1 && field(PlaybackService.instance!!,"player")===player,
+                "A stale queue row played another track")
+            PlaybackService.editQueue(queue,"remove",at=2)
             val sheet=TrackSheet.show(queue,PlaybackService.queue[0],0)
             PlaybackService.editQueue(queue,"append",third)
             textView(sheet.window!!.decorView,L10n.text(queue,"Удалить из очереди")).performClick()
