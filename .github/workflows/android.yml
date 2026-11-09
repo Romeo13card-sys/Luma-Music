@@ -91,6 +91,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 scripts/prepare-gradle.py
           for attempt in 1 2 3; do
             if ./android/gradlew -p android --no-daemon --version; then exit 0; fi
             if [[ "$attempt" == 3 ]]; then exit 1; fi
