@@ -36,6 +36,10 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+          cache: gradle
+          cache-dependency-path: |
+            android/**/*.gradle.kts
+            android/gradle/wrapper/gradle-wrapper.properties
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@1.90.0
         with:
@@ -83,6 +87,15 @@ jobs:
             exit 1
           fi
           echo "LUMA_SPOTIFY_CLIENT_ID=$SPOTIFY_CLIENT" >> "$GITHUB_ENV"
+      - name: Prepare verified Gradle distribution with retries
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if ./android/gradlew -p android --no-daemon --version; then exit 0; fi
+            if [[ "$attempt" == 3 ]]; then exit 1; fi
+            sleep 5
+          done
       - name: Build optimized native libraries and unsigned release APKs
         run: bash scripts/build-android.sh
       - name: Android unit tests and Lint
