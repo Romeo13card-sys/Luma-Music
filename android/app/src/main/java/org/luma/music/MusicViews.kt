@@ -60,22 +60,28 @@ class SongRow(c:Context):LinearLayout(c) {
 
 /** Gesture detection is local to Android; navigation/restart decisions stay in Rust. */
 fun swipeTracks(view:View,onTap:()->Unit){
-    var startX=0f;var startY=0f
-    val detector=GestureDetector(view.context,object:GestureDetector.SimpleOnGestureListener(){
-        override fun onDown(e:android.view.MotionEvent)=true
-        override fun onSingleTapUp(e:android.view.MotionEvent):Boolean {view.performClick();return true}
-        override fun onFling(a:android.view.MotionEvent?,b:android.view.MotionEvent,vx:Float,vy:Float):Boolean {
-            if(a==null)return false
-            val dx=b.x-a.x;val dy=b.y-a.y
-            if(kotlin.math.abs(dx)<MusicUi.dp(view.context,48) || kotlin.math.abs(dx)<=kotlin.math.abs(dy) || kotlin.math.abs(vx)<180)return false
-            PlaybackService.command(view.context,if(dx<0)"next" else "previous");return true
-        }
-    })
+    var startX=0f;var startY=0f;var active=false;var dragged=false
+    val slop=ViewConfiguration.get(view.context).scaledTouchSlop
     view.setOnClickListener {onTap()}
     view.setOnTouchListener {v,event->
-        if(event.actionMasked==MotionEvent.ACTION_DOWN){startX=event.x;startY=event.y}
-        if(event.actionMasked==MotionEvent.ACTION_MOVE && kotlin.math.abs(event.x-startX)>kotlin.math.abs(event.y-startY)+MusicUi.dp(v.context,12))
-            v.parent?.requestDisallowInterceptTouchEvent(true)
-        detector.onTouchEvent(event)
+        when(event.actionMasked){
+            MotionEvent.ACTION_DOWN->{startX=event.x;startY=event.y;active=true;dragged=false}
+            MotionEvent.ACTION_POINTER_DOWN->{active=false;v.parent?.requestDisallowInterceptTouchEvent(false)}
+            MotionEvent.ACTION_MOVE->if(active){
+                val dx=kotlin.math.abs(event.x-startX);val dy=kotlin.math.abs(event.y-startY)
+                if(dx>dy+MusicUi.dp(v.context,12)){dragged=true;v.parent?.requestDisallowInterceptTouchEvent(true)}
+            }
+            MotionEvent.ACTION_UP->{
+                if(active){
+                    val dx=event.x-startX;val dy=event.y-startY
+                    if(kotlin.math.abs(dx)>=MusicUi.dp(v.context,48) && kotlin.math.abs(dx)>kotlin.math.abs(dy)+MusicUi.dp(v.context,12))
+                        PlaybackService.command(v.context,if(dx<0)"next" else "previous")
+                    else if(!dragged && kotlin.math.abs(dx)<=slop && kotlin.math.abs(dy)<=slop)v.performClick()
+                }
+                active=false;v.parent?.requestDisallowInterceptTouchEvent(false)
+            }
+            MotionEvent.ACTION_CANCEL->{active=false;v.parent?.requestDisallowInterceptTouchEvent(false)}
+        }
+        true
     }
 }

@@ -261,11 +261,24 @@ class LumaInstrumentation:Instrumentation() {
         runOnMainSync {
             main.onBackPressed()
             verify(field(main,"playerScreen")==false,"Back did not collapse full player")
-            val mini=field(main,"miniCover") as View
-            val now=SystemClock.uptimeMillis();val d=main.resources.displayMetrics.density
-            for((action,x,time) in listOf(Triple(MotionEvent.ACTION_DOWN,130f,now),Triple(MotionEvent.ACTION_MOVE,60f,now+60),Triple(MotionEvent.ACTION_UP,0f,now+120))) {
-                MotionEvent.obtain(now,time,action,x*d,20*d,0).also {mini.dispatchTouchEvent(it);it.recycle()}
-            }
+        }
+        waitUntil("Mini player was not laid out") {
+            var ready=false;runOnMainSync {val label=field(main,"mini") as View;ready=label.isShown && label.width>MusicUi.dp(main,80)};ready
+        }
+        val bounds=IntArray(4)
+        runOnMainSync {
+            val label=(field(main,"mini") as View).parent as View
+            val location=IntArray(2);label.getLocationOnScreen(location)
+            bounds[0]=location[0]+label.width-MusicUi.dp(main,8);bounds[1]=location[0]+MusicUi.dp(main,8)
+            bounds[2]=location[1]+label.height/2
+        }
+        val down=SystemClock.uptimeMillis()
+        // A deliberate slow swipe must work as well as a fling; inject real window events.
+        for(i in 0..8){
+            val x=bounds[0]+(bounds[1]-bounds[0])*i/8f
+            val action=if(i==0)MotionEvent.ACTION_DOWN else if(i==8)MotionEvent.ACTION_UP else MotionEvent.ACTION_MOVE
+            val event=MotionEvent.obtain(down,SystemClock.uptimeMillis(),action,x,bounds[2].toFloat(),0)
+            sendPointerSync(event);event.recycle();Thread.sleep(40)
         }
         waitUntil("Mini player swipe did not switch songs"){PlaybackService.index==1 && (PlaybackService.instance?.duration() ?: 0)>0}
         verify(!PlaybackService.playing,"Swipe unexpectedly resumed paused playback")
