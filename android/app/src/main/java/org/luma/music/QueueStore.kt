@@ -27,26 +27,10 @@ class QueueStore(context: Context) {
                 catch (_: Exception) { android.util.Log.w("Luma", "Could not clear playback queue") }
             }
         }
-        fun encode(snapshot: Snapshot): String {
-            val items = JSONArray()
-            snapshot.songs.take(200).forEach { song ->
-                items.put(
-                    JSONObject()
-                        .put("id", song.id)
-                        .put("title", song.title)
-                        .put("artists", song.artist)
-                        .put("available", song.available)
-                        .apply { song.uri?.let { put("uri", it) }; song.cover?.let {put("cover",it)} }
-                )
-            }
-            val raw =
-                JSONObject()
-                    .put("songs", items)
-                    .put("index", snapshot.index)
-                    .put("position", snapshot.position)
-                    .toString()
-            return NativeCore.call("queue_normalize", raw) as String
-        }
+        fun runtime(songs:List<Song>,index:Int,position:Int)=JSONObject()
+            .put("songs",JSONArray(songs.take(200).map {it.json()})).put("index",index).put("position",position)
+        fun encode(snapshot:Snapshot):String =
+            NativeCore.call("queue_normalize",runtime(snapshot.songs,snapshot.index,snapshot.position).toString()) as String
 
         fun decode(raw: String?): Snapshot? {
             if (raw == null) return null

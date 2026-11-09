@@ -76,7 +76,7 @@ class OfflineActivity:MaterialActivity() {
             emptyView=null
             setOnItemClickListener {_,_,position,_->
                 val songs=(0 until tracks.length()).map {Song.from(tracks.getJSONObject(it).put("available",true))}
-                PlaybackService.queue=songs;PlaybackService.command(this@OfflineActivity,"play",position)
+                PlaybackService.select(this@OfflineActivity,songs,position)
             }
             setOnItemLongClickListener {_,_,position,_->
                 val id=tracks.getJSONObject(position).getString("id")

@@ -16,7 +16,13 @@ data class Song(
     val uri: String? = null,
     val waveBatch: String? = null,
     val cover: String? = null,
+    val album: String? = null,
+    val waveStation: String? = null,
+    val waveSession: String? = null,
 ) {
+    fun json()=JSONObject().put("id",id).put("title",title).put("artists",artist).put("available",available)
+        .apply {uri?.let {put("uri",it)};cover?.let {put("cover",it)};album?.let {put("album",it)}
+            waveBatch?.let {put("waveBatch",it)};waveStation?.let {put("waveStation",it)};waveSession?.let {put("waveSession",it)}}
     companion object {
         fun from(v: JSONObject) =
             Song(
@@ -26,6 +32,10 @@ data class Song(
                 v.optBoolean("available"),
                 waveBatch = v.optString("waveBatch").takeIf { it.isNotBlank() },
                 cover = v.optString("cover").takeIf {it.isNotBlank() && it!="null"},
+                album = v.optString("album").takeIf {it.isNotBlank() && it!="null"},
+                waveStation = v.optString("waveStation").takeIf {it.isNotBlank() && it!="null"},
+                waveSession = v.optString("waveSession").takeIf {it.isNotBlank() && it!="null"},
+                uri = v.optString("uri").takeIf {it.startsWith("content://") || it.startsWith("file://")},
             )
     }
 }
@@ -40,10 +50,32 @@ class PlaybackService : Service(),CoverImages.Target {
         var shuffle = false
         var repeat = false
         var restoredPosition = 0
+        @Volatile var revision=0L;private set
+        fun select(context:Context,songs:List<Song>,position:Int,wave:Boolean=false) {
+            if(position !in songs.indices)return
+            val start=maxOf(0,position-20)
+            queue=songs.drop(start).take(200);index=position-start;revision++
+            command(context,if(wave)"wave" else "play",index)
+        }
+        fun editQueue(context:Context,action:String,song:Song?=null,at:Int=-1,to:Int=-1) {
+            val args=JSONObject().put("queue",QueueStore.runtime(queue,index,instance?.position() ?: restoredPosition))
+                .put("action",action).put("at",at).put("to",to)
+            song?.let {args.put("song",it.json())}
+            val data=NativeCore.call("queue_edit",args.toString()) as JSONObject
+            val items=data.getJSONArray("songs")
+            queue=(0 until items.length()).map {Song.from(items.getJSONObject(it))}
+            index=data.getInt("index");restoredPosition=data.getInt("position");revision++
+            val service=instance
+            if(queue.isEmpty()) {
+                QueueStore.clearAsync(context);service?.stopSelf()
+            } else if(service!=null)service.queueEdited(data.getBoolean("currentChanged"))
+            else QueueStore.saveAsync(context,QueueStore.Snapshot(queue,index,restoredPosition))
+        }
 
         fun forgetQueue(context: Context) {
             queue = emptyList()
             index = -1
+            revision++
             restoredPosition = 0
             QueueStore.clearAsync(context)
         }
@@ -70,6 +102,8 @@ class PlaybackService : Service(),CoverImages.Target {
     }
 
     private val worker = Executors.newSingleThreadExecutor()
+    private val feedbackWorker=java.util.concurrent.ThreadPoolExecutor(1,1,30,java.util.concurrent.TimeUnit.SECONDS,
+        java.util.concurrent.ArrayBlockingQueue<Runnable>(8),java.util.concurrent.ThreadPoolExecutor.DiscardOldestPolicy()).apply {allowCoreThreadTimeOut(true)}
     private val main = Handler(Looper.getMainLooper())
     private var coverKey:String?=null
     private var coverImage:CoverImages.Image?=null
@@ -78,6 +112,7 @@ class PlaybackService : Service(),CoverImages.Target {
     private lateinit var audio: AudioManager
     private var generation = 0
     private var prepared = false
+    private var autoResume = false
     private var sleepTimer: Runnable? = null
     private var sleepDeadline = 0L
     fun sleepMinutesRemaining(): Int =
@@ -145,20 +180,25 @@ class PlaybackService : Service(),CoverImages.Target {
                 .put("timestamp", java.time.Instant.now().toString())
                 .put("batchId", batch)
                 .put("trackId", song.id)
+                .put("station",song.waveStation ?: "user:onyourwave")
+                .apply {song.waveSession?.let {put("session",it)};song.album?.let {put("album",it)}}
                 .put("totalPlayedSeconds", seconds.coerceAtLeast(0))
-        Native.request(TokenStore(this).load().orEmpty(), "wave_feedback", data.toString())
+        val token=TokenStore(this).load().orEmpty();val args=data.toString()
+        feedbackWorker.execute {if(TokenStore(this).load()==token)Native.request(token,"wave_feedback",args)}
     }
 
     private fun refillWave(song: Song, finished: Boolean = true, playedSeconds: Int = 0) {
+        val resumePlayback=playing || autoResume
         val version = ++generation
         release()
+        autoResume=resumePlayback
         message = "Продолжаем Мою волну…"
         publish()
         worker.execute {
-            if (finished) feedback(song, "trackFinished", playedSeconds)
+            feedback(song,if(finished)"trackFinished" else "skip",playedSeconds)
             val data =
                 try {
-                    JSONObject(Native.request(TokenStore(this).load().orEmpty(), "wave", song.id))
+                    JSONObject(Native.request(TokenStore(this).load().orEmpty(), "wave", JSONObject().put("previous",song.id).put("station",song.waveStation ?: "user:onyourwave").apply {song.waveSession?.let {put("session",it)};song.album?.let {put("album",it)}}.toString()))
                 } catch (_: Exception) {
                     null
                 }
@@ -178,7 +218,7 @@ class PlaybackService : Service(),CoverImages.Target {
                     return@post
                 }
                 queue = songs
-                load(0)
+                load(0,autoResume)
             }
         }
     }
@@ -319,6 +359,7 @@ class PlaybackService : Service(),CoverImages.Target {
 
     private fun release() {
         prepared = false
+        autoResume = false
         playing = false
         player?.release()
         player = null
@@ -332,11 +373,13 @@ class PlaybackService : Service(),CoverImages.Target {
         stopForeground(STOP_FOREGROUND_DETACH)
     }
 
-    private fun load(position: Int) {
+    private fun load(position: Int, autoplay:Boolean=true) {
         if (position !in queue.indices) return
         generation++
+        revision++
         val version = generation
         release()
+        autoResume=autoplay
         index = position
         message = "Подготовка…"
         publish()
@@ -390,7 +433,7 @@ class PlaybackService : Service(),CoverImages.Target {
                             }
                             if (song.waveBatch != null)
                                 worker.execute { feedback(song, "trackStarted") }
-                            resume()
+                            if(autoResume)resume() else {message="Пауза";publish()}
                             saveQueue()
                             if(song.cover==null && song.uri==null && song.id.all {it.isDigit()})enrichArtwork(song,version)
                         }
@@ -444,6 +487,7 @@ class PlaybackService : Service(),CoverImages.Target {
     }
 
     private fun pause() {
+        autoResume=false
         saveQueue()
         if (prepared) player?.pause()
         playing = false
@@ -452,22 +496,32 @@ class PlaybackService : Service(),CoverImages.Target {
         publish()
     }
 
-    private fun next(step: Int) {
-        if (queue.isEmpty()) return
-        val current = queue.getOrNull(index)
-        if (current?.waveBatch != null && step > 0) {
-            val seconds = position() / 1000
-            worker.execute { feedback(current, "skip", seconds) }
-            if (index + 1 >= queue.size) refillWave(current, false) else load(index + 1)
-            return
+    private fun next(step:Int,blockedId:String?=null) {
+        val current=queue.getOrNull(index)
+        if(step==1 && current?.waveBatch!=null){
+            if(index==queue.lastIndex){refillWave(current,false,position()/1000);return}
+            feedback(current,"skip",position()/1000)
         }
-        val destination = (NativeCore.call(
-            "queue_next",
-            JSONObject().put("available", org.json.JSONArray(queue.map { it.available }))
-                .put("index", index).put("step", step).put("shuffle", shuffle)
-                .put("entropy", kotlin.random.Random.nextLong(Long.MAX_VALUE)).toString()
-        ) as? Number)?.toInt() ?: return
-        load(destination)
+        val selected=NativeCore.call("queue_navigation",JSONObject()
+            .put("available",org.json.JSONArray(queue.map {it.available && it.id!=blockedId})).put("index",index)
+            .put("step",step).put("position",position()).put("shuffle",shuffle)
+            .put("entropy",kotlin.random.Random.nextLong(Long.MAX_VALUE)).toString()) as? JSONObject ?: run {if(blockedId!=null)pause();return}
+        if(selected.getBoolean("restart"))seek(0) else load(selected.getInt("index"),playing || autoResume)
+    }
+    fun reactionFeedback(id:String,kind:String,set:Boolean){
+        val song=queue.getOrNull(index) ?: return
+        if(song.id!=id)return
+        feedback(song,if(kind=="likes"){if(set)"like" else "unlike"}else{if(set)"dislike" else "undislike"})
+        if(kind=="dislikes" && set && playing)next(1,id)
+    }
+    private fun queueEdited(currentChanged:Boolean) {
+        if(currentChanged) {
+            val resume=playing || autoResume
+            generation++;release();resumePosition=0;restoredPosition=0
+            if(resume){load(index);return}
+            message="Очередь изменена"
+        }
+        saveQueue();publish()
     }
 
     private fun enrichArtwork(song:Song,version:Int) {
@@ -485,7 +539,7 @@ class PlaybackService : Service(),CoverImages.Target {
             }
             main.post {
                 if(version!=generation || TokenStore(this).load()!=token)return@post
-                queue=queue.map {if(it.id==song.id)it.copy(cover=cover) else it}
+                queue=queue.map {if(it.id==song.id)it.copy(cover=cover) else it};revision++
                 saveQueue();publish()
             }
         }
@@ -602,6 +656,7 @@ class PlaybackService : Service(),CoverImages.Target {
         session.release()
         unregisterReceiver(noisy)
         worker.shutdownNow()
+        feedbackWorker.shutdownNow()
         instance = null
         message = "Воспроизведение остановлено"
         stopForeground(STOP_FOREGROUND_REMOVE)

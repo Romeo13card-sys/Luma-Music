@@ -1,5 +1,6 @@
 mod artwork;
 mod auth;
+mod catalog;
 mod diagnostics;
 pub mod localization;
 mod lyrics;
@@ -9,6 +10,7 @@ mod spotify;
 mod storage;
 mod update_transport;
 mod updates;
+mod wave;
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -33,6 +35,7 @@ pub struct Track {
     pub artists: String,
     pub available: bool,
     pub cover: Option<String>,
+    pub album: Option<String>,
 }
 
 fn track(value: &Value) -> Option<Track> {
@@ -54,6 +57,16 @@ fn track(value: &Value) -> Option<Track> {
             })
             .unwrap_or_default(),
         available: value["available"].as_bool().unwrap_or(false),
+        album: value["albums"]
+            .as_array()
+            .and_then(|a| a.first())
+            .and_then(|a| {
+                a["id"]
+                    .as_str()
+                    .map(str::to_string)
+                    .or_else(|| a["id"].as_u64().map(|n| n.to_string()))
+            })
+            .filter(|s| !s.is_empty() && s.len() <= 64 && s.bytes().all(|b| b.is_ascii_digit())),
         cover: ["ogImage", "coverUri"]
             .iter()
             .find_map(|key| value[key].as_str().and_then(artwork::normalize))
@@ -106,6 +119,29 @@ impl MusicClient {
             .query(query)
             .send()
             .map_err(|_| "Ошибка сети. Проверьте подключение")?;
+        Self::reply(response)
+    }
+    fn post(&self, path: &str, form: &[(&str, &str)]) -> Result<Value> {
+        let response = self
+            .client
+            .post(format!("{API}{path}"))
+            .header("Authorization", format!("OAuth {}", self.token))
+            .form(form)
+            .send()
+            .map_err(|_| "Не удалось отправить изменение")?;
+        Self::reply(response)
+    }
+    fn post_json(&self, path: &str, body: &Value) -> Result<Value> {
+        let response = self
+            .client
+            .post(format!("{API}{path}"))
+            .header("Authorization", format!("OAuth {}", self.token))
+            .json(body)
+            .send()
+            .map_err(|_| "Не удалось подключиться к Моей волне")?;
+        Self::reply(response)
+    }
+    fn reply(response: reqwest::blocking::Response) -> Result<Value> {
         match response.status().as_u16() {
             401 | 403 => return Err("Доступ отклонён: проверьте токен и подписку".into()),
             200 => {}
@@ -223,20 +259,54 @@ impl MusicClient {
             .filter_map(track)
             .collect())
     }
-    pub fn wave(&self, previous: &str) -> Result<Value> {
-        if !previous.is_empty() && !previous.bytes().all(|b| b.is_ascii_digit()) {
-            return Err("Некорректный трек продолжения волны".into());
+    pub fn wave(&self, argument: &str) -> Result<Value> {
+        let (station, previous) = wave::options(argument)?;
+        let (path, body) = wave::session_request(argument)?;
+        let session = self
+            .post_json(&path, &body)
+            .and_then(|v| wave::decorate(&v, &station, true));
+        match session {
+            Ok(v) => Ok(v),
+            Err(_) if path != "/rotor/session/new" => {
+                let (_, body) = wave::session_request(&json!({"station":station}).to_string())?;
+                wave::decorate(
+                    &self.post_json("/rotor/session/new", &body)?,
+                    &station,
+                    true,
+                )
+            }
+            Err(error) if station != "user:onyourwave" => Err(error),
+            Err(_) => {
+                let mut query = vec![("settings2", "True")];
+                if !previous.is_empty() {
+                    query.push(("queue", previous.as_str()));
+                }
+                wave::decorate(
+                    &self.get("/rotor/station/user:onyourwave/tracks", &query)?,
+                    &station,
+                    false,
+                )
+            }
         }
-        let mut query = vec![("settings2", "True")];
-        if !previous.is_empty() {
-            query.push(("queue", previous));
-        }
-        parse_wave(&self.get("/rotor/station/user:onyourwave/tracks", &query)?)
     }
     pub fn wave_feedback(&self, argument: &str) -> Result<Value> {
         let body: Value = serde_json::from_str(argument).map_err(|_| "Некорректный отзыв волны")?;
         let kind = body["type"].as_str().unwrap_or("");
-        if !["radioStarted", "trackStarted", "trackFinished", "skip"].contains(&kind)
+        let station = body["station"].as_str().unwrap_or("user:onyourwave");
+        if !wave::valid(station) {
+            return Err("Некорректная станция".into());
+        }
+        if ![
+            "radioStarted",
+            "trackStarted",
+            "trackFinished",
+            "skip",
+            "like",
+            "unlike",
+            "dislike",
+            "undislike",
+        ]
+        .contains(&kind)
             || body["timestamp"].as_str().is_none()
             || body["batchId"].as_str().is_none()
             || (kind != "radioStarted"
@@ -256,9 +326,33 @@ impl MusicClient {
         if let Some(seconds) = body["totalPlayedSeconds"].as_u64() {
             data["totalPlayedSeconds"] = json!(seconds);
         }
+        if let Some(session) = body["session"].as_str() {
+            if !wave::session_id(session) {
+                return Err("Некорректная сессия волны".into());
+            }
+            if let Some(album) = body["album"]
+                .as_str()
+                .filter(|s| !s.is_empty() && s.len() <= 64 && s.bytes().all(|b| b.is_ascii_digit()))
+            {
+                if let Some(id) = data["trackId"].as_str() {
+                    data["trackId"] = json!(format!("{id}:{album}"));
+                }
+            }
+            let response = self
+                .client
+                .post(format!("{API}/rotor/session/{session}/feedback"))
+                .header("Authorization", format!("OAuth {}", self.token))
+                .json(&json!({"batch_id":body["batchId"],"event":data,"from":"luma-music"}))
+                .send()
+                .map_err(|_| "Ошибка отправки отзыва волны")?;
+            if !response.status().is_success() {
+                return Err("Отзыв волны не принят".into());
+            }
+            return Ok(json!(true));
+        }
         let response = self
             .client
-            .post(format!("{API}/rotor/station/user:onyourwave/feedback"))
+            .post(format!("{API}/rotor/station/{station}/feedback"))
             .header("Authorization", format!("OAuth {}", self.token))
             .query(&[("batch-id", body["batchId"].as_str().unwrap_or(""))])
             .json(&data)
@@ -453,9 +547,23 @@ impl Download {
 
 pub fn dispatch(token: &str, operation: &str, argument: &str) -> String {
     let result = (|| {
+        if argument.len() > queue::MAX_BYTES {
+            return Err("Запрос слишком большой".into());
+        }
+        if operation == "reaction_cached" {
+            return catalog::cached(token, argument);
+        }
         let client = MusicClient::new(token)?;
         match operation {
             "account" => client.account(),
+            "collection_page" => catalog::page(
+                &client,
+                &serde_json::from_str(argument).map_err(|_| "Некорректная страница")?,
+            ),
+            "reaction" => catalog::react(
+                &client,
+                &serde_json::from_str(argument).map_err(|_| "Некорректная отметка")?,
+            ),
             "track" => client.track_info(argument),
             "search" => client.search(argument).map(|tracks| json!(tracks)),
             "library" => client.library(),
@@ -493,6 +601,12 @@ pub fn core_dispatch(operation: &str, argument: &str) -> String {
         }
         let v: Value = serde_json::from_str(argument).map_err(|_| "Некорректный запрос ядра")?;
         match operation {
+            "track_link" => catalog::link(&v),
+            "reaction_plan" => catalog::plan(&v),
+            "catalog_clear" => {
+                catalog::clear();
+                Ok(json!(true))
+            }
             "cover_info" | "cover_load" | "cover_clear" | "cover_forget" => {
                 artwork::dispatch(operation, &v)
             }
@@ -512,6 +626,9 @@ pub fn core_dispatch(operation: &str, argument: &str) -> String {
             "locale_catalog" => localization::catalog(&v),
             "languages" => Ok(localization::list()),
             "queue_next" => queue::next(&v),
+            "queue_edit" => queue::edit(&v),
+            "queue_navigation" => queue::navigate(&v),
+            "wave_stations" => Ok(wave::stations()),
             "upgrade_validate" => updates::validate_upgrade(&v),
             "daily_check_due" => Ok(json!(updates::daily_due(
                 v["now"].as_i64().unwrap_or(0),

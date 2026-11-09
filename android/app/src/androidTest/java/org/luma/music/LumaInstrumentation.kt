@@ -99,6 +99,7 @@ class LumaInstrumentation:Instrumentation() {
 
         runOnMainSync {if(PlaybackService.playing) PlaybackService.command(main,"toggle")}
         waitUntil("Demo did not pause") {!PlaybackService.playing}
+        checkQueueAndWave(main)
         val lyrics=startActivitySync(Intent(targetContext,LyricsActivity::class.java)
             .putExtra("localOnly",true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as LyricsActivity
         val key=field(lyrics,"key") as String
@@ -201,6 +202,95 @@ class LumaInstrumentation:Instrumentation() {
         waitUntil("Final language was not saved") {
             (NativeDatabase(targetContext).call("settings_load") as JSONObject).optString("language")=="ru"
         }
+    }
+    private fun checkQueueAndWave(main:MainActivity) {
+        val demo=PlaybackService.queue.single()
+        val second=demo.copy(id="demo-b",title="Second local track")
+        val third=demo.copy(id="demo-c",title="Third local track")
+        val player=field(PlaybackService.instance!!,"player")
+        runOnMainSync {PlaybackService.instance!!.seek(1500)}
+        waitUntil("Queue fixture seek failed"){(PlaybackService.instance?.position() ?: 0) in 1200..2000}
+        runOnMainSync {
+            PlaybackService.editQueue(main,"append",second)
+            PlaybackService.editQueue(main,"next",third)
+            verify(PlaybackService.queue.map {it.id}==listOf("demo","demo-c","demo-b"),"Play next did not insert after active slot")
+            PlaybackService.editQueue(main,"move",at=0,to=2)
+            verify(PlaybackService.index==2 && PlaybackService.queue[2].id=="demo","Move lost current queue slot")
+            PlaybackService.editQueue(main,"remove",at=0)
+            verify(PlaybackService.index==1 && PlaybackService.queue.size==2,"Remove before current changed selection")
+            verify(field(PlaybackService.instance!!,"player")===player,"Metadata edit replaced active audio")
+            verify(!PlaybackService.playing && PlaybackService.instance!!.position() in 1200..2000,"Queue edit lost paused position")
+        }
+        val queue=startActivitySync(Intent(targetContext,QueueActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as QueueActivity
+        waitForIdleSync()
+        runOnMainSync {
+            val adapter=field(queue,"adapter") as BaseAdapter
+            verify(adapter.count==2,"Queue screen did not render items")
+            val row=adapter.getView(1,null,LinearLayout(queue)) as SongRow
+            verify(row.marker.visibility==View.VISIBLE && !row.more.isFocusable,"Queue current marker or row focus is wrong")
+            val sheet=TrackSheet.show(queue,PlaybackService.queue[0],0)
+            PlaybackService.editQueue(queue,"append",third)
+            textView(sheet.window!!.decorView,L10n.text(queue,"Удалить из очереди")).performClick()
+            verify(PlaybackService.queue.size==3,"Stale action sheet removed another queue slot")
+            verify(textView(sheet.window!!.decorView,L10n.text(queue,"Очередь изменилась. Откройте меню заново.")).visibility==View.VISIBLE,"Stale menu warning is missing")
+            sheet.dismiss();queue.finish()
+            PlaybackService.editQueue(main,"remove",at=PlaybackService.index)
+            verify(!PlaybackService.playing && field(PlaybackService.instance!!,"player")==null,"Removing paused current item started audio")
+            PlaybackService.editQueue(main,"remove",at=0)
+            PlaybackService.editQueue(main,"remove",at=0)
+        }
+        waitUntil("Empty queue left a service running"){PlaybackService.instance==null}
+        waitUntil("Empty queue was not persisted"){QueueStore(targetContext).load()==null}
+        runOnMainSync {PlaybackService.select(main,listOf(demo,second),0)}
+        waitUntil("Queue fixture did not prepare"){PlaybackService.playing && (PlaybackService.instance?.duration() ?: 0)>0}
+        runOnMainSync {PlaybackService.command(main,"toggle")}
+        waitUntil("Queue fixture did not pause"){!PlaybackService.playing}
+        runOnMainSync {
+            PlaybackService.repeat=true
+            PlaybackService.command(main,"next")
+        }
+        waitUntil("Manual next did not advance while paused"){PlaybackService.index==1 && (PlaybackService.instance?.duration() ?: 0)>0}
+        verify(!PlaybackService.playing,"Manual next unexpectedly resumed playback")
+        runOnMainSync {PlaybackService.instance!!.seek(6000)}
+        waitUntil("Previous fixture seek failed"){(PlaybackService.instance?.position() ?: 0)>5500}
+        runOnMainSync {PlaybackService.command(main,"previous")}
+        waitUntil("Previous did not restart current song"){(PlaybackService.instance?.position() ?: 9999)<1000}
+        verify(PlaybackService.index==1 && !PlaybackService.playing,"Previous restart switched track or resumed")
+        runOnMainSync {PlaybackService.command(main,"previous")}
+        waitUntil("Previous near start did not change song"){PlaybackService.index==0 && (PlaybackService.instance?.duration() ?: 0)>0}
+        runOnMainSync {
+            main.onBackPressed()
+            verify(field(main,"playerScreen")==false,"Back did not collapse full player")
+            val mini=field(main,"miniCover") as View
+            val now=SystemClock.uptimeMillis();val d=main.resources.displayMetrics.density
+            for((action,x,time) in listOf(Triple(MotionEvent.ACTION_DOWN,130f,now),Triple(MotionEvent.ACTION_MOVE,60f,now+60),Triple(MotionEvent.ACTION_UP,0f,now+120))) {
+                MotionEvent.obtain(now,time,action,x*d,20*d,0).also {mini.dispatchTouchEvent(it);it.recycle()}
+            }
+        }
+        waitUntil("Mini player swipe did not switch songs"){PlaybackService.index==1 && (PlaybackService.instance?.duration() ?: 0)>0}
+        verify(!PlaybackService.playing,"Swipe unexpectedly resumed paused playback")
+        var selected=false
+        runOnMainSync {
+            val dialog=WaveSheet.show(main){selected=true}
+            val root=dialog.window!!.decorView
+            textView(root,L10n.text(main,"Спокойное")).performClick()
+            textView(root,L10n.text(main,"Слушать подборку")).performClick()
+            verify(selected && SettingsStore.get(main).getString("wave_station",null)=="mood:calm","Wave preset was not persisted")
+            SettingsStore.get(main).edit().putString("wave_station","user:onyourwave").apply()
+            PlaybackService.repeat=false
+            PlaybackService.select(main,listOf(demo),0)
+        }
+        waitUntil("Demo not restored after queue tests"){PlaybackService.playing && (PlaybackService.instance?.duration() ?: 0)>0}
+        runOnMainSync {PlaybackService.command(main,"toggle")}
+        waitUntil("Restored demo did not pause"){!PlaybackService.playing}
+    }
+    private fun textView(root:View,text:String):TextView {
+        fun find(view:View):TextView? {
+            if(view is TextView && view.text.toString()==text)return view
+            if(view is ViewGroup)for(i in 0 until view.childCount)find(view.getChildAt(i))?.let {return it}
+            return null
+        }
+        return find(root) ?: error("Missing UI label: "+text)
     }
     private fun seedCover(cover:String,color:Int) {
         val root=java.io.File(targetContext.cacheDir,"covers").apply {mkdirs()}

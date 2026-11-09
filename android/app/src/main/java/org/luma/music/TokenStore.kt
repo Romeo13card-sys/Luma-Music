@@ -38,7 +38,10 @@ class TokenStore(context: Context, namespace: String = "auth") {
 
     fun save(token: String) {
         // Changing Yandex identity invalidates its offline cache, never the Spotify session.
-        if (yandexAuth && load() != token) OfflineDownloads.forgetAccount(app)
+        if (yandexAuth && load() != token) {
+            OfflineDownloads.forgetAccount(app)
+            runCatching {NativeCore.call("catalog_clear","{}")}
+        }
         val cipher =
             Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()) }
         val bytes = cipher.doFinal(token.toByteArray(Charsets.UTF_8))
@@ -72,5 +75,6 @@ class TokenStore(context: Context, namespace: String = "auth") {
 
     fun clear() {
         prefs.edit().clear().commit()
+        if(yandexAuth)runCatching {NativeCore.call("catalog_clear","{}")}
     }
 }

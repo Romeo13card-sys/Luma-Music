@@ -16,5 +16,10 @@ class SongMetadataTest {
         assertEquals(cover,song.cover)
         assertEquals("Название",song.title)
         assertTrue(song.available)
+        val runtime=song.copy(album="7",waveBatch="batch",waveStation="mood:calm",waveSession="session-1",uri="file:///music.mp3")
+        assertEquals(runtime,Song.from(runtime.json()))
+        old.put("uri","https://example.com/expiring-token").put("album",JSONObject.NULL)
+        assertNull(Song.from(old).uri)
+        assertNull(Song.from(old).album)
     }
 }
