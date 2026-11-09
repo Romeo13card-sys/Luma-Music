@@ -110,7 +110,7 @@ class PlaybackService : Service(),CoverImages.Target {
     private var player: MediaPlayer? = null
     private lateinit var session: MediaSession
     private lateinit var audio: AudioManager
-    private var generation = 0
+    @Volatile private var generation = 0
     private var prepared = false
     private var autoResume = false
     private var sleepTimer: Runnable? = null
@@ -195,6 +195,7 @@ class PlaybackService : Service(),CoverImages.Target {
         message = "Продолжаем Мою волну…"
         publish()
         worker.execute {
+            if(version!=generation)return@execute
             feedback(song,if(finished)"trackFinished" else "skip",playedSeconds)
             val data =
                 try {
@@ -385,6 +386,7 @@ class PlaybackService : Service(),CoverImages.Target {
         publish()
         val song = queue[position]
         worker.execute {
+            if(version!=generation)return@execute
             val response =
                 try {
                     if (song.waveBatch != null && !waveSessionStarted) {
@@ -529,6 +531,7 @@ class PlaybackService : Service(),CoverImages.Target {
         val network=getSystemService(android.net.ConnectivityManager::class.java)
         if(token.isBlank() || network.getNetworkCapabilities(network.activeNetwork)?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)!=true)return
         worker.execute {
+            if(version!=generation)return@execute
             val cover=runCatching {
                 val reply=JSONObject(Native.request(token,"track",song.id))
                 if(reply.optBoolean("ok"))Song.from(reply.getJSONObject("data")).cover else null

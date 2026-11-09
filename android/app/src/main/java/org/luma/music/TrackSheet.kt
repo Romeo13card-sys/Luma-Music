@@ -9,7 +9,7 @@ import org.json.JSONObject
 
 /** One shared mobile action sheet, adapted from YAYMA's TrackContextActions. */
 object TrackSheet {
-    fun show(activity:Activity,song:Song,position:Int?=null,changed:()->Unit={}):BottomSheetDialog {
+    fun show(activity:Activity,song:Song,position:Int?=null,changed:()->Unit={}):android.app.Dialog {
         return Controller(activity,song,position,changed).open()
     }
     private class Controller(val activity:Activity,val song:Song,val position:Int?,val changed:()->Unit):LibraryActions.Observer {
@@ -19,7 +19,7 @@ object TrackSheet {
         private val actions=mutableListOf<View>()
         private var closed=false
         private val queueRevision=PlaybackService.revision
-        fun open():BottomSheetDialog {
+        fun open():android.app.Dialog {
             val header=LinearLayout(activity).apply {gravity=Gravity.CENTER_VERTICAL}
             header.addView(AlbumArt(activity).apply {bind(song.cover)},LinearLayout.LayoutParams(MusicUi.dp(activity,64),MusicUi.dp(activity,64)))
             val labels=LinearLayout(activity).apply {orientation=LinearLayout.VERTICAL;setPadding(20,0,0,0)

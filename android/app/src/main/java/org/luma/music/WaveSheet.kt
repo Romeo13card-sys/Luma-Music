@@ -10,7 +10,7 @@ import org.json.JSONArray
 
 /** Native adaptation of YAYMA's mobile wave preset panel; no animated shader. */
 object WaveSheet {
-    fun show(activity:Activity,onSelected:()->Unit):BottomSheetDialog{
+    fun show(activity:Activity,onSelected:()->Unit):android.app.Dialog{
         val prefs=SettingsStore.get(activity)
         var selected=prefs.getString("wave_station","user:onyourwave").orEmpty()
         val stations=NativeCore.call("wave_stations","{}") as JSONArray
