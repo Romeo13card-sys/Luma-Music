@@ -51,11 +51,12 @@ class PlaybackService : Service(),CoverImages.Target {
         var repeat = false
         var restoredPosition = 0
         @Volatile var revision=0L;private set
-        fun select(context:Context,songs:List<Song>,position:Int,wave:Boolean=false) {
+        fun select(context:Context,songs:List<Song>,position:Int,wave:Boolean=false,seekMs:Int=0) {
+            if(QueueStore.restoring)return
             if(position !in songs.indices)return
             val start=maxOf(0,position-20)
             queue=songs.drop(start).take(200);index=position-start;revision++
-            command(context,if(wave)"wave" else "play",index)
+            command(context,if(wave)"wave" else "play",index,seekMs)
         }
         fun editQueue(context:Context,action:String,song:Song?=null,at:Int=-1,to:Int=-1) {
             val args=JSONObject().put("queue",QueueStore.runtime(queue,index,instance?.position() ?: restoredPosition))
@@ -72,6 +73,7 @@ class PlaybackService : Service(),CoverImages.Target {
             else QueueStore.saveAsync(context,QueueStore.Snapshot(queue,index,restoredPosition))
         }
 
+        fun forgetQueueInMemory(){queue=emptyList();index=-1;restoredPosition=0;revision++}
         fun forgetQueue(context: Context) {
             queue = emptyList()
             index = -1
@@ -81,7 +83,7 @@ class PlaybackService : Service(),CoverImages.Target {
         }
 
         fun restore(context: Context) {
-            if (instance != null || queue.isNotEmpty()) return
+            if (QueueStore.restoring || instance != null || queue.isNotEmpty()) return
             QueueStore(context).load()?.let {
                 queue = it.songs
                 index = it.index
@@ -90,11 +92,12 @@ class PlaybackService : Service(),CoverImages.Target {
             }
         }
 
-        fun command(context: Context, action: String, position: Int = -1) {
+        fun command(context: Context, action: String, position: Int = -1,seekMs:Int=0) {
+            if(QueueStore.restoring && action!="stop")return
             val intent =
                 Intent(context, PlaybackService::class.java)
                     .setAction(action)
-                    .putExtra("position", position)
+                    .putExtra("position", position).putExtra("seekMs",seekMs)
             if (action == "play" || action == "wave" || action == "restore")
                 context.startForegroundService(intent)
             else context.startService(intent)
@@ -117,6 +120,8 @@ class PlaybackService : Service(),CoverImages.Target {
     private var plannedShuffle=false
     private var startedGeneration=-1
     private var activeVersion=0
+    private var historyRecordedVersion=-1
+    private var activeCredential=""
     private val transitions=java.util.ArrayDeque<String>()
     @Synchronized private fun note(event:String){if(transitions.size>=16)transitions.removeFirst();transitions.addLast(event+"[g="+generation+",i="+index+",p="+playing+"]")}
     @Synchronized fun debugState():String="prepared="+prepared+", requested="+requestedIndex+", status="+message+", trace="+transitions.joinToString(" > ")
@@ -186,6 +191,9 @@ class PlaybackService : Service(),CoverImages.Target {
         val start = maxOf(0, index - 20)
         val snapshot = QueueStore.Snapshot(queue.drop(start).take(200), index - start, position())
         QueueStore.saveAsync(this, snapshot)
+        val song=queue[index]
+        if(song.id==activeSong?.id && historyRecordedVersion==activeVersion && SettingsStore.get(this).getBoolean("history_enabled",true))
+            PersonalLibrary.write(this,"history_position",JSONObject().put("id",song.id).put("song",song.json()).put("position",position().coerceAtLeast(0)),activeCredential)
     }
 
     private fun feedback(song: Song, type: String, seconds: Int = 0) {
@@ -332,8 +340,10 @@ class PlaybackService : Service(),CoverImages.Target {
     override fun onBind(intent: Intent?) = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if(QueueStore.restoring){stopSelf(startId);return START_NOT_STICKY}
         when (intent?.action) {
             "play" -> {
+                resumePosition=intent.getIntExtra("seekMs",0).coerceAtLeast(0)
                 restoredPosition = 0
                 startForeground(1, notification())
                 load(intent.getIntExtra("position", 0))
@@ -399,7 +409,7 @@ class PlaybackService : Service(),CoverImages.Target {
         playing = false
         player?.release()
         player = null
-        activeSong=null
+        activeSong=null;activeCredential=""
         focusOwned=false;resumeAfterFocus=false
         audio.abandonAudioFocusRequest(focus)
     }
@@ -451,7 +461,7 @@ class PlaybackService : Service(),CoverImages.Target {
         val credential=TokenStore(this).load().orEmpty()
         val warm=runCatching {nextBuffer.take(bufferKey(song),credential)}.getOrNull()
         plannedNext=null
-        if(warm!=null){note("warm");activate(warm,song,position,version);return}
+        if(warm!=null){note("warm");activate(warm,song,position,version,credential);return}
         message="Загружаем трек…";publish()
         worker.execute {
             if(version!=generation)return@execute
@@ -462,7 +472,7 @@ class PlaybackService : Service(),CoverImages.Target {
                 try {
                     val media=MediaPlayer();loading=media
                     media.setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
-                    media.setOnPreparedListener {if(version==generation && loading===it)activate(it,song,position,version)}
+                    media.setOnPreparedListener {if(version==generation && loading===it)activate(it,song,position,version,credential)}
                     media.setOnErrorListener {failed,_,_->if(loading===failed)loadFailed("Не удалось подготовить аудио");true}
                     val address=response.getOrThrow()
                     if(address.startsWith("content://") || address.startsWith("file://"))media.setDataSource(this,android.net.Uri.parse(address)) else media.setDataSource(address)
@@ -477,10 +487,10 @@ class PlaybackService : Service(),CoverImages.Target {
         message=text;publish()
         if(player==null)stopForeground(STOP_FOREGROUND_DETACH)
     }
-    private fun activate(media:MediaPlayer,song:Song,position:Int,version:Int){
+    private fun activate(media:MediaPlayer,song:Song,position:Int,version:Int,credential:String){
         if(version!=generation){media.release();return}
         note("prepared="+position)
-        loading=null;player?.release();player=media;activeSong=song;activeVersion=version;prepared=true;playing=false;index=position;requestedIndex=null
+        loading=null;player?.release();player=media;activeSong=song;activeCredential=credential;activeVersion=version;prepared=true;playing=false;index=position;requestedIndex=null
         refreshAudioSettings()
         media.setOnPreparedListener(null)
         media.setOnErrorListener {failed,_,_->if(player===failed)fail("Ошибка аудио. Попробуйте другой трек");true}
@@ -523,6 +533,11 @@ class PlaybackService : Service(),CoverImages.Target {
                     if(!waveSessionStarted){feedback(song,"radioStarted");waveSessionStarted=true}
                     feedback(song,"trackStarted")
                 }}
+            }
+            if(historyRecordedVersion!=activeVersion && SettingsStore.get(this).getBoolean("history_enabled",true)){
+                queue.getOrNull(index)?.let {song->
+                    if(PersonalLibrary.write(this,"history_add",JSONObject().put("song",song.json()).put("position",position().coerceAtLeast(0)),activeCredential))historyRecordedVersion=activeVersion
+                }
             }
             prepareNext()
             message = "Сейчас играет"
@@ -715,6 +730,7 @@ class PlaybackService : Service(),CoverImages.Target {
         feedbackWorker.shutdownNow()
         nextBuffer.close()
         instance = null
+        if(queue.isEmpty() && !QueueStore.restoring)restore(this)
         message = "Воспроизведение остановлено"
         stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()

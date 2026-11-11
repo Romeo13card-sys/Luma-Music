@@ -7,6 +7,10 @@ import java.util.concurrent.Executors
 internal class QueuePersistence(private val writer: Executor = Executors.newSingleThreadExecutor()) {
     @Volatile var cleared = false
         private set
+    @Synchronized fun fence():java.util.concurrent.FutureTask<Unit> {
+        val task=java.util.concurrent.FutureTask(java.util.concurrent.Callable {Unit});writer.execute(task);return task
+    }
+    @Synchronized fun restored(){cleared=false}
     @Synchronized fun save(action: () -> Unit) {
         cleared = false
         writer.execute(action)

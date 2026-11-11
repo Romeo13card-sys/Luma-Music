@@ -9,7 +9,7 @@ pub(crate) fn valid_setting(key: &str, value: &Value) -> bool {
     match key {
         "balance" => matches!(value.as_i64(), Some(-100 | -50 | 0 | 50 | 100)),
         "lyrics_scale" => matches!(value.as_i64(), Some(90 | 100 | 115 | 130 | 150)),
-        "lyrics_words" | "sleep_end" => value.is_boolean(),
+        "lyrics_words" | "sleep_end" | "history_enabled" => value.is_boolean(),
         "wave_station" => value.as_str().is_some_and(crate::wave::valid),
         "language" => value
             .as_str()
@@ -35,7 +35,7 @@ pub fn defaults() -> Value {
     json!({"language":"system","theme_mode":"system","wave_station":"user:onyourwave","quality_wifi":320,"quality_mobile":128,
         "reduce_effects":false,"unmetered_only":false,"haptics":true,"shuffle":false,
         "repeat":false,"test_updates":false,"auto_update_check":true,"last_update_check":0,
-        "balance":0,"lyrics_scale":100,"lyrics_words":true,"sleep_end":false,"preload_next":true,"preload_wifi_only":false,"cover_colors":true,"download_wifi_only":true,"download_limit_mb":1024,"download_quality":192,"font_size":100,"pause_on_unplug":true})
+        "history_enabled":true,"balance":0,"lyrics_scale":100,"lyrics_words":true,"sleep_end":false,"preload_next":true,"preload_wifi_only":false,"cover_colors":true,"download_wifi_only":true,"download_limit_mb":1024,"download_quality":192,"font_size":100,"pause_on_unplug":true})
 }
 fn open(path: &Path) -> Result<Connection> {
     let db = Connection::open(path).map_err(|_| "Не удалось открыть базу Luma")?;

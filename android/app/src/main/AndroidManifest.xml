@@ -16,6 +16,8 @@
             </intent-filter>
         </activity>
         <activity android:name=".WhatsNewActivity" android:exported="false" />
+        <activity android:name=".HistoryActivity" android:exported="false" />
+        <activity android:name=".BackupActivity" android:exported="false" />
         <activity android:name=".QueueActivity" android:exported="false" />
         <activity android:name=".OfflineActivity" android:exported="false" />
         <service android:name=".DownloadService" android:exported="false" android:foregroundServiceType="dataSync" />

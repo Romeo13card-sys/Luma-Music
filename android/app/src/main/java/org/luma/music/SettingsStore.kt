@@ -17,6 +17,7 @@ class NativeDatabase(context: Context) {
 
 /** Small UI snapshot; no SQLite work while drawing or reading a preference. */
 class SettingsStore private constructor(context: Context) {
+    private val app=context.applicationContext
     private val database = NativeDatabase(context)
     private val writer = Executors.newSingleThreadExecutor()
     private val values: JSONObject
@@ -67,6 +68,48 @@ class SettingsStore private constructor(context: Context) {
                 android.os.Handler(android.os.Looper.getMainLooper()).post { onSaved(saved) }
             }
         }
+    }
+
+    private fun backupTask(file:File,mode:String,args:JSONObject=JSONObject(),onSaved:(JSONObject)->Unit){
+        val credential=TokenStore(app).load().orEmpty()
+        writer.execute {
+            val result=runCatching {
+                check(TokenStore(app).load().orEmpty()==credential){"Аккаунт изменился"}
+                val input=JSONObject(args.toString()).put("scope",PersonalLibrary.scope(credential))
+                if(mode!="backup_export"){
+                    check(file.length() in 1..512000){"Резервная копия превышает 512 КБ"}
+                    input.put("backup",JSONObject(file.readText()))
+                }
+                if(mode=="backup_import"){
+                    QueueStore.fence().get(10,java.util.concurrent.TimeUnit.SECONDS)
+                    PersonalLibrary.fence().get(10,java.util.concurrent.TimeUnit.SECONDS)
+                    check(TokenStore(app).load().orEmpty()==credential){"Аккаунт изменился"}
+                }
+                val data=database.call(mode,input.toString())
+                if(mode=="backup_export"){
+                    val temporary=File(file.parentFile,file.name+".part");temporary.writeText(data.toString())
+                    check(temporary.renameTo(file)){"Не удалось подготовить копию"}
+                }
+                if(mode=="backup_import"){
+                    val updated=(data as JSONObject).getJSONObject("settings")
+                    synchronized(this@SettingsStore){values.keys().asSequence().toList().forEach {values.remove(it)};updated.keys().forEach {values.put(it,updated.get(it))}}
+                    QueueStore.acknowledgeRestore()
+                }
+                JSONObject().put("ok",true).put("data",data ?: JSONObject.NULL)
+            }.getOrElse {JSONObject().put("ok",false).put("error",it.message ?: "Ошибка резервной копии")}
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                if(mode=="backup_import"){
+                    QueueStore.restoring=false;PersonalLibrary.changed();PlaybackService.restore(app)
+                }
+                onSaved(result)
+            }
+        }
+    }
+    fun exportBackup(file:File,queue:Boolean,history:Boolean,callback:(JSONObject)->Unit)=backupTask(file,"backup_export",JSONObject().put("include_queue",queue).put("include_history",history),callback)
+    fun inspectBackup(file:File,callback:(JSONObject)->Unit)=backupTask(file,"backup_inspect",onSaved=callback)
+    fun restoreBackup(file:File,callback:(JSONObject)->Unit){
+        if(QueueStore.restoring){callback(JSONObject().put("ok",false).put("error","Восстановление уже выполняется"));return}
+        QueueStore.restoring=true;backupTask(file,"backup_import",onSaved=callback)
     }
 
     companion object {

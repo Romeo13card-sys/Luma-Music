@@ -27,6 +27,10 @@ object TrackSheet {
             header.addView(labels,LinearLayout.LayoutParams(0,-2,1f));root.addView(header);root.addView(status)
             button("Воспроизвести следующим"){edit("next")}
             button("В конец очереди"){edit("append")}
+            button("Добавить закладку"){
+                val millis=if(PlaybackService.queue.getOrNull(PlaybackService.index)?.id==song.id)PlaybackService.instance?.position() ?: 0 else 0
+                dialog.dismiss();PersonalLibrary.bookmark(activity,song,millis)
+            }
             position?.let {at->
                 if(at>0)button("Переместить выше"){edit("move",at,at-1)}
                 if(at<PlaybackService.queue.lastIndex)button("Переместить ниже"){edit("move",at,at+1)}

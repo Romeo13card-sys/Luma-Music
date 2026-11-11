@@ -13,6 +13,9 @@ class QueueStore(context: Context) {
 
     companion object {
         private val persistence = QueuePersistence()
+        @Volatile var restoring=false
+        fun fence()=persistence.fence()
+        fun acknowledgeRestore(){persistence.restored()}
         fun saveAsync(context: Context, snapshot: Snapshot) {
             val app = context.applicationContext
             persistence.save {

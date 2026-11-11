@@ -25,4 +25,17 @@ class QueuePersistenceTest {
             assertTrue(queue.cleared)
         } finally { release.countDown(); disk.shutdownNow(); playback.shutdownNow() }
     }
+    @Test fun restoreFenceWaitsForOldWritesAndCanExposeRestoredState(){
+        val disk=Executors.newSingleThreadExecutor();val release=CountDownLatch(1)
+        try {
+            val queue=QueuePersistence(disk);val writes=mutableListOf<String>()
+            queue.save {release.await(3,TimeUnit.SECONDS);writes.add("old")}
+            queue.clear {writes.add("clear")}
+            val fence=queue.fence();assertFalse(fence.isDone)
+            release.countDown();fence.get(3,TimeUnit.SECONDS)
+            assertEquals(listOf("old","clear"),writes);assertTrue(queue.cleared)
+            queue.restored();assertFalse(queue.cleared)
+        }finally {release.countDown();disk.shutdownNow()}
+    }
+
 }

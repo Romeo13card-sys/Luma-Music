@@ -119,6 +119,7 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
         if(state?.getBoolean("player",false)==true && PlaybackService.queue.isNotEmpty())fullPlayer()
         handleOAuth(intent)
         intent.getStringExtra("settings_section")?.let {settings(it)}
+        if(intent.getBooleanExtra("open_player",false) && PlaybackService.queue.isNotEmpty())fullPlayer()
         if (
             Build.VERSION.SDK_INT >= 33 &&
                 checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
@@ -484,6 +485,7 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
         super.onNewIntent(newIntent)
         handleOAuth(newIntent)
         newIntent.getStringExtra("settings_section")?.let {settings(it)}
+        if(newIntent.getBooleanExtra("open_player",false) && PlaybackService.queue.isNotEmpty())fullPlayer()
     }
 
     private fun shell(target: String, loadContent: Boolean = true) {
@@ -969,6 +971,12 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
         }
         when (section) {
             "network","lyrics" -> controls(section)
+            "data" -> {
+                controls(section)
+                body.addView(action("История прослушивания"){startActivity(Intent(this,HistoryActivity::class.java))})
+                body.addView(action("Закладки в песнях"){startActivity(Intent(this,HistoryActivity::class.java).putExtra("bookmarks",true))})
+                body.addView(action("Резервная копия"){startActivity(Intent(this,BackupActivity::class.java))})
+            }
             "audio" -> {
                 controls(section)
                 val audio=group("Эквалайзер")
@@ -1491,6 +1499,7 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
     override fun onStart() {
         super.onStart()
         visible = true
+        PlaybackService.restore(this)
         heartTrackId=""
         handler.post(tick)
     }

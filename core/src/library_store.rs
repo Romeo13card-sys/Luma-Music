@@ -216,6 +216,11 @@ fn restore(db: &Connection, v: &Value, scope: &str) -> Result<Value> {
     for (k, v) in settings {
         values[k] = v.clone()
     }
+    if v["preview"].as_bool() == Some(true) {
+        return Ok(
+            json!({"settings":settings.len(),"bookmarks":records.iter().find(|(kind,_)|*kind=="bookmark").map(|(_,r)|r.len()).unwrap_or(0),"pins":records.iter().find(|(kind,_)|*kind=="pin").map(|(_,r)|r.len()).unwrap_or(0),"history":records.iter().find(|(kind,_)|*kind=="history").map(|(_,r)|r.len()).unwrap_or(0),"queue":queue.as_ref().and_then(|q|serde_json::from_str::<Value>(q).ok()).and_then(|q|q["songs"].as_array().map(Vec::len)).unwrap_or(0)}),
+        );
+    }
     db.execute("DELETE FROM app_settings", []).map_err(error)?;
     for (k, v) in values.as_object().unwrap() {
         db.execute(
@@ -268,6 +273,13 @@ pub fn dispatch(db: &mut Connection, operation: &str, v: &Value) -> Result<Value
             let pos = position(&v["position"])?;
             if let Some(mut item) = get(&tx, scope, "history", id)? {
                 item["position"] = json!(pos);
+                if let Some(song) = v.get("song") {
+                    let song = clean_song(song)?;
+                    if song["id"] != id {
+                        return Err("Трек истории изменился".into());
+                    }
+                    item["song"] = song
+                }
                 tx.execute(
                     "UPDATE local_library SET data=?1 WHERE scope=?2 AND kind='history' AND id=?3",
                     params![item.to_string(), scope, id],
@@ -285,7 +297,7 @@ pub fn dispatch(db: &mut Connection, operation: &str, v: &Value) -> Result<Value
             remove(&tx, scope, kind, None)?;
             json!(true)
         }
-        "bookmark_remove" | "pin_remove" => {
+        "history_remove" | "bookmark_remove" | "pin_remove" => {
             let kind = operation.split('_').next().unwrap();
             let id = v["id"]
                 .as_str()
@@ -295,6 +307,11 @@ pub fn dispatch(db: &mut Connection, operation: &str, v: &Value) -> Result<Value
             json!(true)
         }
         "backup_export" => backup(&tx, v, scope)?,
+        "backup_inspect" => {
+            let mut input = v.clone();
+            input["preview"] = json!(true);
+            restore(&tx, &input, scope)?
+        }
         "backup_import" => restore(&tx, v, scope)?,
         _ => return Err("Неизвестная операция библиотеки".into()),
     };
@@ -368,5 +385,36 @@ mod tests {
             .as_object()
             .unwrap()
             .contains_key("token"));
+    }
+    #[test]
+    fn inspecting_a_valid_backup_never_changes_current_settings_or_queue() {
+        let mut db = db();
+        let v = args();
+        dispatch(&mut db, "bookmark_add", &v).unwrap();
+        let mut copy = dispatch(&mut db, "backup_export", &v).unwrap();
+        copy["settings"] = json!({"theme_mode":"dark"});
+        db.execute(
+            "INSERT INTO app_settings(key,value) VALUES('theme_mode','\"light\"')",
+            [],
+        )
+        .unwrap();
+        let preview = dispatch(
+            &mut db,
+            "backup_inspect",
+            &json!({"scope":"local","backup":copy}),
+        )
+        .unwrap();
+        assert_eq!(preview["settings"], 1);
+        assert_eq!(preview["bookmarks"], 1);
+        assert_eq!(
+            crate::storage::settings(&db).unwrap()["theme_mode"],
+            "light"
+        );
+        assert_eq!(
+            db.query_row("SELECT COUNT(*) FROM playback_state", [], |r| r
+                .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
     }
 }
