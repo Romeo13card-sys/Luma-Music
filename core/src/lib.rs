@@ -5,9 +5,11 @@ mod diagnostics;
 pub mod localization;
 mod lyrics;
 mod offline;
+mod preferences;
 mod queue;
 mod spotify;
 mod storage;
+mod stream_cache;
 mod update_transport;
 mod updates;
 mod wave;
@@ -574,11 +576,9 @@ pub fn dispatch(token: &str, operation: &str, argument: &str) -> String {
             "stream_quality" => {
                 let options: Value = serde_json::from_str(argument)
                     .map_err(|_| "Не удалось прочитать запрос качества звука")?;
-                client
-                    .stream_at(
-                        options["id"].as_str().unwrap_or(""),
-                        options["quality"].as_u64().unwrap_or(0),
-                    )
+                let id = options["id"].as_str().unwrap_or("");
+                let quality = options["quality"].as_u64().unwrap_or(0);
+                stream_cache::resolve(token, id, quality, || client.stream_at(id, quality))
                     .map(|url| json!(url))
             }
             "stream" => client.stream(argument).map(|url| json!(url)),
@@ -605,6 +605,7 @@ pub fn core_dispatch(operation: &str, argument: &str) -> String {
             "reaction_plan" => catalog::plan(&v),
             "catalog_clear" => {
                 catalog::clear();
+                stream_cache::clear();
                 Ok(json!(true))
             }
             "cover_info" | "cover_load" | "cover_clear" | "cover_forget" => {
@@ -620,6 +621,8 @@ pub fn core_dispatch(operation: &str, argument: &str) -> String {
             "auth_start" => auth::start(&v),
             "auth_navigation" => auth::navigation(&v),
             "settings_defaults" => Ok(storage::defaults()),
+            "settings_schema" => Ok(preferences::schema()),
+            "playback_levels" => preferences::levels(&v),
             "version_channel" => updates::channel(v["version"].as_str().unwrap_or("")),
             "support_report" => diagnostics::report(&v),
             "locale_resolve" => Ok(localization::info(&v)),

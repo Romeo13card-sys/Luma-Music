@@ -5,8 +5,11 @@ use serde_json::{json, Map, Value};
 use std::{path::Path, time::Duration};
 type Result<T> = std::result::Result<T, String>;
 
-fn valid_setting(key: &str, value: &Value) -> bool {
+pub(crate) fn valid_setting(key: &str, value: &Value) -> bool {
     match key {
+        "balance" => matches!(value.as_i64(), Some(-100 | -50 | 0 | 50 | 100)),
+        "lyrics_scale" => matches!(value.as_i64(), Some(90 | 100 | 115 | 130 | 150)),
+        "lyrics_words" | "sleep_end" => value.is_boolean(),
         "wave_station" => value.as_str().is_some_and(crate::wave::valid),
         "language" => value
             .as_str()
@@ -16,7 +19,7 @@ fn valid_setting(key: &str, value: &Value) -> bool {
             matches!(value.as_i64(), Some(128 | 192 | 320))
         }
         "reduce_effects" | "unmetered_only" | "haptics" | "shuffle" | "repeat" | "test_updates"
-        | "auto_update_check" => value.is_boolean(),
+        | "auto_update_check" | "preload_next" | "preload_wifi_only" => value.is_boolean(),
         "font_size" => matches!(value.as_i64(), Some(90 | 100 | 115 | 130)),
         "download_wifi_only" | "cover_colors" => value.is_boolean(),
         "download_limit_mb" => matches!(
@@ -32,7 +35,7 @@ pub fn defaults() -> Value {
     json!({"language":"system","theme_mode":"system","wave_station":"user:onyourwave","quality_wifi":320,"quality_mobile":128,
         "reduce_effects":false,"unmetered_only":false,"haptics":true,"shuffle":false,
         "repeat":false,"test_updates":false,"auto_update_check":true,"last_update_check":0,
-        "cover_colors":true,"download_wifi_only":true,"download_limit_mb":1024,"download_quality":192,"font_size":100,"pause_on_unplug":true})
+        "balance":0,"lyrics_scale":100,"lyrics_words":true,"sleep_end":false,"preload_next":true,"preload_wifi_only":false,"cover_colors":true,"download_wifi_only":true,"download_limit_mb":1024,"download_quality":192,"font_size":100,"pause_on_unplug":true})
 }
 fn open(path: &Path) -> Result<Connection> {
     let db = Connection::open(path).map_err(|_| "Не удалось открыть базу Luma")?;
@@ -52,7 +55,7 @@ fn open(path: &Path) -> Result<Connection> {
 }
 fn settings(db: &Connection) -> Result<Value> {
     let mut query = db
-        .prepare("SELECT key,value FROM app_settings LIMIT 32")
+        .prepare("SELECT key,value FROM app_settings LIMIT 96")
         .map_err(|_| "Ошибка чтения настроек")?;
     let rows = query
         .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
@@ -96,7 +99,7 @@ pub fn dispatch(path: &str, operation: &str, raw: &str) -> Result<Value> {
             let input: Value = serde_json::from_str(raw).map_err(|_| "Некорректные настройки")?;
             let values = input
                 .as_object()
-                .filter(|v| v.len() <= 32)
+                .filter(|v| v.len() <= 96)
                 .ok_or("Некорректные настройки")?;
             // Import tolerates unrelated legacy keys, but normal writes reject bad data atomically.
             if operation == "settings_patch" && values.iter().any(|(k, v)| !valid_setting(k, v)) {

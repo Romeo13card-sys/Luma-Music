@@ -215,13 +215,14 @@ class LyricsActivity : MaterialActivity() {
                 localize=false
                 minimumHeight=dp(56);setLineSpacing(dp(6).toFloat(),1f)
             }
+            view.textSize=23f*preferences.getInt("font_size",100)/100f*preferences.getInt("lyrics_scale",100)/100f
             val doc=document ?: return view
             val line=doc.getJSONArray("lines").optJSONObject(position)
             val raw=line?.optString("text") ?: doc.optJSONArray("plainLines")?.optString(position).orEmpty()
             view.text=raw
             view.setTextColor(if(position==active || line==null) colors.text else colors.muted)
             view.setTypeface(null,if(position==active) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
-            if(position==active && words>0 && line!=null) {
+            if(preferences.getBoolean("lyrics_words",true) && position==active && words>0 && line!=null) {
                 val list=line.optJSONArray("words")
                 if(list!=null) {
                     var end=0

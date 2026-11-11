@@ -108,6 +108,15 @@ class PlaybackService : Service(),CoverImages.Target {
     private var coverKey:String?=null
     private var coverImage:CoverImages.Image?=null
     private var player: MediaPlayer? = null
+    private var loading:MediaPlayer?=null
+    private var activeSong:Song?=null
+    private var requestedIndex:Int?=null
+    private val nextBuffer=NextTrackBuffer(this)
+    private var plannedNext:Int?=null
+    private var plannedRevision=-1L
+    private var plannedShuffle=false
+    private var startedGeneration=-1
+    private var activeVersion=0
     private lateinit var session: MediaSession
     private lateinit var audio: AudioManager
     @Volatile private var generation = 0
@@ -124,6 +133,7 @@ class PlaybackService : Service(),CoverImages.Target {
         sleepTimer = null
         sleepDeadline = 0L
         if (minutes <= 0) return
+        SettingsStore.get(this).edit().putBoolean("sleep_end",false).apply()
         sleepDeadline = SystemClock.elapsedRealtime() + minutes.toLong() * 60000
         val task = Runnable {
             pause()
@@ -167,6 +177,7 @@ class PlaybackService : Service(),CoverImages.Target {
 
     private fun saveQueue() {
         if (index !in queue.indices) return
+        if(requestedIndex!=null && queue[index].id!=activeSong?.id)return
         val start = maxOf(0, index - 20)
         val snapshot = QueueStore.Snapshot(queue.drop(start).take(200), index - start, position())
         QueueStore.saveAsync(this, snapshot)
@@ -359,119 +370,112 @@ class PlaybackService : Service(),CoverImages.Target {
     }
 
     private fun release() {
+        nextBuffer.cancel();plannedNext=null;loading?.release();loading=null;requestedIndex=null
         prepared = false
         autoResume = false
         playing = false
         player?.release()
         player = null
+        activeSong=null
         audio.abandonAudioFocusRequest(focus)
     }
 
     private fun fail(text: String) {
+        generation++
         release()
         message = text
         publish()
         stopForeground(STOP_FOREGROUND_DETACH)
     }
 
-    private fun load(position: Int, autoplay:Boolean=true) {
-        if (position !in queue.indices) return
-        generation++
-        revision++
-        val version = generation
-        release()
-        autoResume=autoplay
-        index = position
-        message = "Подготовка…"
-        publish()
-        val song = queue[position]
+    private fun source(song:Song,credential:String):String = song.uri ?: OfflineDownloads.ready(this,song.id) ?: run {
+        val reply=JSONObject(Native.request(credential,"stream_quality",streamOptions(song)))
+        check(reply.optBoolean("ok")){reply.optString("error","Ошибка сервиса")}
+        reply.getString("data")
+    }
+    private fun bufferKey(song:Song):String = song.id+"\n"+song.uri.orEmpty()+"\n"+if(song.uri==null)streamOptions(song) else "local"
+    fun audioSessionId():Int=player?.audioSessionId ?: 0
+    fun refreshAudioSettings(){
+        val levels=NativeCore.call("playback_levels",JSONObject().put("balance",SettingsStore.get(this).getInt("balance",0)).toString()) as JSONObject
+        player?.setVolume(levels.getDouble("left").toFloat(),levels.getDouble("right").toFloat())
+    }
+    fun refreshBufferPolicy(){nextBuffer.cancel();plannedNext=null;if(playing)prepareNext()}
+    private fun prepareNext(){
+        val prefs=SettingsStore.get(this)
+        if(!playing || requestedIndex!=null || !prefs.getBoolean("preload_next",true)){nextBuffer.cancel();plannedNext=null;return}
+        if(index==queue.lastIndex && (!shuffle || queue.getOrNull(index)?.waveBatch!=null)){nextBuffer.cancel();plannedNext=null;return}
+        val network=getSystemService(android.net.ConnectivityManager::class.java)
+        if(prefs.getBoolean("preload_wifi_only",false) && network.isActiveNetworkMetered){nextBuffer.cancel();plannedNext=null;return}
+        if(plannedRevision==revision && plannedShuffle==shuffle && plannedNext!=null)return
+        val selected=NativeCore.call("queue_navigation",JSONObject().put("available",org.json.JSONArray(queue.map {it.available}))
+            .put("index",index).put("step",1).put("position",0).put("shuffle",shuffle)
+            .put("entropy",kotlin.random.Random.nextLong(Long.MAX_VALUE)).toString()) as? JSONObject ?: return
+        val target=selected.getInt("index");if(target==index)return
+        val song=queue.getOrNull(target) ?: return
+        val key=runCatching {bufferKey(song)}.getOrNull() ?: return
+        val credential=TokenStore(this).load().orEmpty()
+        plannedNext=target;plannedRevision=revision;plannedShuffle=shuffle
+        nextBuffer.prepare(key,credential){source(song,credential)}
+    }
+    private fun load(position:Int,autoplay:Boolean=true){
+        if(position !in queue.indices)return
+        generation++;revision++
+        val version=generation;val song=queue[position]
+        loading?.release();loading=null;requestedIndex=position;autoResume=autoplay
+        val credential=TokenStore(this).load().orEmpty()
+        val warm=runCatching {nextBuffer.take(bufferKey(song),credential)}.getOrNull()
+        plannedNext=null
+        if(warm!=null){activate(warm,song,position,version);return}
+        message="Загружаем трек…";publish()
         worker.execute {
             if(version!=generation)return@execute
-            val response =
-                try {
-                    if (song.waveBatch != null && !waveSessionStarted) {
-                        feedback(song, "radioStarted")
-                        waveSessionStarted = true
-                    }
-                    song.uri
-                        ?: OfflineDownloads.ready(this,song.id)
-                        ?: JSONObject(
-                                Native.request(
-                                    TokenStore(this).load().orEmpty(),
-                                    "stream_quality",
-                                    streamOptions(song),
-                                )
-                            )
-                            .let {
-                                if (!it.optBoolean("ok"))
-                                    throw IllegalStateException(
-                                        it.optString("error", "Ошибка сервиса")
-                                    )
-                                it.getString("data")
-                            }
-                } catch (e: Exception) {
-                    main.post {
-                        if (version == generation) fail(e.message ?: "Не удалось открыть трек")
-                    }
-                    return@execute
-                }
+            val response=runCatching {source(song,credential)}
             main.post {
-                if (version != generation) return@post
+                if(version!=generation)return@post
+                if(response.isFailure){loadFailed(response.exceptionOrNull()?.message ?: "Не удалось открыть трек");return@post}
                 try {
-                    val media = MediaPlayer()
-                    player = media
-                    media.setAudioAttributes(
-                        AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_MEDIA)
-                            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                            .build()
-                    )
-                    media.setOnPreparedListener {
-                        if (player === it) {
-                            prepared = true
-                            if (resumePosition > 0) {
-                                it.seekTo(resumePosition.coerceAtMost(it.duration))
-                                resumePosition = 0
-                            }
-                            if (song.waveBatch != null)
-                                worker.execute { feedback(song, "trackStarted") }
-                            if(autoResume)resume() else {message="Пауза";publish()}
-                            saveQueue()
-                            if(song.cover==null && song.uri==null && song.id.all {it.isDigit()})enrichArtwork(song,version)
-                        }
-                    }
-                    media.setOnErrorListener { failed, _, _ ->
-                        if (player === failed) fail("Ошибка аудио. Попробуйте другой трек")
-                        true
-                    }
-                    media.setOnCompletionListener {
-                        if (player === it) {
-                            if (repeat) {
-                                it.seekTo(0)
-                                resume()
-                            } else if (song.waveBatch != null) {
-                                if (index + 1 < queue.size) {
-                                    val seconds = it.duration / 1000
-                                    worker.execute { feedback(song, "trackFinished", seconds) }
-                                    load(index + 1)
-                                } else refillWave(song, playedSeconds = it.duration / 1000)
-                            } else if (index + 1 < queue.size || shuffle) next(1)
-                            else {
-                                pause()
-                                message = "Очередь завершена"
-                                publish()
-                            }
-                        }
-                    }
-                    if (song.uri != null) media.setDataSource(this, android.net.Uri.parse(response))
-                    else media.setDataSource(response)
+                    val media=MediaPlayer();loading=media
+                    media.setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
+                    media.setOnPreparedListener {if(version==generation && loading===it)activate(it,song,position,version)}
+                    media.setOnErrorListener {failed,_,_->if(loading===failed)loadFailed("Не удалось подготовить аудио");true}
+                    val address=response.getOrThrow()
+                    if(address.startsWith("content://") || address.startsWith("file://"))media.setDataSource(this,android.net.Uri.parse(address)) else media.setDataSource(address)
                     media.prepareAsync()
-                } catch (_: Exception) {
-                    fail("Не удалось подготовить аудио")
-                }
+                }catch(_:Exception){loadFailed("Не удалось подготовить аудио")}
             }
         }
     }
+    private fun loadFailed(text:String){
+        loading?.release();loading=null;requestedIndex=null;autoResume=playing
+        message=text;publish()
+        if(player==null)stopForeground(STOP_FOREGROUND_DETACH)
+    }
+    private fun activate(media:MediaPlayer,song:Song,position:Int,version:Int){
+        if(version!=generation){media.release();return}
+        loading=null;player?.release();player=media;activeSong=song;activeVersion=version;prepared=true;playing=false;index=position;requestedIndex=null
+        refreshAudioSettings()
+        media.setOnPreparedListener(null)
+        media.setOnErrorListener {failed,_,_->if(player===failed)fail("Ошибка аудио. Попробуйте другой трек");true}
+        media.setOnCompletionListener {finished->if(player===finished){
+            if(requestedIndex!=null){playing=false;publish()}
+            else if(SettingsStore.get(this).getBoolean("sleep_end",false)){
+                SettingsStore.get(this).edit().putBoolean("sleep_end",false).apply()
+                if(song.waveBatch!=null)feedback(song,"trackFinished",finished.duration/1000)
+                pause();message="Таймер сна · пауза";publish()
+            }
+            else if(repeat){finished.seekTo(0);resume()}
+            else if(song.waveBatch!=null){
+                if(index+1<queue.size){feedback(song,"trackFinished",finished.duration/1000);load(index+1)}
+                else refillWave(song,playedSeconds=finished.duration/1000)
+            }else if(index+1<queue.size || shuffle)next(1)
+            else {pause();message="Очередь завершена";publish()}
+        }}
+        if(resumePosition>0){media.seekTo(resumePosition.coerceAtMost(media.duration));resumePosition=0}
+        if(autoResume)resume() else {message="Пауза";publish()}
+        saveQueue()
+        if(song.cover==null && song.uri==null && song.id.all {it.isDigit()})enrichArtwork(song,version)
+    }
+    override fun onTrimMemory(level:Int){super.onTrimMemory(level);if(level==TRIM_MEMORY_RUNNING_LOW || level==TRIM_MEMORY_RUNNING_CRITICAL || level>=TRIM_MEMORY_BACKGROUND){nextBuffer.cancel();plannedNext=null}}
 
     private fun resume() {
         if (!prepared) return
@@ -480,6 +484,15 @@ class PlaybackService : Service(),CoverImages.Target {
         if (audio.requestAudioFocus(focus) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
             player?.start()
             playing = true
+            autoResume=true
+            if(startedGeneration!=activeVersion){
+                startedGeneration=activeVersion
+                queue.getOrNull(index)?.let {song->if(song.waveBatch!=null){
+                    if(!waveSessionStarted){feedback(song,"radioStarted");waveSessionStarted=true}
+                    feedback(song,"trackStarted")
+                }}
+            }
+            prepareNext()
             message = "Сейчас играет"
             publish()
         } else {
@@ -490,6 +503,7 @@ class PlaybackService : Service(),CoverImages.Target {
 
     private fun pause() {
         autoResume=false
+        nextBuffer.cancel();plannedNext=null
         saveQueue()
         if (prepared) player?.pause()
         playing = false
@@ -504,9 +518,10 @@ class PlaybackService : Service(),CoverImages.Target {
             if(index==queue.lastIndex){refillWave(current,false,position()/1000);return}
             feedback(current,"skip",position()/1000)
         }
-        val selected=NativeCore.call("queue_navigation",JSONObject()
-            .put("available",org.json.JSONArray(queue.map {it.available && it.id!=blockedId})).put("index",index)
-            .put("step",step).put("position",position()).put("shuffle",shuffle)
+        val usePlanned=step==1 && blockedId==null && plannedRevision==revision && plannedShuffle==shuffle && requestedIndex==null
+        val selected=if(usePlanned && plannedNext!=null)JSONObject().put("index",plannedNext).put("restart",false) else NativeCore.call("queue_navigation",JSONObject()
+            .put("available",org.json.JSONArray(queue.map {it.available && it.id!=blockedId})).put("index",requestedIndex ?: index)
+            .put("step",step).put("position",if(requestedIndex==null)position() else 0).put("shuffle",shuffle)
             .put("entropy",kotlin.random.Random.nextLong(Long.MAX_VALUE)).toString()) as? JSONObject ?: run {if(blockedId!=null)pause();return}
         if(selected.getBoolean("restart"))seek(0) else load(selected.getInt("index"),playing || autoResume)
     }
@@ -517,13 +532,16 @@ class PlaybackService : Service(),CoverImages.Target {
         if(kind=="dislikes" && set && playing)next(1,id)
     }
     private fun queueEdited(currentChanged:Boolean) {
+        nextBuffer.cancel();plannedNext=null
+        val wanted=playing || autoResume
+        if(requestedIndex!=null){generation++;loading?.release();loading=null;requestedIndex=null;autoResume=playing}
         if(currentChanged) {
-            val resume=playing || autoResume
+            val resume=wanted
             generation++;release();resumePosition=0;restoredPosition=0
             if(resume){load(index);return}
             message="Очередь изменена"
         }
-        saveQueue();publish()
+        saveQueue();publish();if(playing)prepareNext()
     }
 
     private fun enrichArtwork(song:Song,version:Int) {
@@ -660,6 +678,7 @@ class PlaybackService : Service(),CoverImages.Target {
         unregisterReceiver(noisy)
         worker.shutdownNow()
         feedbackWorker.shutdownNow()
+        nextBuffer.close()
         instance = null
         message = "Воспроизведение остановлено"
         stopForeground(STOP_FOREGROUND_REMOVE)

@@ -47,15 +47,19 @@ def main():
         if platform == 'macOS':
             app = stage/'Luma Music.app'; executable = app/'Contents/MacOS/LumaMusic'
             executable.parent.mkdir(parents=True); shutil.copyfile(binary, executable); executable.chmod(0o755)
+            resources=app/'Contents/Resources';resources.mkdir(parents=True)
+            shutil.copyfile(root/'assets/branding/luma-icon.icns',resources/'LumaMusic.icns')
             with (app/'Contents/Info.plist').open('wb') as out:
                 plistlib.dump(dict(CFBundleExecutable='LumaMusic', CFBundleIdentifier='org.luma.music.desktop',
-                    CFBundleName='Luma Music', CFBundlePackageType='APPL', CFBundleShortVersionString=version.split('-')[0],
+                    CFBundleName='Luma Music', CFBundleIconFile='LumaMusic.icns', CFBundlePackageType='APPL', CFBundleShortVersionString=version.split('-')[0],
                     CFBundleVersion=version.split('-')[0], LumaVersion=version, NSHighResolutionCapable=True, LSMinimumSystemVersion='11.0'), out)
             subprocess.run(['codesign','--force','--sign','-','--timestamp=none',str(app)], check=True)
             subprocess.run(['codesign','--verify',str(app)], check=True)
         else:
             executable = stage/binary.name; shutil.copyfile(binary, executable); executable.chmod(0o755)
+        shutil.copyfile(root/'assets/branding/luma-icon.png',stage/'luma-icon.png')
         if platform.startswith('Windows'):
+            shutil.copyfile(root/'assets/branding/luma-icon.ico',stage/'luma-icon.ico')
             (stage/'START-HERE.txt').write_text('Luma Music Portable\n\nExtract the entire ZIP, then run luma-desktop.exe. No installation or administrator rights are required.\nThe OAuth token stays in session memory; audio uses temporary files deleted on normal exit.\nLegacy builds are experimental and need real Windows 7 SP1/8/8.1 testing.\nSee docs/PLATFORMS.md and LICENSE.\n')
         for name in ('LICENSE','NOTICE','docs/PLATFORMS.md'):
             target=stage/name;target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(root/name,target)

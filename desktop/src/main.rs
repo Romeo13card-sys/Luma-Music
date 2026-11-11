@@ -537,7 +537,18 @@ fn main() -> eframe::Result {
     let smoke = std::env::args().any(|arg| arg == "--ui-smoke");
     eframe::run_native(
         "Luma Music",
-        eframe::NativeOptions::default(),
+        eframe::NativeOptions {
+            viewport: egui::ViewportBuilder::default()
+                .with_inner_size([1100.0, 760.0])
+                .with_min_inner_size([680.0, 480.0])
+                .with_icon(
+                    eframe::icon_data::from_png_bytes(include_bytes!(
+                        "../../assets/branding/luma-icon.png"
+                    ))
+                    .expect("Luma icon"),
+                ),
+            ..Default::default()
+        },
         Box::new(move |cc| {
             cc.egui_ctx.set_visuals(egui::Visuals::dark());
             let mut app = App::new();

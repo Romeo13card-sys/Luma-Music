@@ -13,6 +13,8 @@ import org.json.JSONObject
 class LumaInstrumentation:Instrumentation() {
     private var checks=0
     private var liveArtwork=false
+    private var fastSwitchMs=0L
+    private var warmPssKb=0
     override fun onCreate(arguments:Bundle?) {super.onCreate(arguments);start()}
     private fun verify(value:Boolean,message:String) {check(value){message};checks++}
     private fun field(owner:Any,name:String):Any? =
@@ -29,7 +31,7 @@ class LumaInstrumentation:Instrumentation() {
         val results=Bundle()
         try {
             runChecks()
-            results.putString("stream","PASS Luma: "+checks+" integration assertions; live CDN artwork="+liveArtwork)
+            results.putString("stream","PASS Luma: "+checks+" integration assertions; live CDN artwork="+liveArtwork+"; warm switch="+fastSwitchMs+"ms; warm PSS="+warmPssKb+"KiB")
             finish(Activity.RESULT_OK,results)
         } catch(error:Throwable) {
             results.putString("stream","FAIL Luma: "+error.stackTraceToString())
@@ -37,6 +39,9 @@ class LumaInstrumentation:Instrumentation() {
         }
     }
     private fun runChecks() {
+        val icon=targetContext.packageManager.getApplicationIcon(targetContext.packageName)
+        verify(icon is android.graphics.drawable.AdaptiveIconDrawable,"Launcher icon is not adaptive")
+        if(Build.VERSION.SDK_INT>=33)verify((icon as android.graphics.drawable.AdaptiveIconDrawable).monochrome!=null,"Monochrome launcher icon is missing")
         verify(targetContext.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE == 0,
             "Target application is debuggable")
         runOnMainSync {SettingsStore.get(targetContext).edit().putBoolean("auto_update_check",false).putString("theme_mode","dark").putBoolean("cover_colors",true).apply()}
@@ -100,6 +105,7 @@ class LumaInstrumentation:Instrumentation() {
         runOnMainSync {if(PlaybackService.playing) PlaybackService.command(main,"toggle")}
         waitUntil("Demo did not pause") {!PlaybackService.playing}
         checkQueueAndWave(main)
+        checkPreparedPlayback(main)
         val lyrics=startActivitySync(Intent(targetContext,LyricsActivity::class.java)
             .putExtra("localOnly",true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as LyricsActivity
         val key=field(lyrics,"key") as String
@@ -310,6 +316,47 @@ class LumaInstrumentation:Instrumentation() {
         waitUntil("Demo not restored after queue tests"){PlaybackService.playing && (PlaybackService.instance?.duration() ?: 0)>0}
         runOnMainSync {PlaybackService.command(main,"toggle")}
         waitUntil("Restored demo did not pause"){!PlaybackService.playing}
+    }
+    private fun checkPreparedPlayback(main:MainActivity){
+        val demo=PlaybackService.queue.single()
+        val second=demo.copy(id="warm-next",title="Prepared local track")
+        runOnMainSync {
+            SettingsStore.get(main).edit().putBoolean("preload_next",true).putBoolean("preload_wifi_only",false).apply()
+            PlaybackService.select(main,listOf(demo,second),0)
+        }
+        waitUntil("Preload fixture did not start"){PlaybackService.playing && (PlaybackService.instance?.duration() ?: 0)>0}
+        waitUntil("Next local track was not prepared") {
+            (field(PlaybackService.instance!!,"nextBuffer") as NextTrackBuffer).readyKey!=null
+        }
+        val ready=field(field(PlaybackService.instance!!,"nextBuffer")!!,"candidate")
+        warmPssKb=android.os.Debug.MemoryInfo().also {android.os.Debug.getMemoryInfo(it)}.totalPss
+        val before=SystemClock.uptimeMillis()
+        runOnMainSync {PlaybackService.command(main,"next")}
+        waitUntil("Prepared next track did not start") {PlaybackService.index==1 && PlaybackService.playing}
+        fastSwitchMs=SystemClock.uptimeMillis()-before
+        verify(field(PlaybackService.instance!!,"player")===ready,"Switch discarded the prepared MediaPlayer")
+        runOnMainSync {PlaybackService.command(main,"toggle")}
+        waitUntil("Warm fixture did not pause"){!PlaybackService.playing}
+        verify((field(PlaybackService.instance!!,"nextBuffer") as NextTrackBuffer).readyKey==null,"Paused player retained next decoder")
+        val player=field(PlaybackService.instance!!,"player")
+        runOnMainSync {
+            val service=PlaybackService.instance!!
+            service.javaClass.getDeclaredMethod("load",Int::class.javaPrimitiveType,Boolean::class.javaPrimitiveType)
+                .apply {isAccessible=true}.invoke(service,0,false)
+            PlaybackService.editQueue(main,"remove",at=0)
+        }
+        waitForIdleSync();Thread.sleep(250)
+        verify(PlaybackService.index==0 && PlaybackService.queue[0].id==second.id && !PlaybackService.playing && field(PlaybackService.instance!!,"player")===player,
+            "An obsolete preparation replaced audio after a queue edit")
+        runOnMainSync {PlaybackService.select(main,listOf(demo),0)}
+        waitUntil("Demo not restored after preload test"){PlaybackService.playing && (PlaybackService.instance?.duration() ?: 0)>0}
+        runOnMainSync {PlaybackService.command(main,"toggle")}
+        waitUntil("Demo did not pause after preload test"){!PlaybackService.playing}
+        for(section in listOf("audio","network","downloads","wave","lyrics"))runOnMainSync {
+            main.javaClass.getDeclaredMethod("settings",String::class.java).apply {isAccessible=true}.invoke(main,section)
+            verify((field(main,"body") as LinearLayout).childCount>1,"New settings section is empty: "+section)
+        }
+        runOnMainSync {main.javaClass.getDeclaredMethod("fullPlayer").apply {isAccessible=true}.invoke(main)}
     }
     private fun textView(root:View,text:String):TextView {
         fun find(view:View):TextView? {
