@@ -25,7 +25,7 @@ class LumaInstrumentation:Instrumentation() {
             if(predicate()) return
             Thread.sleep(100)
         }
-        error(message)
+        error(message+"; index="+PlaybackService.index+", playing="+PlaybackService.playing+"; "+PlaybackService.instance?.debugState())
     }
     override fun onStart() {
         val results=Bundle()
@@ -335,6 +335,15 @@ class LumaInstrumentation:Instrumentation() {
         waitUntil("Prepared next track did not start") {PlaybackService.index==1 && PlaybackService.playing}
         fastSwitchMs=SystemClock.uptimeMillis()-before
         verify(field(PlaybackService.instance!!,"player")===ready,"Switch discarded the prepared MediaPlayer")
+        val audio=main.getSystemService(android.media.AudioManager::class.java)
+        val competing=android.media.AudioFocusRequest.Builder(android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+            .setAudioAttributes(android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_ASSISTANCE_SONIFICATION).build())
+            .setOnAudioFocusChangeListener {}.build()
+        runOnMainSync {verify(audio.requestAudioFocus(competing)==android.media.AudioManager.AUDIOFOCUS_REQUEST_GRANTED,"Transient focus request failed")}
+        waitUntil("Player did not pause for transient audio focus"){!PlaybackService.playing}
+        runOnMainSync {audio.abandonAudioFocusRequest(competing)}
+        waitUntil("Player did not resume after transient focus returned"){PlaybackService.playing}
+        verify(field(PlaybackService.instance!!,"player")===ready,"Transient focus loss recreated the decoder")
         runOnMainSync {PlaybackService.command(main,"toggle")}
         waitUntil("Warm fixture did not pause"){!PlaybackService.playing}
         verify((field(PlaybackService.instance!!,"nextBuffer") as NextTrackBuffer).readyKey==null,"Paused player retained next decoder")

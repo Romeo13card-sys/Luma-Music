@@ -117,8 +117,13 @@ class PlaybackService : Service(),CoverImages.Target {
     private var plannedShuffle=false
     private var startedGeneration=-1
     private var activeVersion=0
+    private val transitions=java.util.ArrayDeque<String>()
+    @Synchronized private fun note(event:String){if(transitions.size>=16)transitions.removeFirst();transitions.addLast(event+"[g="+generation+",i="+index+",p="+playing+"]")}
+    @Synchronized fun debugState():String="prepared="+prepared+", requested="+requestedIndex+", status="+message+", trace="+transitions.joinToString(" > ")
     private lateinit var session: MediaSession
     private lateinit var audio: AudioManager
+    private var focusOwned=false
+    private var resumeAfterFocus=false
     @Volatile private var generation = 0
     private var prepared = false
     private var autoResume = false
@@ -235,12 +240,30 @@ class PlaybackService : Service(),CoverImages.Target {
         }
     }
 
-    private val focus by lazy {
+    private val focus:AudioFocusRequest by lazy {
         AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
             .setAudioAttributes(
                 AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).build()
             )
-            .setOnAudioFocusChangeListener { if (it != AudioManager.AUDIOFOCUS_GAIN) pause() }
+            .setAcceptsDelayedFocusGain(true)
+            .setWillPauseWhenDucked(true)
+            .setOnAudioFocusChangeListener {change->
+                note("focusChange="+change)
+                when(change){
+                    AudioManager.AUDIOFOCUS_GAIN->{
+                        focusOwned=true
+                        if(resumeAfterFocus && autoResume && prepared){resumeAfterFocus=false;resume()}
+                        else if(!autoResume){focusOwned=false;audio.abandonAudioFocusRequest(focus)}
+                    }
+                    AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK->{
+                        focusOwned=false;resumeAfterFocus=playing || autoResume
+                        saveQueue();if(prepared)player?.pause();playing=false
+                        nextBuffer.cancel();plannedNext=null
+                        message="Пауза · другое приложение воспроизводит звук";publish()
+                    }
+                    AudioManager.AUDIOFOCUS_LOSS->{focusOwned=false;pause()}
+                }
+            }
             .build()
     }
     private val noisy =
@@ -377,10 +400,12 @@ class PlaybackService : Service(),CoverImages.Target {
         player?.release()
         player = null
         activeSong=null
+        focusOwned=false;resumeAfterFocus=false
         audio.abandonAudioFocusRequest(focus)
     }
 
     private fun fail(text: String) {
+        note("error")
         generation++
         release()
         message = text
@@ -419,13 +444,14 @@ class PlaybackService : Service(),CoverImages.Target {
     }
     private fun load(position:Int,autoplay:Boolean=true){
         if(position !in queue.indices)return
+        note("load="+position+",auto="+autoplay)
         generation++;revision++
         val version=generation;val song=queue[position]
         loading?.release();loading=null;requestedIndex=position;autoResume=autoplay
         val credential=TokenStore(this).load().orEmpty()
         val warm=runCatching {nextBuffer.take(bufferKey(song),credential)}.getOrNull()
         plannedNext=null
-        if(warm!=null){activate(warm,song,position,version);return}
+        if(warm!=null){note("warm");activate(warm,song,position,version);return}
         message="Загружаем трек…";publish()
         worker.execute {
             if(version!=generation)return@execute
@@ -446,12 +472,14 @@ class PlaybackService : Service(),CoverImages.Target {
         }
     }
     private fun loadFailed(text:String){
+        note("loadFailed")
         loading?.release();loading=null;requestedIndex=null;autoResume=playing
         message=text;publish()
         if(player==null)stopForeground(STOP_FOREGROUND_DETACH)
     }
     private fun activate(media:MediaPlayer,song:Song,position:Int,version:Int){
         if(version!=generation){media.release();return}
+        note("prepared="+position)
         loading=null;player?.release();player=media;activeSong=song;activeVersion=version;prepared=true;playing=false;index=position;requestedIndex=null
         refreshAudioSettings()
         media.setOnPreparedListener(null)
@@ -481,7 +509,11 @@ class PlaybackService : Service(),CoverImages.Target {
         if (!prepared) return
         // Foreground status is required before audio focus on recent Android versions.
         startForeground(1, notification())
-        if (audio.requestAudioFocus(focus) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+        autoResume=true
+        val focusResult=if(focusOwned)AudioManager.AUDIOFOCUS_REQUEST_GRANTED else audio.requestAudioFocus(focus)
+        note("focusResult="+focusResult)
+        if (focusResult == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+            focusOwned=true;resumeAfterFocus=false
             player?.start()
             playing = true
             autoResume=true
@@ -496,12 +528,15 @@ class PlaybackService : Service(),CoverImages.Target {
             message = "Сейчас играет"
             publish()
         } else {
-            message = "Аудиовывод занят"
+            resumeAfterFocus=focusResult==AudioManager.AUDIOFOCUS_REQUEST_DELAYED
+            message=if(resumeAfterFocus)"Ожидаем освобождения аудиовывода…" else "Аудиовывод занят"
             publish()
         }
     }
 
     private fun pause() {
+        note("pause")
+        focusOwned=false;resumeAfterFocus=false
         autoResume=false
         nextBuffer.cancel();plannedNext=null
         saveQueue()

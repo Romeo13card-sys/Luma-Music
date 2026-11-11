@@ -53,7 +53,7 @@ fn open(path: &Path) -> Result<Connection> {
         PRAGMA user_version=1;").map_err(|_| "Не удалось подготовить базу Luma")?;
     Ok(db)
 }
-fn settings(db: &Connection) -> Result<Value> {
+pub(crate) fn settings(db: &Connection) -> Result<Value> {
     let mut query = db
         .prepare("SELECT key,value FROM app_settings LIMIT 96")
         .map_err(|_| "Ошибка чтения настроек")?;
@@ -76,6 +76,15 @@ pub fn dispatch(path: &str, operation: &str, raw: &str) -> Result<Value> {
         return Err("Запрос базы слишком большой".into());
     }
     let mut db = open(Path::new(path))?;
+    if operation.starts_with("history_")
+        || operation.starts_with("bookmark_")
+        || operation.starts_with("pin_")
+        || operation.starts_with("backup_")
+    {
+        let value: Value =
+            serde_json::from_str(raw).map_err(|_| "Некорректный запрос библиотеки")?;
+        return crate::library_store::dispatch(&mut db, operation, &value);
+    }
     match operation {
         "settings_load" => settings(&db),
         "settings_reset" => {

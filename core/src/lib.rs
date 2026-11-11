@@ -2,6 +2,7 @@ mod artwork;
 mod auth;
 mod catalog;
 mod diagnostics;
+mod library_store;
 pub mod localization;
 mod lyrics;
 mod offline;
@@ -622,6 +623,18 @@ pub fn core_dispatch(operation: &str, argument: &str) -> String {
             "auth_navigation" => auth::navigation(&v),
             "settings_defaults" => Ok(storage::defaults()),
             "settings_schema" => Ok(preferences::schema()),
+            "account_scope" => {
+                use sha2::{Digest, Sha256};
+                let token = v["token"].as_str().unwrap_or("");
+                if token.len() > 4096 {
+                    return Err("Некорректная сессия".into());
+                }
+                Ok(json!(if token.is_empty() {
+                    "local".to_string()
+                } else {
+                    format!("{:x}", Sha256::digest(token.as_bytes()))
+                }))
+            }
             "playback_levels" => preferences::levels(&v),
             "version_channel" => updates::channel(v["version"].as_str().unwrap_or("")),
             "support_report" => diagnostics::report(&v),
