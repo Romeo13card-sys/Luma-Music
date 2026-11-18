@@ -245,10 +245,10 @@ impl App {
                                 self.catalog_detail_kind.clear();
                                 self.status = format!("Плейлистов: {}", self.library_items.len());
                             } else if op == "playlist_detail" {
-                                if let (Some((owner, kind)), Some(track)) = (
-                                    self.pending_playlist_target.take(),
-                                    self.pending_add_track.as_ref(),
-                                ) {
+                                let pending_track = self.pending_add_track.clone();
+                                if let (Some((owner, kind)), Some(track)) =
+                                    (self.pending_playlist_target.take(), pending_track)
+                                {
                                     let track_id = track["id"].as_str().unwrap_or("").to_owned();
                                     let album_id = track["album"].as_str().unwrap_or("").to_owned();
                                     if track_id.is_empty() || album_id.is_empty() {
