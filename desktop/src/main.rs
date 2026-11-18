@@ -249,8 +249,8 @@ impl App {
                                     self.pending_playlist_target.take(),
                                     self.pending_add_track.as_ref(),
                                 ) {
-                                    let track_id = track["id"].as_str().unwrap_or("");
-                                    let album_id = track["album"].as_str().unwrap_or("");
+                                    let track_id = track["id"].as_str().unwrap_or("").to_owned();
+                                    let album_id = track["album"].as_str().unwrap_or("").to_owned();
                                     if track_id.is_empty() || album_id.is_empty() {
                                         self.status = "У этого трека не найден ID альбома".into();
                                     } else {
@@ -696,6 +696,7 @@ impl eframe::App for App {
             let mut selected_playlist_rename: Option<(String, String, String)> = None;
             let mut selected_create_title: Option<String> = None;
             let mut open_library = false;
+            let mut back_to_library = false;
             let library_items = self.library_items.clone();
             let detail_tracks = self
                 .catalog_detail
@@ -796,7 +797,7 @@ impl eframe::App for App {
                         ui.heading(detail["title"].as_str().unwrap_or("Плейлист"));
                         ui.label(format!("Треков: {}", detail["tracks"].as_array().map_or(0, Vec::len)));
                         if ui.button("К плейлистам").clicked() {
-                            self.catalog_detail = None;
+                            back_to_library = true;
                             self.library_visible = true;
                             open_library = true;
                         }
@@ -938,6 +939,9 @@ impl eframe::App for App {
                     }
                 }
             });
+            if back_to_library {
+                self.catalog_detail = None;
+            }
             if let Some(title) = selected_create_title {
                 self.request(
                     "playlist_create",
