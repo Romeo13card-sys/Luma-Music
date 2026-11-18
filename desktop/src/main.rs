@@ -80,6 +80,7 @@ struct App {
     pending_playlist_target: Option<(String, String)>,
     current_playlist_owner: String,
     current_playlist_kind: String,
+    pending_delete_playlist: Option<(String, String, String)>,
     queue: Vec<Value>,
     connected: bool,
     jobs: Jobs,
@@ -122,6 +123,7 @@ impl App {
             pending_playlist_target: None,
             current_playlist_owner: String::new(),
             current_playlist_kind: String::new(),
+            pending_delete_playlist: None,
             queue: vec![],
             connected: false,
             jobs: Jobs::default(),
@@ -277,6 +279,17 @@ impl App {
                                     self.catalog_detail_kind = "playlist_detail".into();
                                     self.library_visible = false;
                                     self.status = "Плейлист загружен".into();
+                                }
+                            } else if op == "playlist_delete_track" {
+                                self.status = "Трек удалён из плейлиста".into();
+                                if !self.current_playlist_owner.is_empty() {
+                                    self.request(
+                                        "playlist_detail",
+                                        json!({
+                                            "owner": self.current_playlist_owner,
+                                            "kind": self.current_playlist_kind
+                                        }).to_string(),
+                                    );
                                 }
                             } else if op == "playlist_insert_track" {
                                 self.pending_add_track = None;
