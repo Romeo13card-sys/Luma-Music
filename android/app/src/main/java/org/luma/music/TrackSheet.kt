@@ -64,6 +64,9 @@ object TrackSheet {
                 }
             }
             if(activity is MainActivity){
+                if(song.uri==null && song.album?.all {it.isDigit()}==true){
+                    button("Добавить в плейлист"){dialog.dismiss();activity.addToPlaylist(song)}
+                }
                 button("Качество звука"){dialog.dismiss();activity.openMusicSettings("sound")}
                 button("Таймер сна"){dialog.dismiss();activity.openMusicSettings("player")}
             }
