@@ -262,6 +262,10 @@ impl App {
                                     .collect();
                                 self.catalog_results.clear();
                                 self.catalog_detail = None;
+                                self.catalog_detail_kind.clear();
+                                self.catalog_kind = "track".into();
+                                self.catalog_page = 0;
+                                self.catalog_has_next = false;
                                 self.status = format!("Треков: {}", self.tracks.len());
                             }
                         }
