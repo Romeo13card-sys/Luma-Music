@@ -461,6 +461,12 @@ impl eframe::App for App {
                     self.tracks.clear();
                     self.catalog_results.clear();
                     self.catalog_detail = None;
+                    self.library_items.clear();
+                    self.library_visible = false;
+                    self.pending_add_track = None;
+                    self.pending_playlist_target = None;
+                    self.current_playlist_owner.clear();
+                    self.current_playlist_kind.clear();
                     self.stop();
                 }
                 if ui
@@ -474,6 +480,12 @@ impl eframe::App for App {
                     self.tracks.clear();
                     self.catalog_results.clear();
                     self.catalog_detail = None;
+                    self.library_items.clear();
+                    self.library_visible = false;
+                    self.pending_add_track = None;
+                    self.pending_playlist_target = None;
+                    self.current_playlist_owner.clear();
+                    self.current_playlist_kind.clear();
                     self.stop();
                     self.request("account", String::new());
                 }
@@ -489,6 +501,12 @@ impl eframe::App for App {
                     self.tracks.clear();
                     self.catalog_results.clear();
                     self.catalog_detail = None;
+                    self.library_items.clear();
+                    self.library_visible = false;
+                    self.pending_add_track = None;
+                    self.pending_playlist_target = None;
+                    self.current_playlist_owner.clear();
+                    self.current_playlist_kind.clear();
                     self.stop();
                 }
             });
