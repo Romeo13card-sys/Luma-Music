@@ -250,29 +250,39 @@ class DownloadService : Service() {
                     "Загрузка отменена"
                 }
                 TokenStore(this, "offline_owner").save(owner)
-                val args = OfflineDownloads.arguments(this)
-                    .put("id", id)
-                    .put("title", title)
-                    .put("artists", artists)
-                    .put("quality", quality)
-                    .put("quota", quota)
-                    .put("cover", cover)
-                var last = -2
-                val result = JSONObject(Native.offlineDownload(token, args.toString()) { value ->
-                    val proceed = !cancelled.get() && allowed()
-                    if (value != last) {
-                        last = value
-                        percent = value
-                        getSystemService(NotificationManager::class.java).notify(2, notification())
+                val existing = NativeCore.call(
+                    "offline_ready",
+                    OfflineDownloads.arguments(this).put("id", id).toString(),
+                ) as? String
+                if (existing != null) {
+                    OfflineDownloads.complete(this, id)
+                    message = "Уже скачано · $title"
+                    percent = 100
+                } else {
+                    val args = OfflineDownloads.arguments(this)
+                        .put("id", id)
+                        .put("title", title)
+                        .put("artists", artists)
+                        .put("quality", quality)
+                        .put("quota", quota)
+                        .put("cover", cover)
+                    var last = -2
+                    val result = JSONObject(Native.offlineDownload(token, args.toString()) { value ->
+                        val proceed = !cancelled.get() && allowed()
+                        if (value != last) {
+                            last = value
+                            percent = value
+                            getSystemService(NotificationManager::class.java).notify(2, notification())
+                        }
+                        proceed
+                    })
+                    check(result.optBoolean("ok")) {
+                        result.optString("error", "Загрузка не завершена")
                     }
-                    proceed
-                })
-                check(result.optBoolean("ok")) {
-                    result.optString("error", "Загрузка не завершена")
+                    OfflineDownloads.complete(this, id)
+                    message = "Скачано · $title"
+                    percent = 100
                 }
-                OfflineDownloads.complete(this, id)
-                message = "Скачано · $title"
-                percent = 100
             } catch (e: Exception) {
                 message = e.message ?: "Не удалось скачать трек"
             } finally {
