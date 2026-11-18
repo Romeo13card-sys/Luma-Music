@@ -573,6 +573,8 @@ impl eframe::App for App {
                     self.rename_title.clear();
                     self.current_playlist_owner.clear();
                     self.current_playlist_kind.clear();
+                    self.wave_mode = false;
+                    self.wave_session.clear();
                     self.stop();
                     self.request("account", String::new());
                 }
@@ -596,6 +598,8 @@ impl eframe::App for App {
                     self.rename_title.clear();
                     self.current_playlist_owner.clear();
                     self.current_playlist_kind.clear();
+                    self.wave_mode = false;
+                    self.wave_session.clear();
                     self.stop();
                 }
             });
