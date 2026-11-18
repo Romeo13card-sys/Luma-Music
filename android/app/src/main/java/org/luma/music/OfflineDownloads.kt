@@ -146,6 +146,16 @@ object OfflineDownloads {
             context.startForegroundService(Intent(context, DownloadService::class.java))
         }
     }
+
+    fun forgetAccount(context: Context) {
+        val args = arguments(context)
+        cancelActive(context)
+        clearPending(context)
+        TokenStore(context, "offline_owner").clear()
+        Thread {
+            runCatching { NativeCore.call("offline_clear", args.toString()) }
+        }.start()
+    }
 }
 
 /** Persistent account-scoped queue; the active item remains on disk across process death. */
