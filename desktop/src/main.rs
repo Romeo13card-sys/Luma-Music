@@ -34,7 +34,10 @@ fn wave_event(track: &Value, station: &str, kind: &str) -> Option<Value> {
         "batchId": batch,
         "trackId": track_id
     });
-    if let Some(session) = track["waveSession"].as_str().filter(|value| !value.is_empty()) {
+    if let Some(session) = track["waveSession"]
+        .as_str()
+        .filter(|value| !value.is_empty())
+    {
         feedback["session"] = json!(session);
     }
     if let Some(album) = track["album"].as_str().filter(|value| !value.is_empty()) {
