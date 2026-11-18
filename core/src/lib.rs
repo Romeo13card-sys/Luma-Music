@@ -107,6 +107,53 @@ fn catalog_item(kind: &str, value: &Value) -> Value {
     item
 }
 
+fn catalog_entity_id(raw: &str, label: &str) -> Result<String> {
+    if raw.is_empty() || raw.len() > 64 || !raw.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(format!("Некорректный идентификатор: {label}").into());
+    }
+    Ok(raw.to_owned())
+}
+
+fn normalize_catalog_tracks(value: &mut Value) {
+    if let Some(items) = value.as_array_mut() {
+        for item in items {
+            *item = catalog_item("track", item);
+        }
+    }
+}
+
+fn normalize_catalog_album(value: &Value) -> Value {
+    let mut album = catalog_item("album", value);
+    if let Some(volumes) = album["volumes"].as_array_mut() {
+        for volume in volumes {
+            normalize_catalog_tracks(volume);
+        }
+    }
+    if album["tracks"].is_array() {
+        normalize_catalog_tracks(&mut album["tracks"]);
+    }
+    album
+}
+
+fn normalize_catalog_artist(value: &Value) -> Value {
+    let mut info = value.clone();
+    for key in ["artist", "albums", "lastReleases", "last_releases", "alsoAlbums", "also_albums", "similarArtists", "similar_artists"] {
+        if let Some(items) = info[key].as_array_mut() {
+            for item in items {
+                *item = catalog_item(if key == "artist" { "artist" } else { "album" }, item);
+            }
+        } else if key == "artist" && info[key].is_object() {
+            info[key] = catalog_item("artist", &info[key]);
+        }
+    }
+    for key in ["popularTracks", "popular_tracks"] {
+        if info[key].is_array() {
+            normalize_catalog_tracks(&mut info[key]);
+        }
+    }
+    info
+}
+
 fn catalog_search_query(query: &str, kind: &str, page: u64) -> Result<String> {
     if !matches!(kind, "track" | "album" | "artist" | "playlist") {
         return Err("Неподдерживаемый тип поиска".into());
@@ -274,6 +321,24 @@ impl MusicClient {
             "pager": section["pager"]
         }))
     }
+    pub fn catalog_album(&self, id: &str) -> Result<Value> {
+        let id = catalog_entity_id(id, "альбома")?;
+        let value = self.get(&format!("/albums/{id}/with-tracks"), &[])?;
+        if !value.is_object() {
+            return Err("Сервис не вернул альбом".into());
+        }
+        Ok(normalize_catalog_album(&value))
+    }
+
+    pub fn catalog_artist(&self, id: &str) -> Result<Value> {
+        let id = catalog_entity_id(id, "исполнителя")?;
+        let value = self.get(&format!("/artists/{id}/brief-info"), &[])?;
+        if !value.is_object() {
+            return Err("Сервис не вернул информацию об исполнителе".into());
+        }
+        Ok(normalize_catalog_artist(&value))
+    }
+
     pub fn library(&self) -> Result<Value> {
         let account = self.account()?;
         let uid = account["uid"]
@@ -644,6 +709,8 @@ pub fn dispatch(token: &str, operation: &str, argument: &str) -> String {
                 let page = options["page"].as_u64().unwrap_or(0);
                 client.search_catalog(query, kind, page)
             }
+            "catalog_album" => client.catalog_album(argument),
+            "catalog_artist" => client.catalog_artist(argument),
             "library" => client.library(),
             "playlist" => client.playlist(argument).map(|v| json!(v)),
             "likes" => client.likes().map(|v| json!(v)),
@@ -922,6 +989,34 @@ mod tests {
         assert!(result.available);
         assert!(track(&json!({"title":"Без ID"})).is_none());
     }
+    #[test]
+    fn catalog_detail_ids_are_numeric_and_bounded() {
+        assert_eq!(catalog_entity_id("42", "альбома").unwrap(), "42");
+        for invalid in ["", "../42", "42:7", "1".repeat(65).as_str()] {
+            assert!(catalog_entity_id(invalid, "альбома").is_err());
+        }
+    }
+
+    #[test]
+    fn catalog_album_normalizes_each_disc_and_artist_details() {
+        let album = normalize_catalog_album(&json!({
+            "id": 9,
+            "title": "Двойной альбом",
+            "volumes": [[{"id": 42, "title": "Песня", "artists": [{"name": "А"}], "available": true}]],
+        }));
+        assert_eq!(album["volumes"][0][0]["id"], "42");
+        assert_eq!(album["volumes"][0][0]["artists"], "А");
+
+        let artist = normalize_catalog_artist(&json!({
+            "artist": {"id": 7, "name": "Исполнитель"},
+            "popularTracks": [{"id": 42, "title": "Хит", "artists": [{"name": "Исполнитель"}], "available": true}],
+            "albums": [{"id": 9, "title": "Альбом", "coverUri": "avatars.yandex.net/get-music-content/abc/400x400"}]
+        }));
+        assert_eq!(artist["artist"]["name"], "Исполнитель");
+        assert_eq!(artist["popularTracks"][0]["id"], "42");
+        assert_eq!(artist["albums"][0]["cover"], "https://avatars.yandex.net/get-music-content/abc/%%");
+    }
+
     #[test]
     fn catalog_items_normalize_tracks_and_public_artwork() {
         let song = catalog_item(
