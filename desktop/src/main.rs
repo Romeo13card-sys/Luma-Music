@@ -12,6 +12,13 @@ use eframe::egui;
 use engine::{Jobs, Ticket};
 use rodio::Source;
 use serde_json::{json, Value};
+
+fn unix_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or_default()
+}
 use std::{
     fs::File,
     io::BufReader,
@@ -80,6 +87,9 @@ struct App {
     pending_playlist_target: Option<(String, String)>,
     current_playlist_owner: String,
     current_playlist_kind: String,
+    wave_mode: bool,
+    wave_station: String,
+    wave_session: String,
     queue: Vec<Value>,
     connected: bool,
     jobs: Jobs,
@@ -122,6 +132,9 @@ impl App {
             pending_playlist_target: None,
             current_playlist_owner: String::new(),
             current_playlist_kind: String::new(),
+            wave_mode: false,
+            wave_station: "user:onyourwave".into(),
+            wave_session: String::new(),
             queue: vec![],
             connected: false,
             jobs: Jobs::default(),
@@ -238,9 +251,44 @@ impl App {
                                     "Аккаунт: {}",
                                     data["name"].as_str().unwrap_or("Яндекс")
                                 );
+                            } else if op == "wave" {
+                                self.tracks = data.as_array().cloned().unwrap_or_default();
+                                self.catalog_results.clear();
+                                self.catalog_detail = None;
+                                self.catalog_detail_kind.clear();
+                                self.library_visible = false;
+                                self.catalog_kind = "track".into();
+                                self.wave_mode = true;
+                                if let Some(first) = self.tracks.first() {
+                                    self.wave_station = first["waveStation"]
+                                        .as_str()
+                                        .unwrap_or("user:onyourwave")
+                                        .to_owned();
+                                    self.wave_session = first["waveSession"]
+                                        .as_str()
+                                        .unwrap_or("")
+                                        .to_owned();
+                                    let batch = first["waveBatch"].as_str().unwrap_or("").to_owned();
+                                    if !batch.is_empty() {
+                                        self.request(
+                                            "wave_feedback",
+                                            json!({
+                                                "type": "radioStarted",
+                                                "station": self.wave_station,
+                                                "timestamp": unix_millis(),
+                                                "batchId": batch,
+                                                "session": self.wave_session
+                                            }).to_string(),
+                                        );
+                                    }
+                                }
+                                self.status = format!("Моя волна · треков: {}", self.tracks.len());
+                            } else if op == "wave_feedback" {
+                                self.status = "Отзыв для Моей волны отправлен".into();
                             } else if op == "library" {
                                 self.library_items = data.as_array().cloned().unwrap_or_default();
                                 self.library_visible = true;
+                                self.wave_mode = false;
                                 self.catalog_detail = None;
                                 self.catalog_detail_kind.clear();
                                 self.status = format!("Плейлистов: {}", self.library_items.len());
@@ -304,6 +352,7 @@ impl App {
                                 self.status = "Плейлисты обновлены".into();
                                 self.request("library", String::new());
                             } else if op == "catalog_search" {
+                                self.wave_mode = false;
                                 self.library_visible = false;
                                 self.catalog_results = data["results"]
                                     .as_array()
