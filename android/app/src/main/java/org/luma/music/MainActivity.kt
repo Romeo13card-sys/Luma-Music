@@ -640,22 +640,8 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
         var pageSize = 20
         var hasNext = false
 
-        val previous = action("‹ Назад") {
-            if (currentPage > 0) {
-                currentPage--
-                runCatalogSearch(false)
-            }
-        }
-        val next = action("Ещё ›") {
-            if (hasNext) {
-                currentPage++
-                runCatalogSearch(false)
-            }
-        }
-        val navigation = row().apply {
-            addView(previous, LinearLayout.LayoutParams(0, -2, 1f))
-            addView(next, LinearLayout.LayoutParams(0, -2, 1f))
-        }
+        lateinit var previous: LumaButton
+        lateinit var next: LumaButton
 
         fun drawCategories() {
             categoryRow.removeAllViews()
@@ -729,6 +715,22 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
             }
         }
 
+        previous = action("‹ Назад") {
+            if (currentPage > 0) {
+                currentPage--
+                runCatalogSearch(false)
+            }
+        }
+        next = action("Ещё ›") {
+            if (hasNext) {
+                currentPage++
+                runCatalogSearch(false)
+            }
+        }
+        val navigation = row().apply {
+            addView(previous, LinearLayout.LayoutParams(0, -2, 1f))
+            addView(next, LinearLayout.LayoutParams(0, -2, 1f))
+        }
         drawCategories()
         box.setOnEditorActionListener { _, id, _ ->
             if (id == android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH) {
