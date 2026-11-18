@@ -664,14 +664,22 @@ impl eframe::App for App {
                         if ui.button(label).clicked() {
                             let id = item["id"].as_str().unwrap_or("").to_owned();
                             if self.catalog_kind == "playlist" {
-                                let owner = item["owner"]["uid"].as_str().or_else(|| item["owner"]["uid"].as_u64().map(|_| "")).unwrap_or("");
-                                let owner = if owner.is_empty() { item["owner"]["uid"].as_u64().map(|v| v.to_string()).unwrap_or_default() } else { owner.to_owned() };
+                                let owner = item["owner"]["uid"]
+                                    .as_str()
+                                    .map(str::to_owned)
+                                    .or_else(|| item["owner"]["uid"].as_u64().map(|v| v.to_string()))
+                                    .unwrap_or_default();
                                 let kind = item["kind"].as_str().unwrap_or("").to_owned();
                                 if !owner.is_empty() && !kind.is_empty() {
                                     selected_playlist = Some((owner, kind));
                                 }
                             } else if !id.is_empty() {
-                                selected_detail = Some((if self.catalog_kind == "album" { "catalog_album" } else { "catalog_artist" }.into(), id));
+                                let operation = if self.catalog_kind == "album" {
+                                    "catalog_album"
+                                } else {
+                                    "catalog_artist"
+                                };
+                                selected_detail = Some((operation.to_owned(), id));
                             }
                         }
                     }
