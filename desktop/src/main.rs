@@ -560,12 +560,19 @@ impl eframe::App for App {
                     if ui.button("К результатам").clicked() {
                         self.catalog_detail = None;
                     }
+                    if ui.button("Плейлисты").clicked() {
+                        self.catalog_detail = None;
+                        self.library_visible = true;
+                        self.request("library", String::new());
+                    }
                     if ui.button("Избранное").clicked() {
                         self.catalog_detail = None;
+                        self.library_visible = false;
                         self.request("likes", String::new());
                     }
                     if ui.button("Моя волна · партия").clicked() {
                         self.catalog_detail = None;
+                        self.library_visible = false;
                         self.request("wave", String::new());
                     }
                 });
@@ -685,6 +692,11 @@ impl eframe::App for App {
             let mut selected_track: Option<(Vec<Value>, usize)> = None;
             let mut selected_detail: Option<(String, String)> = None;
             let mut selected_playlist: Option<(String, String)> = None;
+            let mut selected_playlist_add: Option<(String, String)> = None;
+            let mut selected_playlist_rename: Option<(String, String, String)> = None;
+            let mut selected_create_title: Option<String> = None;
+            let mut open_library = false;
+            let library_items = self.library_items.clone();
             let detail_tracks = self
                 .catalog_detail
                 .as_ref()
@@ -701,6 +713,11 @@ impl eframe::App for App {
                             tracks.extend(items.iter().cloned());
                         }
                         tracks
+                    } else if self.catalog_detail_kind == "playlist_detail" {
+                        detail["tracks"]
+                            .as_array()
+                            .map(|entries| entries.iter().map(|entry| entry["track"].clone()).collect())
+                            .unwrap_or_default()
                     } else {
                         detail["popularTracks"]
                             .as_array()
@@ -711,8 +728,79 @@ impl eframe::App for App {
                 })
                 .unwrap_or_default();
             egui::ScrollArea::vertical().show(ui, |ui| {
-                if let Some(detail) = &self.catalog_detail {
-                    if self.catalog_detail_kind == "catalog_album" {
+                if self.library_visible {
+                    ui.heading("Медиатека · плейлисты");
+                    ui.horizontal(|ui| {
+                        ui.text_edit_singleline(&mut self.new_playlist_title);
+                        if ui.button("Создать плейлист").clicked() {
+                            let title = self.new_playlist_title.trim().to_owned();
+                            if !title.is_empty() {
+                                selected_create_title = Some(title);
+                                self.new_playlist_title.clear();
+                            }
+                        }
+                    });
+                    if self.pending_add_track.is_some() {
+                        ui.label("Выберите плейлист, куда добавить выбранный трек.");
+                        if ui.button("Отменить добавление").clicked() {
+                            self.pending_add_track = None;
+                        }
+                    }
+                    for item in &library_items {
+                        let title = item["title"].as_str().unwrap_or("Плейлист").to_owned();
+                        let owner = item["owner"]["uid"]
+                            .as_str()
+                            .map(str::to_owned)
+                            .or_else(|| item["owner"]["uid"].as_u64().map(|v| v.to_string()))
+                            .unwrap_or_default();
+                        let kind = item["kind"]
+                            .as_str()
+                            .map(str::to_owned)
+                            .or_else(|| item["kind"].as_u64().map(|v| v.to_string()))
+                            .unwrap_or_default();
+                        ui.horizontal_wrapped(|ui| {
+                            if ui.button(format!("{title}  ▶")).clicked() {
+                                selected_playlist = Some((owner.clone(), kind.clone()));
+                            }
+                            if self.pending_add_track.is_some()
+                                && ui.button("Добавить").clicked()
+                            {
+                                selected_playlist_add = Some((owner.clone(), kind.clone()));
+                            }
+                            let editing = self.rename_target.as_ref()
+                                .is_some_and(|target| target.0 == owner && target.1 == kind);
+                            if editing {
+                                ui.text_edit_singleline(&mut self.rename_title);
+                                if ui.button("Сохранить").clicked() {
+                                    selected_playlist_rename = Some((
+                                        owner.clone(),
+                                        kind.clone(),
+                                        self.rename_title.trim().to_owned(),
+                                    ));
+                                    self.rename_target = None;
+                                }
+                                if ui.button("Отмена").clicked() {
+                                    self.rename_target = None;
+                                }
+                            } else if ui.button("Переименовать").clicked() {
+                                self.rename_target = Some((owner.clone(), kind.clone()));
+                                self.rename_title = title.clone();
+                            }
+                        });
+                    }
+                    if ui.button("Вернуться к каталогу").clicked() {
+                        self.library_visible = false;
+                    }
+                } else if let Some(detail) = &self.catalog_detail {
+                    if self.catalog_detail_kind == "playlist_detail" {
+                        ui.heading(detail["title"].as_str().unwrap_or("Плейлист"));
+                        ui.label(format!("Треков: {}", detail["tracks"].as_array().map_or(0, Vec::len)));
+                        if ui.button("К плейлистам").clicked() {
+                            self.catalog_detail = None;
+                            self.library_visible = true;
+                            open_library = true;
+                        }
+                    } else if self.catalog_detail_kind == "catalog_album" {
                         ui.heading(detail["title"].as_str().unwrap_or("Альбом"));
                         ui.label(format!(
                             "{} · {}",
@@ -766,29 +854,36 @@ impl eframe::App for App {
                     }
                 } else if self.catalog_kind == "track" {
                     for (index, track) in self.tracks.iter().enumerate() {
-                        let label = format!(
-                            "{} {} — {}",
-                            if self
-                                .index
-                                .and_then(|i| self.queue.get(i))
-                                .is_some_and(|current| current["id"] == track["id"])
+                        ui.horizontal_wrapped(|ui| {
+                            let label = format!(
+                                "{} {} — {}",
+                                if self
+                                    .index
+                                    .and_then(|i| self.queue.get(i))
+                                    .is_some_and(|current| current["id"] == track["id"])
+                                {
+                                    "●"
+                                } else {
+                                    "▶"
+                                },
+                                track["title"].as_str().unwrap_or("Трек"),
+                                track["artists"].as_str().unwrap_or("")
+                            );
+                            if ui
+                                .add_enabled(
+                                    !self.jobs.busy() && track["available"] == true,
+                                    egui::Button::new(label),
+                                )
+                                .clicked()
                             {
-                                "●"
-                            } else {
-                                "▶"
-                            },
-                            track["title"].as_str().unwrap_or("Трек"),
-                            track["artists"].as_str().unwrap_or("")
-                        );
-                        if ui
-                            .add_enabled(
-                                !self.jobs.busy() && track["available"] == true,
-                                egui::Button::new(label),
-                            )
-                            .clicked()
-                        {
-                            selected_track = Some((self.tracks.clone(), index));
-                        }
+                                selected_track = Some((self.tracks.clone(), index));
+                            }
+                            if ui.button("＋ В плейлист").clicked() {
+                                self.pending_add_track = Some(track.clone());
+                                self.library_visible = true;
+                                open_library = self.library_items.is_empty();
+                            }
+                        });
                     }
                 } else {
                     for item in &self.catalog_results {
@@ -843,14 +938,43 @@ impl eframe::App for App {
                     }
                 }
             });
+            if let Some(title) = selected_create_title {
+                self.request(
+                    "playlist_create",
+                    json!({"title": title, "visibility": "private"}).to_string(),
+                );
+            }
+            if let Some((owner, kind, title)) = selected_playlist_rename {
+                if !title.is_empty() {
+                    self.request(
+                        "playlist_rename",
+                        json!({"owner": owner, "kind": kind, "title": title}).to_string(),
+                    );
+                }
+            }
+            if let Some((owner, kind)) = selected_playlist_add {
+                self.pending_playlist_target = Some((owner.clone(), kind.clone()));
+                self.request(
+                    "playlist_detail",
+                    json!({"owner": owner, "kind": kind}).to_string(),
+                );
+            }
+            if let Some((owner, kind)) = selected_playlist {
+                self.current_playlist_owner = owner.clone();
+                self.current_playlist_kind = kind.clone();
+                self.request(
+                    "playlist_detail",
+                    json!({"owner": owner, "kind": kind}).to_string(),
+                );
+            }
+            if open_library {
+                self.request("library", String::new());
+            }
             if let Some((queue, index)) = selected_track {
                 self.play_from(queue, index);
             }
             if let Some((operation, id)) = selected_detail {
                 self.request(&operation, id);
-            }
-            if let Some((owner, kind)) = selected_playlist {
-                self.request("playlist", format!("{owner}:{kind}"));
             }
             ui.separator();
             ui.hyperlink_to(
