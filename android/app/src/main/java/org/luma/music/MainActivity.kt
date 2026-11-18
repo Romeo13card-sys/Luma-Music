@@ -901,7 +901,7 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
         shell("Поиск", false)
         generation++
         body.removeAllViews()
-        body.addView(action("‹ К результатам поиска") { search() })
+        body.addView(action("‹ К результатам поиска") { shell("Поиск", false); search() })
         request("catalog_artist", id) { raw ->
             val info = raw as JSONObject
             val artist = info.optJSONObject("artist") ?: info
