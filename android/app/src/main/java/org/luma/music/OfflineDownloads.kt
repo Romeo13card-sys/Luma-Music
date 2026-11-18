@@ -80,7 +80,7 @@ object OfflineDownloads {
         val next = items.optJSONObject(0) ?: return null
         val remaining = JSONArray()
         for (index in 1 until items.length()) {
-            items.optJSONObject(index)?.let(remaining::put)
+            items.optJSONObject(index)?.let { remaining.put(it) }
         }
         check(
             store.edit()
@@ -114,6 +114,13 @@ object OfflineDownloads {
     fun hasWork(context: Context): Boolean {
         val store = prefs(context)
         return store.getString(ACTIVE, null) != null || pending(context).length() > 0
+    }
+
+    fun isActive(context: Context, id: String): Boolean {
+        val active = runCatching {
+            prefs(context).getString(ACTIVE, null)?.let(::JSONObject)
+        }.getOrNull()
+        return active?.optString("id") == id
     }
 
     fun queueSummary(context: Context): String {
@@ -213,7 +220,6 @@ class DownloadService : Service() {
         val quality = prefs.getInt("download_quality", 192)
 
         worker.execute {
-            var completed = false
             try {
                 val network = getSystemService(android.net.ConnectivityManager::class.java)
                 fun allowed() = !wifi || (
@@ -257,7 +263,6 @@ class DownloadService : Service() {
                 OfflineDownloads.complete(this, id)
                 message = "Скачано · $title"
                 percent = 100
-                completed = true
             } catch (e: Exception) {
                 message = e.message ?: "Не удалось скачать трек"
             } finally {
@@ -265,7 +270,7 @@ class DownloadService : Service() {
                     busy = false
                     revision++
                     stopForeground(STOP_FOREGROUND_REMOVE)
-                    if (completed && OfflineDownloads.hasWork(this)) {
+                    if (OfflineDownloads.hasWork(this) && !OfflineDownloads.isActive(this, id)) {
                         OfflineDownloads.resume(this)
                     } else {
                         stopSelf(startId)
