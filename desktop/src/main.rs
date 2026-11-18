@@ -270,16 +270,16 @@ impl App {
                                         .to_owned();
                                     let batch = first["waveBatch"].as_str().unwrap_or("").to_owned();
                                     if !batch.is_empty() {
-                                        self.request(
-                                            "wave_feedback",
-                                            json!({
-                                                "type": "radioStarted",
-                                                "station": self.wave_station,
-                                                "timestamp": unix_millis(),
-                                                "batchId": batch,
-                                                "session": self.wave_session
-                                            }).to_string(),
-                                        );
+                                        let mut feedback = json!({
+                                            "type": "radioStarted",
+                                            "station": self.wave_station,
+                                            "timestamp": unix_millis(),
+                                            "batchId": batch
+                                        });
+                                        if !self.wave_session.is_empty() {
+                                            feedback["session"] = json!(self.wave_session);
+                                        }
+                                        self.request("wave_feedback", feedback.to_string());
                                     }
                                 }
                                 self.status = format!("Моя волна · треков: {}", self.tracks.len());
@@ -663,15 +663,17 @@ impl eframe::App for App {
                         let last = self.tracks.last().cloned().unwrap_or(Value::Null);
                         let previous = last["id"].as_str().unwrap_or("").to_owned();
                         let album = last["album"].as_str().unwrap_or("").to_owned();
-                        self.request(
-                            "wave",
-                            json!({
-                                "station": self.wave_station,
-                                "session": self.wave_session,
-                                "previous": previous,
-                                "album": album
-                            }).to_string(),
-                        );
+                        let mut next = json!({
+                            "station": self.wave_station,
+                            "previous": previous
+                        });
+                        if !self.wave_session.is_empty() {
+                            next["session"] = json!(self.wave_session);
+                        }
+                        if !album.is_empty() {
+                            next["album"] = json!(album);
+                        }
+                        self.request("wave", next.to_string());
                     }
                     if self.wave_mode && ui.button("Выйти из волны").clicked() {
                         self.wave_mode = false;
@@ -992,12 +994,12 @@ impl eframe::App for App {
                                 if ui.button("♥").clicked() {
                                     let mut feedback = json!({
                                         "type": "like",
-                                        "station": track["waveStation"].as_str().unwrap_or(&self.wave_station),
+                                        "station": track["waveStation"].as_str().filter(|s| !s.is_empty()).unwrap_or(&self.wave_station),
                                         "timestamp": unix_millis(),
                                         "batchId": track["waveBatch"].as_str().unwrap_or(""),
                                         "trackId": track["id"].as_str().unwrap_or("")
                                     });
-                                    if let Some(session) = track["waveSession"].as_str() {
+                                    if let Some(session) = track["waveSession"].as_str().filter(|s| !s.is_empty()) {
                                         feedback["session"] = json!(session);
                                     }
                                     if let Some(album) = track["album"].as_str() {
