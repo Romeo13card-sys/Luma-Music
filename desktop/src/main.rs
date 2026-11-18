@@ -299,6 +299,7 @@ impl App {
                                 self.status = "Плейлисты обновлены".into();
                                 self.request("library", String::new());
                             } else if op == "catalog_search" {
+                                self.library_visible = false;
                                 self.catalog_results = data["results"]
                                     .as_array()
                                     .cloned()
