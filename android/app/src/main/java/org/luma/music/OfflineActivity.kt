@@ -103,7 +103,8 @@ class OfflineActivity:MaterialActivity() {
         button("Удалить все загрузки",root){
             LumaDialog(this).setTitle("Удалить все загрузки?").setMessage("Будут удалены скачанные и незавершённые файлы этого аккаунта.")
                 .setNegativeButton("Отмена",null).setPositiveButton("Удалить") {_,_->
-                    DownloadService.cancel()
+                    OfflineDownloads.cancelActive(this)
+                    OfflineDownloads.clearPending(this)
                     val args=OfflineDownloads.arguments(this)
                     worker.execute {
                         val result=runCatching {NativeCore.call("offline_clear",args.toString())}
