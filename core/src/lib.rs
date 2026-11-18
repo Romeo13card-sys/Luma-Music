@@ -398,6 +398,25 @@ impl MusicClient {
         Ok(format!("/users/{owner}/playlists/{kind}"))
     }
 
+    pub fn playlist_detail(&self, raw: &str) -> Result<Value> {
+        let options: Value =
+            serde_json::from_str(raw).map_err(|_| "Некорректный запрос плейлиста")?;
+        let path = self.owned_playlist_path(
+            options["owner"].as_str().unwrap_or(""),
+            options["kind"].as_str().unwrap_or(""),
+        )?;
+        let mut value = self.get(&path, &[])?;
+        let tracks = value["tracks"]
+            .as_array_mut()
+            .ok_or("Плейлист не содержит списка треков")?;
+        for entry in tracks {
+            if let Some(normalized) = track(&entry["track"]) {
+                entry["track"] = json!(normalized);
+            }
+        }
+        Ok(value)
+    }
+
     pub fn playlist_create(&self, raw: &str) -> Result<Value> {
         let options: Value =
             serde_json::from_str(raw).map_err(|_| "Некорректный запрос создания плейлиста")?;
@@ -851,6 +870,7 @@ pub fn dispatch(token: &str, operation: &str, argument: &str) -> String {
             }
             "catalog_album" => client.catalog_album(argument),
             "catalog_artist" => client.catalog_artist(argument),
+            "playlist_detail" => client.playlist_detail(argument),
             "playlist_create" => client.playlist_create(argument),
             "playlist_rename" => client.playlist_rename(argument),
             "playlist_delete" => client.playlist_delete(argument),
