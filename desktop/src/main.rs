@@ -113,6 +113,7 @@ struct App {
     pending_playlist_target: Option<(String, String)>,
     current_playlist_owner: String,
     current_playlist_kind: String,
+    pending_delete_playlist: Option<(String, String, String)>,
     wave_mode: bool,
     wave_station: String,
     wave_session: String,
@@ -158,6 +159,7 @@ impl App {
             pending_playlist_target: None,
             current_playlist_owner: String::new(),
             current_playlist_kind: String::new(),
+            pending_delete_playlist: None,
             wave_mode: false,
             wave_station: "user:onyourwave".into(),
             wave_session: String::new(),
@@ -351,6 +353,17 @@ impl App {
                                     self.library_visible = false;
                                     self.wave_mode = false;
                                     self.status = "Плейлист загружен".into();
+                                }
+                            } else if op == "playlist_delete_track" {
+                                self.status = "Трек удалён из плейлиста".into();
+                                if !self.current_playlist_owner.is_empty() {
+                                    self.request(
+                                        "playlist_detail",
+                                        json!({
+                                            "owner": self.current_playlist_owner,
+                                            "kind": self.current_playlist_kind
+                                        }).to_string(),
+                                    );
                                 }
                             } else if op == "playlist_insert_track" {
                                 self.pending_add_track = None;
@@ -552,6 +565,7 @@ impl eframe::App for App {
                     self.rename_title.clear();
                     self.current_playlist_owner.clear();
                     self.current_playlist_kind.clear();
+                    self.pending_delete_playlist = None;
                     self.wave_mode = false;
                     self.wave_session.clear();
                     self.stop();
@@ -832,6 +846,8 @@ impl eframe::App for App {
             let mut selected_playlist: Option<(String, String)> = None;
             let mut selected_playlist_add: Option<(String, String)> = None;
             let mut selected_playlist_rename: Option<(String, String, String)> = None;
+            let mut selected_delete_playlist: Option<(String, String, String)> = None;
+            let mut selected_playlist_remove: Option<(String, String, usize, u64)> = None;
             let mut selected_wave_feedback: Option<Value> = None;
             let mut selected_create_title: Option<String> = None;
             let mut open_library = false;
@@ -929,6 +945,10 @@ impl eframe::App for App {
                                 self.rename_target = Some((owner.clone(), kind.clone()));
                                 self.rename_title = title.clone();
                             }
+                            if ui.button("Удалить").clicked() {
+                                selected_delete_playlist =
+                                    Some((owner.clone(), kind.clone(), title.clone()));
+                            }
                         });
                     }
                     if ui.button("Вернуться к каталогу").clicked() {
@@ -982,21 +1002,33 @@ impl eframe::App for App {
                             ui.heading("Популярные треки");
                         }
                     }
+                    let playlist_detail = self.catalog_detail_kind == "playlist_detail";
+                    let revision = detail["revision"].as_u64().unwrap_or(1).max(1);
                     for (index, track) in detail_tracks.iter().enumerate() {
-                        let label = format!(
-                            "▶ {} — {}",
-                            track["title"].as_str().unwrap_or("Трек"),
-                            track["artists"].as_str().unwrap_or("")
-                        );
-                        if ui
-                            .add_enabled(
-                                !self.jobs.busy() && track["available"] == true,
-                                egui::Button::new(label),
-                            )
-                            .clicked()
-                        {
-                            selected_track = Some((detail_tracks.clone(), index));
-                        }
+                        ui.horizontal_wrapped(|ui| {
+                            let label = format!(
+                                "▶ {} — {}",
+                                track["title"].as_str().unwrap_or("Трек"),
+                                track["artists"].as_str().unwrap_or("")
+                            );
+                            if ui
+                                .add_enabled(
+                                    !self.jobs.busy() && track["available"] == true,
+                                    egui::Button::new(label),
+                                )
+                                .clicked()
+                            {
+                                selected_track = Some((detail_tracks.clone(), index));
+                            }
+                            if playlist_detail && ui.button("Убрать").clicked() {
+                                selected_playlist_remove = Some((
+                                    self.current_playlist_owner.clone(),
+                                    self.current_playlist_kind.clone(),
+                                    index,
+                                    revision,
+                                ));
+                            }
+                        });
                     }
                 } else if self.catalog_kind == "track" {
                     for (index, track) in self.tracks.iter().enumerate() {
@@ -1104,6 +1136,21 @@ impl eframe::App for App {
             if let Some(feedback) = selected_wave_feedback {
                 self.request("wave_feedback", feedback.to_string());
             }
+            if let Some((owner, kind, title)) = selected_delete_playlist {
+                self.pending_delete_playlist = Some((owner, kind, title));
+            }
+            if let Some((owner, kind, index, revision)) = selected_playlist_remove {
+                self.request(
+                    "playlist_delete_track",
+                    json!({
+                        "owner": owner,
+                        "kind": kind,
+                        "from": index,
+                        "to": index,
+                        "revision": revision
+                    }).to_string(),
+                );
+            }
             if let Some(title) = selected_create_title {
                 self.request(
                     "playlist_create",
@@ -1135,6 +1182,28 @@ impl eframe::App for App {
             }
             if open_library {
                 self.request("library", String::new());
+            }
+            if let Some((owner, kind, title)) = self.pending_delete_playlist.clone() {
+                let mut confirm = false;
+                let mut cancel = false;
+                egui::Window::new("Удалить плейлист?")
+                    .collapsible(false)
+                    .show(ctx, |ui| {
+                        ui.label(format!("Удалить «{title}» из аккаунта?"));
+                        ui.horizontal(|ui| {
+                            confirm = ui.button("Удалить").clicked();
+                            cancel = ui.button("Отмена").clicked();
+                        });
+                    });
+                if confirm {
+                    self.pending_delete_playlist = None;
+                    self.request(
+                        "playlist_delete",
+                        json!({"owner": owner, "kind": kind}).to_string(),
+                    );
+                } else if cancel {
+                    self.pending_delete_playlist = None;
+                }
             }
             if let Some((queue, index)) = selected_track {
                 self.play_from(queue, index);
