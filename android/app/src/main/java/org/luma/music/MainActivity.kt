@@ -1009,14 +1009,14 @@ class MainActivity : MaterialActivity(), LibraryActions.Observer, PersonalLibrar
         val song=most?.optJSONObject("song")
         val message=buildString {
             append("Треков в истории: ").append(tracks)
-            append("\\nЗапусков воспроизведения: ").append(starts)
+            append("\nЗапусков воспроизведения: ").append(starts)
             if(song!=null) {
-                append("\\n\\nСамый часто включаемый трек:")
-                append("\\n").append(song.optString("title","Без названия"))
-                append("\\n").append(song.optString("artists",""))
-                append("\\nВключали: ").append(most.optInt("plays")).append(" раз")
+                append("\n\nСамый часто включаемый трек:")
+                append("\n").append(song.optString("title","Без названия"))
+                append("\n").append(song.optString("artists",""))
+                append("\nВключали: ").append(most.optInt("plays")).append(" раз")
             }
-            append("\\n\\nСтатистика хранится локально и зависит от включённой истории.")
+            append("\n\nСтатистика хранится локально и зависит от включённой истории.")
         }
         LumaDialog(this).setTitle("Моя статистика").setMessage(message)
             .setPositiveButton("Закрыть",null).show()
