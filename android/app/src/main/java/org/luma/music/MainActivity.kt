@@ -11,7 +11,7 @@ import android.widget.*
 import java.util.concurrent.Executors
 import org.json.*
 
-class MainActivity : MaterialActivity(),LibraryActions.Observer {
+class MainActivity : MaterialActivity(), LibraryActions.Observer, PersonalLibrary.Observer {
     private lateinit var root: LinearLayout
     private lateinit var body: LinearLayout
     private lateinit var status: TextView
@@ -31,6 +31,7 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
     private var heartTrackId=""
     private var seenLibraryRevision=-1L
     private var pendingReactionId:String?=null
+    private var personalLibraryTicket=0
     private var lastPlaying:Boolean?=null
     private var playerScreen=false
     private var playerAccent:Int?=null
@@ -964,6 +965,8 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
         collectionCards(body)
         gap(body,12)
         body.addView(action("Музыка с устройства"){openFile()})
+        gap(body,8)
+        body.addView(action("Моя статистика прослушиваний"){showListeningStats()})
         gap(body,12);body.addView(text("Плейлисты",22f,white,true))
         if(token.isBlank()){
             body.addView(text("Подключите аккаунт, чтобы увидеть свои плейлисты.",15f,muted));return
@@ -984,6 +987,39 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
                 gap(body,6)
             }
         }
+    }
+
+    private fun showListeningStats() {
+        val ticket=++personalLibraryTicket
+        if(!PersonalLibrary.request(this,this,ticket,"history_stats")) {
+            notice("Не удалось запросить статистику")
+        }
+    }
+
+    override fun libraryResult(ticket:Int,operation:String,result:JSONObject) {
+        if(ticket!=personalLibraryTicket || operation!="history_stats") return
+        if(!result.optBoolean("ok")) {
+            notice(result.optString("error","Не удалось загрузить статистику"))
+            return
+        }
+        val data=result.optJSONObject("data") ?: JSONObject()
+        val tracks=data.optInt("tracks")
+        val starts=data.optLong("starts")
+        val most=data.optJSONObject("most_played")
+        val song=most?.optJSONObject("song")
+        val message=buildString {
+            append("Треков в истории: ").append(tracks)
+            append("\\nЗапусков воспроизведения: ").append(starts)
+            if(song!=null) {
+                append("\\n\\nСамый часто включаемый трек:")
+                append("\\n").append(song.optString("title","Без названия"))
+                append("\\n").append(song.optString("artists",""))
+                append("\\nВключали: ").append(most.optInt("plays")).append(" раз")
+            }
+            append("\\n\\nСтатистика хранится локально и зависит от включённой истории.")
+        }
+        LumaDialog(this).setTitle("Моя статистика").setMessage(message)
+            .setPositiveButton("Закрыть",null).show()
     }
 
     private fun createPlaylist() {
