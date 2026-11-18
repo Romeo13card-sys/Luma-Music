@@ -143,12 +143,7 @@ fn playlist_delete_diff(from: u64, to: u64) -> Result<String> {
     Ok(json!([{"op": "delete", "from": from, "to": to}]).to_string())
 }
 
-fn playlist_move_diff(
-    track_id: &str,
-    album_id: &str,
-    from: u64,
-    to: u64,
-) -> Result<String> {
+fn playlist_move_diff(track_id: &str, album_id: &str, from: u64, to: u64) -> Result<String> {
     let track_id = catalog_entity_id(track_id, "трека")?;
     let album_id = catalog_entity_id(album_id, "альбома")?;
     if from > 100_000 || to > 100_000 || from == to {
@@ -537,7 +532,10 @@ impl MusicClient {
         )?;
         let from = options["from"].as_u64().ok_or("Не указан индекс трека")?;
         let to = options["to"].as_u64().ok_or("Не указан конец диапазона")?;
-        let revision = options["revision"].as_u64().filter(|value| *value > 0).unwrap_or(1);
+        let revision = options["revision"]
+            .as_u64()
+            .filter(|value| *value > 0)
+            .unwrap_or(1);
         let diff = playlist_delete_diff(from, to)?;
         self.post(
             &format!("{path}/change-relative"),
