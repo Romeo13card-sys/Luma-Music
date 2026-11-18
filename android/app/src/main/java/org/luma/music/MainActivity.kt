@@ -1014,7 +1014,7 @@ class MainActivity : MaterialActivity(), LibraryActions.Observer, PersonalLibrar
                 append("\n\nСамый часто включаемый трек:")
                 append("\n").append(song.optString("title","Без названия"))
                 append("\n").append(song.optString("artists",""))
-                append("\nВключали: ").append(most.optInt("plays")).append(" раз")
+                append("\nВключали: ").append(most?.optInt("plays") ?: 0).append(" раз")
             }
             append("\n\nСтатистика хранится локально и зависит от включённой истории.")
         }
