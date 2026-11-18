@@ -64,6 +64,9 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
 
     private var token = ""
     private var demo = false
+    private var catalogQuery = ""
+    private var catalogKind = "track"
+    private var catalogPage = 0
     @Volatile private var generation = 0
     private val executor = Executors.newSingleThreadExecutor()
     private val apiRequests = LatestRequests()
@@ -622,6 +625,7 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
             setPadding(dp(16), dp(12), dp(16), dp(12))
             imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
         }
+        box.setText(catalogQuery)
         body.addView(box)
 
         val categories = listOf(
@@ -634,9 +638,9 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
         body.addView(categoryRow)
         val results = column()
         val pageStatus = text("", 12f, muted)
-        var selectedKind = "track"
-        var currentQuery = ""
-        var currentPage = 0
+        var selectedKind = catalogKind
+        var currentQuery = catalogQuery
+        var currentPage = catalogPage
         var pageSize = 20
         var hasNext = false
 
@@ -664,6 +668,9 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
             }
             if (resetPage) currentPage = 0
             currentQuery = query
+            catalogQuery = query
+            catalogKind = selectedKind
+            catalogPage = currentPage
             (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
                 .hideSoftInputFromWindow(box.windowToken, 0)
             generation++
@@ -703,7 +710,9 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
                 categoryRow.addView(
                     action(label, kind == selectedKind) {
                         selectedKind = kind
+                        catalogKind = kind
                         currentPage = 0
+                        catalogPage = 0
                         drawCategories()
                         runCatalogSearch()
                     },
@@ -718,12 +727,14 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
         previous = action("‹ Назад") {
             if (currentPage > 0) {
                 currentPage--
+                catalogPage = currentPage
                 runCatalogSearch(false)
             }
         }
         next = action("Ещё ›") {
             if (hasNext) {
                 currentPage++
+                catalogPage = currentPage
                 runCatalogSearch(false)
             }
         }
@@ -745,6 +756,7 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
         body.addView(results)
         body.addView(navigation)
         updateNavigation()
+        if (catalogQuery.isNotBlank()) runCatalogSearch(false)
     }
 
     private fun renderCatalogResults(target: LinearLayout, items: JSONArray, kind: String) {
