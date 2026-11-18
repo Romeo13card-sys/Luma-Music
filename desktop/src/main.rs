@@ -65,6 +65,12 @@ struct App {
     query: String,
     status: String,
     tracks: Vec<Value>,
+    catalog_results: Vec<Value>,
+    catalog_kind: String,
+    catalog_page: u64,
+    catalog_has_next: bool,
+    catalog_detail: Option<Value>,
+    catalog_detail_kind: String,
     queue: Vec<Value>,
     connected: bool,
     jobs: Jobs,
@@ -92,6 +98,12 @@ impl App {
             query: String::new(),
             status: "Войдите с OAuth-токеном. Он хранится только до закрытия приложения.".into(),
             tracks: vec![],
+            catalog_results: vec![],
+            catalog_kind: "track".into(),
+            catalog_page: 0,
+            catalog_has_next: false,
+            catalog_detail: None,
+            catalog_detail_kind: String::new(),
             queue: vec![],
             connected: false,
             jobs: Jobs::default(),
@@ -208,6 +220,38 @@ impl App {
                                     "Аккаунт: {}",
                                     data["name"].as_str().unwrap_or("Яндекс")
                                 );
+                            } else if op == "catalog_search" {
+                                self.catalog_results = data["results"]
+                                    .as_array()
+                                    .cloned()
+                                    .unwrap_or_default()
+                                    .into_iter()
+                                    .take(200)
+                                    .collect();
+                                let pager = &data["pager"];
+                                let per_page = pager["perPage"]
+                                    .as_u64()
+                                    .or_else(|| pager["pageSize"].as_u64())
+                                    .unwrap_or(20)
+                                    .clamp(1, 100);
+                                self.catalog_has_next = pager["total"]
+                                    .as_u64()
+                                    .or_else(|| pager["totalCount"].as_u64())
+                                    .map(|total| (self.catalog_page + 1) * per_page < total)
+                                    .unwrap_or(self.catalog_results.len() as u64 >= per_page);
+                                self.catalog_detail = None;
+                                self.catalog_detail_kind.clear();
+                                self.tracks = if self.catalog_kind == "track" {
+                                    self.catalog_results.clone()
+                                } else {
+                                    vec![]
+                                };
+                                self.status =
+                                    format!("Результатов: {}", self.catalog_results.len());
+                            } else if op == "catalog_album" || op == "catalog_artist" {
+                                self.catalog_detail = Some(data);
+                                self.catalog_detail_kind = op;
+                                self.status = "Каталог загружен".into();
                             } else {
                                 self.tracks = data
                                     .as_array()
@@ -216,6 +260,12 @@ impl App {
                                     .into_iter()
                                     .take(200)
                                     .collect();
+                                self.catalog_results.clear();
+                                self.catalog_detail = None;
+                                self.catalog_detail_kind.clear();
+                                self.catalog_kind = "track".into();
+                                self.catalog_page = 0;
+                                self.catalog_has_next = false;
                                 self.status = format!("Треков: {}", self.tracks.len());
                             }
                         }
@@ -331,6 +381,8 @@ impl eframe::App for App {
                 {
                     self.connected = false;
                     self.tracks.clear();
+                    self.catalog_results.clear();
+                    self.catalog_detail = None;
                     self.stop();
                 }
                 if ui
@@ -342,6 +394,8 @@ impl eframe::App for App {
                 {
                     self.connected = false;
                     self.tracks.clear();
+                    self.catalog_results.clear();
+                    self.catalog_detail = None;
                     self.stop();
                     self.request("account", String::new());
                 }
@@ -355,19 +409,85 @@ impl eframe::App for App {
                     self.connected = false;
                     self.token.clear();
                     self.tracks.clear();
+                    self.catalog_results.clear();
+                    self.catalog_detail = None;
                     self.stop();
                 }
             });
             ui.add_enabled_ui(self.connected && !self.jobs.busy(), |ui| {
                 ui.horizontal_wrapped(|ui| {
                     ui.text_edit_singleline(&mut self.query);
+                    egui::ComboBox::from_label("Каталог")
+                        .selected_text(match self.catalog_kind.as_str() {
+                            "album" => "Альбомы",
+                            "artist" => "Исполнители",
+                            "playlist" => "Плейлисты",
+                            _ => "Треки",
+                        })
+                        .show_ui(ui, |ui| {
+                            for (kind, label) in [
+                                ("track", "Треки"),
+                                ("album", "Альбомы"),
+                                ("artist", "Исполнители"),
+                                ("playlist", "Плейлисты"),
+                            ] {
+                                if ui
+                                    .selectable_value(&mut self.catalog_kind, kind.into(), label)
+                                    .changed()
+                                {
+                                    self.catalog_page = 0;
+                                    self.catalog_detail = None;
+                                }
+                            }
+                        });
                     if ui.button("Поиск").clicked() {
-                        self.request("search", self.query.clone());
+                        self.catalog_page = 0;
+                        self.catalog_detail = None;
+                        self.request(
+                            "catalog_search",
+                            json!({
+                                "query": self.query,
+                                "kind": self.catalog_kind,
+                                "page": self.catalog_page
+                            })
+                            .to_string(),
+                        );
+                    }
+                    if ui.button("‹").clicked() && self.catalog_page > 0 {
+                        self.catalog_page -= 1;
+                        self.catalog_detail = None;
+                        self.request(
+                            "catalog_search",
+                            json!({
+                                "query": self.query,
+                                "kind": self.catalog_kind,
+                                "page": self.catalog_page
+                            })
+                            .to_string(),
+                        );
+                    }
+                    if ui.button("›").clicked() && self.catalog_has_next {
+                        self.catalog_page += 1;
+                        self.catalog_detail = None;
+                        self.request(
+                            "catalog_search",
+                            json!({
+                                "query": self.query,
+                                "kind": self.catalog_kind,
+                                "page": self.catalog_page
+                            })
+                            .to_string(),
+                        );
+                    }
+                    if ui.button("К результатам").clicked() {
+                        self.catalog_detail = None;
                     }
                     if ui.button("Избранное").clicked() {
+                        self.catalog_detail = None;
                         self.request("likes", String::new());
                     }
                     if ui.button("Моя волна · партия").clicked() {
+                        self.catalog_detail = None;
                         self.request("wave", String::new());
                     }
                 });
@@ -484,36 +604,175 @@ impl eframe::App for App {
                 }
             });
             ui.separator();
-            let mut selected = None;
+            let mut selected_track: Option<(Vec<Value>, usize)> = None;
+            let mut selected_detail: Option<(String, String)> = None;
+            let mut selected_playlist: Option<(String, String)> = None;
+            let detail_tracks = self
+                .catalog_detail
+                .as_ref()
+                .map(|detail| {
+                    if self.catalog_detail_kind == "catalog_album" {
+                        let mut tracks = Vec::new();
+                        if let Some(volumes) = detail["volumes"].as_array() {
+                            for volume in volumes {
+                                if let Some(items) = volume.as_array() {
+                                    tracks.extend(items.iter().cloned());
+                                }
+                            }
+                        } else if let Some(items) = detail["tracks"].as_array() {
+                            tracks.extend(items.iter().cloned());
+                        }
+                        tracks
+                    } else {
+                        detail["popularTracks"]
+                            .as_array()
+                            .or_else(|| detail["popular_tracks"].as_array())
+                            .cloned()
+                            .unwrap_or_default()
+                    }
+                })
+                .unwrap_or_default();
             egui::ScrollArea::vertical().show(ui, |ui| {
-                for (index, track) in self.tracks.iter().enumerate() {
-                    let label = format!(
-                        "{} {} — {}",
-                        if self
-                            .index
-                            .and_then(|i| self.queue.get(i))
-                            .is_some_and(|current| current["id"] == track["id"])
+                if let Some(detail) = &self.catalog_detail {
+                    if self.catalog_detail_kind == "catalog_album" {
+                        ui.heading(detail["title"].as_str().unwrap_or("Альбом"));
+                        ui.label(format!(
+                            "{} · {}",
+                            detail["year"]
+                                .as_u64()
+                                .map(|v| v.to_string())
+                                .unwrap_or_default(),
+                            detail["genre"].as_str().unwrap_or("")
+                        ));
+                    } else {
+                        let artist = &detail["artist"];
+                        ui.heading(artist["name"].as_str().unwrap_or("Исполнитель"));
+                        if let Some(description) = artist["description"].as_str() {
+                            ui.label(description);
+                        }
+                        let mut albums = Vec::new();
+                        for key in ["albums", "lastReleases", "alsoAlbums"] {
+                            if let Some(items) = detail[key].as_array() {
+                                albums.extend(items.iter().cloned());
+                            }
+                        }
+                        if !albums.is_empty() {
+                            ui.separator();
+                            ui.heading("Альбомы и релизы");
+                            for album in albums {
+                                let id = album["id"].as_str().unwrap_or("").to_owned();
+                                let title = album["title"].as_str().unwrap_or("Альбом");
+                                if !id.is_empty() && ui.button(format!("{title}  ›")).clicked() {
+                                    selected_detail = Some(("catalog_album".into(), id));
+                                }
+                            }
+                            ui.separator();
+                            ui.heading("Популярные треки");
+                        }
+                    }
+                    for (index, track) in detail_tracks.iter().enumerate() {
+                        let label = format!(
+                            "▶ {} — {}",
+                            track["title"].as_str().unwrap_or("Трек"),
+                            track["artists"].as_str().unwrap_or("")
+                        );
+                        if ui
+                            .add_enabled(
+                                !self.jobs.busy() && track["available"] == true,
+                                egui::Button::new(label),
+                            )
+                            .clicked()
                         {
-                            "●"
+                            selected_track = Some((detail_tracks.clone(), index));
+                        }
+                    }
+                } else if self.catalog_kind == "track" {
+                    for (index, track) in self.tracks.iter().enumerate() {
+                        let label = format!(
+                            "{} {} — {}",
+                            if self
+                                .index
+                                .and_then(|i| self.queue.get(i))
+                                .is_some_and(|current| current["id"] == track["id"])
+                            {
+                                "●"
+                            } else {
+                                "▶"
+                            },
+                            track["title"].as_str().unwrap_or("Трек"),
+                            track["artists"].as_str().unwrap_or("")
+                        );
+                        if ui
+                            .add_enabled(
+                                !self.jobs.busy() && track["available"] == true,
+                                egui::Button::new(label),
+                            )
+                            .clicked()
+                        {
+                            selected_track = Some((self.tracks.clone(), index));
+                        }
+                    }
+                } else {
+                    for item in &self.catalog_results {
+                        let title = item["title"]
+                            .as_str()
+                            .or_else(|| item["name"].as_str())
+                            .unwrap_or("Без названия");
+                        let subtitle = item["artists"]
+                            .as_array()
+                            .map(|artists| {
+                                artists
+                                    .iter()
+                                    .filter_map(|a| a["name"].as_str())
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            })
+                            .unwrap_or_else(|| {
+                                item["owner"]["name"].as_str().unwrap_or("").to_owned()
+                            });
+                        let label = if subtitle.is_empty() {
+                            title.to_owned()
                         } else {
-                            "▶"
-                        },
-                        track["title"].as_str().unwrap_or("Трек"),
-                        track["artists"].as_str().unwrap_or("")
-                    );
-                    if ui
-                        .add_enabled(
-                            !self.jobs.busy() && track["available"] == true,
-                            egui::Button::new(label),
-                        )
-                        .clicked()
-                    {
-                        selected = Some(index);
+                            format!("{title} — {subtitle}")
+                        };
+                        if ui.button(label).clicked() {
+                            let id = item["id"].as_str().unwrap_or("").to_owned();
+                            if self.catalog_kind == "playlist" {
+                                let owner = item["owner"]["uid"]
+                                    .as_str()
+                                    .map(str::to_owned)
+                                    .or_else(|| {
+                                        item["owner"]["uid"].as_u64().map(|v| v.to_string())
+                                    })
+                                    .unwrap_or_default();
+                                let kind = item["kind"]
+                                    .as_str()
+                                    .map(str::to_owned)
+                                    .or_else(|| item["kind"].as_u64().map(|v| v.to_string()))
+                                    .unwrap_or_default();
+                                if !owner.is_empty() && !kind.is_empty() {
+                                    selected_playlist = Some((owner, kind));
+                                }
+                            } else if !id.is_empty() {
+                                let operation = if self.catalog_kind == "album" {
+                                    "catalog_album"
+                                } else {
+                                    "catalog_artist"
+                                };
+                                selected_detail = Some((operation.to_owned(), id));
+                            }
+                        }
                     }
                 }
             });
-            if let Some(index) = selected {
-                self.play_from(self.tracks.clone(), index);
+            if let Some((queue, index)) = selected_track {
+                self.play_from(queue, index);
+            }
+            if let Some((operation, id)) = selected_detail {
+                self.request(&operation, id);
+            }
+            if let Some((owner, kind)) = selected_playlist {
+                self.request("playlist", format!("{owner}:{kind}"));
             }
             ui.separator();
             ui.hyperlink_to(
