@@ -640,30 +640,12 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
         var pageSize = 20
         var hasNext = false
 
-        lateinit var previous: LumaButton
-        lateinit var next: LumaButton
-
-        fun drawCategories() {
-            categoryRow.removeAllViews()
-            categories.forEach { (kind, label) ->
-                categoryRow.addView(
-                    action(label, kind == selectedKind) {
-                        selectedKind = kind
-                        currentPage = 0
-                        drawCategories()
-                        runCatalogSearch()
-                    },
-                    LinearLayout.LayoutParams(0, -2, 1f).apply {
-                        rightMargin = dp(4)
-                        topMargin = dp(8)
-                    },
-                )
-            }
-        }
+        var previous: LumaButton? = null
+        var next: LumaButton? = null
 
         fun updateNavigation() {
-            previous.visibility = if (currentPage > 0) View.VISIBLE else View.INVISIBLE
-            next.visibility = if (hasNext) View.VISIBLE else View.INVISIBLE
+            previous?.visibility = if (currentPage > 0) View.VISIBLE else View.INVISIBLE
+            next?.visibility = if (hasNext) View.VISIBLE else View.INVISIBLE
         }
 
         fun runCatalogSearch(resetPage: Boolean = true) {
@@ -715,6 +697,24 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
             }
         }
 
+        fun drawCategories() {
+            categoryRow.removeAllViews()
+            categories.forEach { (kind, label) ->
+                categoryRow.addView(
+                    action(label, kind == selectedKind) {
+                        selectedKind = kind
+                        currentPage = 0
+                        drawCategories()
+                        runCatalogSearch()
+                    },
+                    LinearLayout.LayoutParams(0, -2, 1f).apply {
+                        rightMargin = dp(4)
+                        topMargin = dp(8)
+                    },
+                )
+            }
+        }
+
         previous = action("‹ Назад") {
             if (currentPage > 0) {
                 currentPage--
@@ -728,8 +728,8 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
             }
         }
         val navigation = row().apply {
-            addView(previous, LinearLayout.LayoutParams(0, -2, 1f))
-            addView(next, LinearLayout.LayoutParams(0, -2, 1f))
+            addView(previous!!, LinearLayout.LayoutParams(0, -2, 1f))
+            addView(next!!, LinearLayout.LayoutParams(0, -2, 1f))
         }
         drawCategories()
         box.setOnEditorActionListener { _, id, _ ->
