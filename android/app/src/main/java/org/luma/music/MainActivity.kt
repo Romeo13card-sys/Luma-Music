@@ -837,7 +837,7 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
         shell("Поиск", false)
         generation++
         body.removeAllViews()
-        body.addView(action("‹ К результатам поиска") { search() })
+        body.addView(action("‹ К результатам поиска") { shell("Поиск", false); search() })
         request("catalog_album", id) { raw ->
             val album = raw as JSONObject
             val title = album.optString("title").ifBlank { "Альбом" }
