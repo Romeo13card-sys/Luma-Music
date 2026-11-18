@@ -362,7 +362,8 @@ impl App {
                                         json!({
                                             "owner": self.current_playlist_owner,
                                             "kind": self.current_playlist_kind
-                                        }).to_string(),
+                                        })
+                                        .to_string(),
                                     );
                                 }
                             } else if op == "playlist_insert_track" {
@@ -1150,7 +1151,8 @@ impl eframe::App for App {
                         "from": index,
                         "to": index,
                         "revision": revision
-                    }).to_string(),
+                    })
+                    .to_string(),
                 );
             }
             if let Some(title) = selected_create_title {
