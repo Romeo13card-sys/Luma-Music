@@ -114,6 +114,35 @@ fn catalog_item(kind: &str, value: &Value) -> Value {
     item
 }
 
+fn playlist_title(raw: &str) -> Result<String> {
+    let title = raw.trim();
+    if title.is_empty() || title.chars().count() > 100 {
+        return Err("Название плейлиста должно содержать от 1 до 100 символов".into());
+    }
+    Ok(title.to_owned())
+}
+
+fn playlist_insert_diff(track_id: &str, album_id: &str, at: u64) -> Result<String> {
+    let track_id = catalog_entity_id(track_id, "трека")?;
+    let album_id = catalog_entity_id(album_id, "альбома")?;
+    if at > 100_000 {
+        return Err("Некорректная позиция вставки".into());
+    }
+    Ok(json!([{
+        "op": "insert",
+        "at": at,
+        "tracks": [{"id": track_id, "albumId": album_id}]
+    }])
+    .to_string())
+}
+
+fn playlist_delete_diff(from: u64, to: u64) -> Result<String> {
+    if from > to || to > 100_000 {
+        return Err("Некорректный диапазон удаления".into());
+    }
+    Ok(json!([{"op": "delete", "from": from, "to": to}]).to_string())
+}
+
 fn catalog_entity_id(raw: &str, label: &str) -> Result<String> {
     if raw.is_empty() || raw.len() > 64 || !raw.bytes().all(|b| b.is_ascii_digit()) {
         return Err(format!("Некорректный идентификатор: {label}").into());
@@ -353,6 +382,124 @@ impl MusicClient {
             return Err("Сервис не вернул информацию об исполнителе".into());
         }
         Ok(normalize_catalog_artist(&value))
+    }
+
+    fn owned_playlist_path(&self, owner: &str, kind: &str) -> Result<String> {
+        let owner = catalog_entity_id(owner, "владельца плейлиста")?;
+        let kind = catalog_entity_id(kind, "плейлиста")?;
+        let account = self.account()?;
+        let uid = account["uid"]
+            .as_u64()
+            .map(|value| value.to_string())
+            .or_else(|| account["uid"].as_str().map(str::to_owned))
+            .ok_or("Некорректный аккаунт")?;
+        if owner != uid {
+            return Err("Можно изменять только собственные плейлисты".into());
+        }
+        Ok(format!("/users/{owner}/playlists/{kind}"))
+    }
+
+    pub fn playlist_detail(&self, raw: &str) -> Result<Value> {
+        let options: Value =
+            serde_json::from_str(raw).map_err(|_| "Некорректный запрос плейлиста")?;
+        let path = self.owned_playlist_path(
+            options["owner"].as_str().unwrap_or(""),
+            options["kind"].as_str().unwrap_or(""),
+        )?;
+        let mut value = self.get(&path, &[])?;
+        let tracks = value["tracks"]
+            .as_array_mut()
+            .ok_or("Плейлист не содержит списка треков")?;
+        for entry in tracks {
+            if let Some(normalized) = track(&entry["track"]) {
+                entry["track"] = json!(normalized);
+            }
+        }
+        Ok(value)
+    }
+
+    pub fn playlist_create(&self, raw: &str) -> Result<Value> {
+        let options: Value =
+            serde_json::from_str(raw).map_err(|_| "Некорректный запрос создания плейлиста")?;
+        let title = playlist_title(options["title"].as_str().unwrap_or(""))?;
+        let visibility = options["visibility"].as_str().unwrap_or("private");
+        if !matches!(visibility, "private" | "public") {
+            return Err("Некорректная видимость плейлиста".into());
+        }
+        let account = self.account()?;
+        let uid = account["uid"]
+            .as_u64()
+            .map(|value| value.to_string())
+            .or_else(|| account["uid"].as_str().map(str::to_owned))
+            .ok_or("Некорректный аккаунт")?;
+        self.post(
+            &format!("/users/{uid}/playlists/create"),
+            &[("title", &title), ("visibility", visibility)],
+        )
+    }
+
+    pub fn playlist_rename(&self, raw: &str) -> Result<Value> {
+        let options: Value =
+            serde_json::from_str(raw).map_err(|_| "Некорректный запрос переименования")?;
+        let path = self.owned_playlist_path(
+            options["owner"].as_str().unwrap_or(""),
+            options["kind"].as_str().unwrap_or(""),
+        )?;
+        let title = playlist_title(options["title"].as_str().unwrap_or(""))?;
+        self.post(&format!("{path}/name"), &[("value", &title)])
+    }
+
+    pub fn playlist_delete(&self, raw: &str) -> Result<Value> {
+        let options: Value =
+            serde_json::from_str(raw).map_err(|_| "Некорректный запрос удаления плейлиста")?;
+        let path = self.owned_playlist_path(
+            options["owner"].as_str().unwrap_or(""),
+            options["kind"].as_str().unwrap_or(""),
+        )?;
+        let result = self.post(&format!("{path}/delete"), &[])?;
+        if result.as_bool() == Some(true) || result.is_object() {
+            Ok(json!(true))
+        } else {
+            Err("Сервис не подтвердил удаление плейлиста".into())
+        }
+    }
+
+    pub fn playlist_insert_track(&self, raw: &str) -> Result<Value> {
+        let options: Value =
+            serde_json::from_str(raw).map_err(|_| "Некорректное добавление трека")?;
+        let path = self.owned_playlist_path(
+            options["owner"].as_str().unwrap_or(""),
+            options["kind"].as_str().unwrap_or(""),
+        )?;
+        let track_id = options["track_id"].as_str().unwrap_or("");
+        let album_id = options["album_id"].as_str().unwrap_or("");
+        let at = options["at"].as_u64().unwrap_or(0);
+        let revision = options["revision"]
+            .as_u64()
+            .filter(|value| *value > 0)
+            .unwrap_or(1);
+        let diff = playlist_insert_diff(track_id, album_id, at)?;
+        self.post(
+            &format!("{path}/change-relative"),
+            &[("diff", &diff), ("revision", &revision.to_string())],
+        )
+    }
+
+    pub fn playlist_delete_track(&self, raw: &str) -> Result<Value> {
+        let options: Value =
+            serde_json::from_str(raw).map_err(|_| "Некорректное удаление трека")?;
+        let path = self.owned_playlist_path(
+            options["owner"].as_str().unwrap_or(""),
+            options["kind"].as_str().unwrap_or(""),
+        )?;
+        let from = options["from"].as_u64().ok_or("Не указан индекс трека")?;
+        let to = options["to"].as_u64().ok_or("Не указан конец диапазона")?;
+        let revision = options["revision"].as_u64().filter(|value| *value > 0).unwrap_or(1);
+        let diff = playlist_delete_diff(from, to)?;
+        self.post(
+            &format!("{path}/change-relative"),
+            &[("diff", &diff), ("revision", &revision.to_string())],
+        )
     }
 
     pub fn library(&self) -> Result<Value> {
@@ -727,6 +874,12 @@ pub fn dispatch(token: &str, operation: &str, argument: &str) -> String {
             }
             "catalog_album" => client.catalog_album(argument),
             "catalog_artist" => client.catalog_artist(argument),
+            "playlist_detail" => client.playlist_detail(argument),
+            "playlist_create" => client.playlist_create(argument),
+            "playlist_rename" => client.playlist_rename(argument),
+            "playlist_delete" => client.playlist_delete(argument),
+            "playlist_insert_track" => client.playlist_insert_track(argument),
+            "playlist_delete_track" => client.playlist_delete_track(argument),
             "library" => client.library(),
             "playlist" => client.playlist(argument).map(|v| json!(v)),
             "likes" => client.likes().map(|v| json!(v)),
@@ -1005,6 +1158,25 @@ mod tests {
         assert!(result.available);
         assert!(track(&json!({"title":"Без ID"})).is_none());
     }
+    #[test]
+    fn playlist_changes_validate_inputs_and_build_api_diffs() {
+        assert_eq!(playlist_title("  Luma  ").unwrap(), "Luma");
+        assert!(playlist_title("  ").is_err());
+        assert!(playlist_title(&"x".repeat(101)).is_err());
+        let insert: Value =
+            serde_json::from_str(&playlist_insert_diff("42", "9", 3).unwrap()).unwrap();
+        assert_eq!(insert[0]["op"], "insert");
+        assert_eq!(insert[0]["at"], 3);
+        assert_eq!(insert[0]["tracks"][0]["id"], "42");
+        assert_eq!(insert[0]["tracks"][0]["albumId"], "9");
+        assert!(playlist_insert_diff("../42", "9", 0).is_err());
+        let delete: Value = serde_json::from_str(&playlist_delete_diff(2, 4).unwrap()).unwrap();
+        assert_eq!(delete[0]["op"], "delete");
+        assert_eq!(delete[0]["from"], 2);
+        assert_eq!(delete[0]["to"], 4);
+        assert!(playlist_delete_diff(4, 2).is_err());
+    }
+
     #[test]
     fn catalog_detail_ids_are_numeric_and_bounded() {
         assert_eq!(catalog_entity_id("42", "альбома").unwrap(), "42");
