@@ -144,7 +144,16 @@ fn normalize_catalog_album(value: &Value) -> Value {
 
 fn normalize_catalog_artist(value: &Value) -> Value {
     let mut info = value.clone();
-    for key in ["artist", "albums", "lastReleases", "last_releases", "alsoAlbums", "also_albums", "similarArtists", "similar_artists"] {
+    for key in [
+        "artist",
+        "albums",
+        "lastReleases",
+        "last_releases",
+        "alsoAlbums",
+        "also_albums",
+        "similarArtists",
+        "similar_artists",
+    ] {
         if let Some(items) = info[key].as_array_mut() {
             for item in items {
                 *item = catalog_item(if key == "artist" { "artist" } else { "album" }, item);
@@ -1021,7 +1030,10 @@ mod tests {
         }));
         assert_eq!(artist["artist"]["name"], "Исполнитель");
         assert_eq!(artist["popularTracks"][0]["id"], "42");
-        assert_eq!(artist["albums"][0]["cover"], "https://avatars.yandex.net/get-music-content/abc/%%");
+        assert_eq!(
+            artist["albums"][0]["cover"],
+            "https://avatars.yandex.net/get-music-content/abc/%%"
+        );
     }
 
     #[test]
