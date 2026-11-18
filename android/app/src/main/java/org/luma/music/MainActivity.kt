@@ -1115,13 +1115,31 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
                     else notice("Трек недоступен")
                 }
                 item.more.setOnClickListener {
+                    val albumId=song.album.orEmpty()
+                    val actions=mutableListOf("Удалить из плейлиста" to "delete")
+                    if(albumId.isNotBlank() && albumId.all {it.isDigit()} && playlistIndex>0)
+                        actions.add(0,"Переместить выше" to "up")
+                    if(albumId.isNotBlank() && albumId.all {it.isDigit()} && playlistIndex<entries.length()-1)
+                        actions.add(if(actions.firstOrNull()?.second=="up") 1 else 0,"Переместить ниже" to "down")
                     LumaDialog(this).setTitle(song.title)
-                        .setItems(arrayOf("Удалить из плейлиста")) {_,_->
-                            val remove=JSONObject().put("owner",owner).put("kind",kind)
-                                .put("from",playlistIndex).put("to",playlistIndex).put("revision",revision)
-                            request("playlist_delete_track",remove.toString()){
-                                notice("Трек удалён")
-                                showPlaylist(title,owner,kind)
+                        .setItems(actions.map {it.first}.toTypedArray()) {_,which->
+                            val selected=actions[which].second
+                            if(selected=="delete"){
+                                val remove=JSONObject().put("owner",owner).put("kind",kind)
+                                    .put("from",playlistIndex).put("to",playlistIndex).put("revision",revision)
+                                request("playlist_delete_track",remove.toString()){
+                                    notice("Трек удалён")
+                                    showPlaylist(title,owner,kind)
+                                }
+                            }else{
+                                val destination=if(selected=="up")playlistIndex-1 else playlistIndex+1
+                                val move=JSONObject().put("owner",owner).put("kind",kind)
+                                    .put("from",playlistIndex).put("to",destination)
+                                    .put("track_id",song.id).put("album_id",albumId).put("revision",revision)
+                                request("playlist_move_track",move.toString()){
+                                    notice("Порядок плейлиста обновлён")
+                                    showPlaylist(title,owner,kind)
+                                }
                             }
                         }.show()
                 }
