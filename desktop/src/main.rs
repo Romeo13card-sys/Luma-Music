@@ -229,10 +229,13 @@ impl App {
                                     .take(200)
                                     .collect();
                                 let pager = &data["pager"];
-                                let per_page = pager["perPage"].as_u64()
+                                let per_page = pager["perPage"]
+                                    .as_u64()
                                     .or_else(|| pager["pageSize"].as_u64())
-                                    .unwrap_or(20).clamp(1, 100);
-                                self.catalog_has_next = pager["total"].as_u64()
+                                    .unwrap_or(20)
+                                    .clamp(1, 100);
+                                self.catalog_has_next = pager["total"]
+                                    .as_u64()
                                     .or_else(|| pager["totalCount"].as_u64())
                                     .map(|total| (self.catalog_page + 1) * per_page < total)
                                     .unwrap_or(self.catalog_results.len() as u64 >= per_page);
@@ -243,7 +246,8 @@ impl App {
                                 } else {
                                     vec![]
                                 };
-                                self.status = format!("Результатов: {}", self.catalog_results.len());
+                                self.status =
+                                    format!("Результатов: {}", self.catalog_results.len());
                             } else if op == "catalog_album" || op == "catalog_artist" {
                                 self.catalog_detail = Some(data);
                                 self.catalog_detail_kind = op;
@@ -423,7 +427,10 @@ impl eframe::App for App {
                                 ("artist", "Исполнители"),
                                 ("playlist", "Плейлисты"),
                             ] {
-                                if ui.selectable_value(&mut self.catalog_kind, kind.into(), label).changed() {
+                                if ui
+                                    .selectable_value(&mut self.catalog_kind, kind.into(), label)
+                                    .changed()
+                                {
                                     self.catalog_page = 0;
                                     self.catalog_detail = None;
                                 }
@@ -432,29 +439,41 @@ impl eframe::App for App {
                     if ui.button("Поиск").clicked() {
                         self.catalog_page = 0;
                         self.catalog_detail = None;
-                        self.request("catalog_search", json!({
-                            "query": self.query,
-                            "kind": self.catalog_kind,
-                            "page": self.catalog_page
-                        }).to_string());
+                        self.request(
+                            "catalog_search",
+                            json!({
+                                "query": self.query,
+                                "kind": self.catalog_kind,
+                                "page": self.catalog_page
+                            })
+                            .to_string(),
+                        );
                     }
                     if ui.button("‹").clicked() && self.catalog_page > 0 {
                         self.catalog_page -= 1;
                         self.catalog_detail = None;
-                        self.request("catalog_search", json!({
-                            "query": self.query,
-                            "kind": self.catalog_kind,
-                            "page": self.catalog_page
-                        }).to_string());
+                        self.request(
+                            "catalog_search",
+                            json!({
+                                "query": self.query,
+                                "kind": self.catalog_kind,
+                                "page": self.catalog_page
+                            })
+                            .to_string(),
+                        );
                     }
                     if ui.button("›").clicked() && self.catalog_has_next {
                         self.catalog_page += 1;
                         self.catalog_detail = None;
-                        self.request("catalog_search", json!({
-                            "query": self.query,
-                            "kind": self.catalog_kind,
-                            "page": self.catalog_page
-                        }).to_string());
+                        self.request(
+                            "catalog_search",
+                            json!({
+                                "query": self.query,
+                                "kind": self.catalog_kind,
+                                "page": self.catalog_page
+                            })
+                            .to_string(),
+                        );
                     }
                     if ui.button("К результатам").clicked() {
                         self.catalog_detail = None;
@@ -584,32 +603,41 @@ impl eframe::App for App {
             let mut selected_track: Option<(Vec<Value>, usize)> = None;
             let mut selected_detail: Option<(String, String)> = None;
             let mut selected_playlist: Option<(String, String)> = None;
-            let detail_tracks = self.catalog_detail.as_ref().map(|detail| {
-                if self.catalog_detail_kind == "catalog_album" {
-                    let mut tracks = Vec::new();
-                    if let Some(volumes) = detail["volumes"].as_array() {
-                        for volume in volumes {
-                            if let Some(items) = volume.as_array() {
-                                tracks.extend(items.iter().cloned());
+            let detail_tracks = self
+                .catalog_detail
+                .as_ref()
+                .map(|detail| {
+                    if self.catalog_detail_kind == "catalog_album" {
+                        let mut tracks = Vec::new();
+                        if let Some(volumes) = detail["volumes"].as_array() {
+                            for volume in volumes {
+                                if let Some(items) = volume.as_array() {
+                                    tracks.extend(items.iter().cloned());
+                                }
                             }
+                        } else if let Some(items) = detail["tracks"].as_array() {
+                            tracks.extend(items.iter().cloned());
                         }
-                    } else if let Some(items) = detail["tracks"].as_array() {
-                        tracks.extend(items.iter().cloned());
+                        tracks
+                    } else {
+                        detail["popularTracks"]
+                            .as_array()
+                            .or_else(|| detail["popular_tracks"].as_array())
+                            .cloned()
+                            .unwrap_or_default()
                     }
-                    tracks
-                } else {
-                    detail["popularTracks"].as_array()
-                        .or_else(|| detail["popular_tracks"].as_array())
-                        .cloned().unwrap_or_default()
-                }
-            }).unwrap_or_default();
+                })
+                .unwrap_or_default();
             egui::ScrollArea::vertical().show(ui, |ui| {
                 if let Some(detail) = &self.catalog_detail {
                     if self.catalog_detail_kind == "catalog_album" {
                         ui.heading(detail["title"].as_str().unwrap_or("Альбом"));
                         ui.label(format!(
                             "{} · {}",
-                            detail["year"].as_u64().map(|v| v.to_string()).unwrap_or_default(),
+                            detail["year"]
+                                .as_u64()
+                                .map(|v| v.to_string())
+                                .unwrap_or_default(),
                             detail["genre"].as_str().unwrap_or("")
                         ));
                     } else {
@@ -644,7 +672,13 @@ impl eframe::App for App {
                             track["title"].as_str().unwrap_or("Трек"),
                             track["artists"].as_str().unwrap_or("")
                         );
-                        if ui.add_enabled(!self.jobs.busy() && track["available"] == true, egui::Button::new(label)).clicked() {
+                        if ui
+                            .add_enabled(
+                                !self.jobs.busy() && track["available"] == true,
+                                egui::Button::new(label),
+                            )
+                            .clicked()
+                        {
                             selected_track = Some((detail_tracks.clone(), index));
                         }
                     }
@@ -652,7 +686,15 @@ impl eframe::App for App {
                     for (index, track) in self.tracks.iter().enumerate() {
                         let label = format!(
                             "{} {} — {}",
-                            if self.index.and_then(|i| self.queue.get(i)).is_some_and(|current| current["id"] == track["id"]) { "●" } else { "▶" },
+                            if self
+                                .index
+                                .and_then(|i| self.queue.get(i))
+                                .is_some_and(|current| current["id"] == track["id"])
+                            {
+                                "●"
+                            } else {
+                                "▶"
+                            },
                             track["title"].as_str().unwrap_or("Трек"),
                             track["artists"].as_str().unwrap_or("")
                         );
@@ -662,18 +704,36 @@ impl eframe::App for App {
                     }
                 } else {
                     for item in &self.catalog_results {
-                        let title = item["title"].as_str().or_else(|| item["name"].as_str()).unwrap_or("Без названия");
-                        let subtitle = item["artists"].as_array()
-                            .map(|artists| artists.iter().filter_map(|a| a["name"].as_str()).collect::<Vec<_>>().join(", "))
-                            .unwrap_or_else(|| item["owner"]["name"].as_str().unwrap_or("").to_owned());
-                        let label = if subtitle.is_empty() { title.to_owned() } else { format!("{title} — {subtitle}") };
+                        let title = item["title"]
+                            .as_str()
+                            .or_else(|| item["name"].as_str())
+                            .unwrap_or("Без названия");
+                        let subtitle = item["artists"]
+                            .as_array()
+                            .map(|artists| {
+                                artists
+                                    .iter()
+                                    .filter_map(|a| a["name"].as_str())
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            })
+                            .unwrap_or_else(|| {
+                                item["owner"]["name"].as_str().unwrap_or("").to_owned()
+                            });
+                        let label = if subtitle.is_empty() {
+                            title.to_owned()
+                        } else {
+                            format!("{title} — {subtitle}")
+                        };
                         if ui.button(label).clicked() {
                             let id = item["id"].as_str().unwrap_or("").to_owned();
                             if self.catalog_kind == "playlist" {
                                 let owner = item["owner"]["uid"]
                                     .as_str()
                                     .map(str::to_owned)
-                                    .or_else(|| item["owner"]["uid"].as_u64().map(|v| v.to_string()))
+                                    .or_else(|| {
+                                        item["owner"]["uid"].as_u64().map(|v| v.to_string())
+                                    })
                                     .unwrap_or_default();
                                 let kind = item["kind"]
                                     .as_str()
