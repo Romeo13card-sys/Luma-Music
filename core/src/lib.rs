@@ -494,7 +494,10 @@ impl MusicClient {
         )?;
         let from = options["from"].as_u64().ok_or("Не указан индекс трека")?;
         let to = options["to"].as_u64().ok_or("Не указан конец диапазона")?;
-        let revision = options["revision"].as_u64().filter(|value| *value > 0).unwrap_or(1);
+        let revision = options["revision"]
+            .as_u64()
+            .filter(|value| *value > 0)
+            .unwrap_or(1);
         let diff = playlist_delete_diff(from, to)?;
         self.post(
             &format!("{path}/change-relative"),
