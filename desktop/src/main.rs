@@ -254,8 +254,11 @@ impl App {
                                     if track_id.is_empty() || album_id.is_empty() {
                                         self.status = "У этого трека не найден ID альбома".into();
                                     } else {
-                                        let at = data["tracks"].as_array().map_or(0, |items| items.len());
-                                        let revision = data["revision"].as_u64().unwrap_or(1).max(1);
+                                        let at = data["tracks"]
+                                            .as_array()
+                                            .map_or(0, |items| items.len());
+                                        let revision =
+                                            data["revision"].as_u64().unwrap_or(1).max(1);
                                         self.request(
                                             "playlist_insert_track",
                                             json!({
@@ -265,7 +268,8 @@ impl App {
                                                 "album_id": album_id,
                                                 "at": at,
                                                 "revision": revision
-                                            }).to_string(),
+                                            })
+                                            .to_string(),
                                         );
                                     }
                                 } else {
@@ -287,7 +291,8 @@ impl App {
                                         json!({
                                             "owner": self.current_playlist_owner,
                                             "kind": self.current_playlist_kind
-                                        }).to_string(),
+                                        })
+                                        .to_string(),
                                     );
                                 } else {
                                     self.request("library", String::new());
@@ -742,7 +747,9 @@ impl eframe::App for App {
                     } else if self.catalog_detail_kind == "playlist_detail" {
                         detail["tracks"]
                             .as_array()
-                            .map(|entries| entries.iter().map(|entry| entry["track"].clone()).collect())
+                            .map(|entries| {
+                                entries.iter().map(|entry| entry["track"].clone()).collect()
+                            })
                             .unwrap_or_default()
                     } else {
                         detail["popularTracks"]
@@ -788,12 +795,13 @@ impl eframe::App for App {
                             if ui.button(format!("{title}  ▶")).clicked() {
                                 selected_playlist = Some((owner.clone(), kind.clone()));
                             }
-                            if self.pending_add_track.is_some()
-                                && ui.button("Добавить").clicked()
+                            if self.pending_add_track.is_some() && ui.button("Добавить").clicked()
                             {
                                 selected_playlist_add = Some((owner.clone(), kind.clone()));
                             }
-                            let editing = self.rename_target.as_ref()
+                            let editing = self
+                                .rename_target
+                                .as_ref()
                                 .is_some_and(|target| target.0 == owner && target.1 == kind);
                             if editing {
                                 ui.text_edit_singleline(&mut self.rename_title);
@@ -820,7 +828,10 @@ impl eframe::App for App {
                 } else if let Some(detail) = &self.catalog_detail {
                     if self.catalog_detail_kind == "playlist_detail" {
                         ui.heading(detail["title"].as_str().unwrap_or("Плейлист"));
-                        ui.label(format!("Треков: {}", detail["tracks"].as_array().map_or(0, Vec::len)));
+                        ui.label(format!(
+                            "Треков: {}",
+                            detail["tracks"].as_array().map_or(0, Vec::len)
+                        ));
                         if ui.button("К плейлистам").clicked() {
                             back_to_library = true;
                             self.library_visible = true;
