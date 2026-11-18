@@ -465,6 +465,8 @@ impl eframe::App for App {
                     self.library_visible = false;
                     self.pending_add_track = None;
                     self.pending_playlist_target = None;
+                    self.rename_target = None;
+                    self.rename_title.clear();
                     self.current_playlist_owner.clear();
                     self.current_playlist_kind.clear();
                     self.stop();
@@ -484,6 +486,8 @@ impl eframe::App for App {
                     self.library_visible = false;
                     self.pending_add_track = None;
                     self.pending_playlist_target = None;
+                    self.rename_target = None;
+                    self.rename_title.clear();
                     self.current_playlist_owner.clear();
                     self.current_playlist_kind.clear();
                     self.stop();
@@ -505,6 +509,8 @@ impl eframe::App for App {
                     self.library_visible = false;
                     self.pending_add_track = None;
                     self.pending_playlist_target = None;
+                    self.rename_target = None;
+                    self.rename_title.clear();
                     self.current_playlist_owner.clear();
                     self.current_playlist_kind.clear();
                     self.stop();
