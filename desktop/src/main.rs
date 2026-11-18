@@ -12,6 +12,39 @@ use eframe::egui;
 use engine::{Jobs, Ticket};
 use rodio::Source;
 use serde_json::{json, Value};
+
+fn unix_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or_default()
+}
+
+fn wave_event(track: &Value, station: &str, kind: &str) -> Option<Value> {
+    let track_id = track["id"].as_str().filter(|id| !id.is_empty())?;
+    let batch = track["waveBatch"].as_str().filter(|id| !id.is_empty())?;
+    let station = track["waveStation"]
+        .as_str()
+        .filter(|value| !value.is_empty())
+        .unwrap_or(station);
+    let mut feedback = json!({
+        "type": kind,
+        "station": station,
+        "timestamp": unix_millis(),
+        "batchId": batch,
+        "trackId": track_id
+    });
+    if let Some(session) = track["waveSession"]
+        .as_str()
+        .filter(|value| !value.is_empty())
+    {
+        feedback["session"] = json!(session);
+    }
+    if let Some(album) = track["album"].as_str().filter(|value| !value.is_empty()) {
+        feedback["album"] = json!(album);
+    }
+    Some(feedback)
+}
 use std::{
     fs::File,
     io::BufReader,
@@ -80,7 +113,9 @@ struct App {
     pending_playlist_target: Option<(String, String)>,
     current_playlist_owner: String,
     current_playlist_kind: String,
-    pending_delete_playlist: Option<(String, String, String)>,
+    wave_mode: bool,
+    wave_station: String,
+    wave_session: String,
     queue: Vec<Value>,
     connected: bool,
     jobs: Jobs,
@@ -123,7 +158,9 @@ impl App {
             pending_playlist_target: None,
             current_playlist_owner: String::new(),
             current_playlist_kind: String::new(),
-            pending_delete_playlist: None,
+            wave_mode: false,
+            wave_station: "user:onyourwave".into(),
+            wave_session: String::new(),
             queue: vec![],
             connected: false,
             jobs: Jobs::default(),
@@ -240,9 +277,43 @@ impl App {
                                     "Аккаунт: {}",
                                     data["name"].as_str().unwrap_or("Яндекс")
                                 );
+                            } else if op == "wave" {
+                                self.tracks = data.as_array().cloned().unwrap_or_default();
+                                self.catalog_results.clear();
+                                self.catalog_detail = None;
+                                self.catalog_detail_kind.clear();
+                                self.library_visible = false;
+                                self.catalog_kind = "track".into();
+                                self.wave_mode = true;
+                                if let Some(first) = self.tracks.first() {
+                                    self.wave_station = first["waveStation"]
+                                        .as_str()
+                                        .unwrap_or("user:onyourwave")
+                                        .to_owned();
+                                    self.wave_session =
+                                        first["waveSession"].as_str().unwrap_or("").to_owned();
+                                    let batch =
+                                        first["waveBatch"].as_str().unwrap_or("").to_owned();
+                                    if !batch.is_empty() {
+                                        let mut feedback = json!({
+                                            "type": "radioStarted",
+                                            "station": self.wave_station,
+                                            "timestamp": unix_millis(),
+                                            "batchId": batch
+                                        });
+                                        if !self.wave_session.is_empty() {
+                                            feedback["session"] = json!(self.wave_session);
+                                        }
+                                        self.request("wave_feedback", feedback.to_string());
+                                    }
+                                }
+                                self.status = format!("Моя волна · треков: {}", self.tracks.len());
+                            } else if op == "wave_feedback" {
+                                self.status = "Отзыв для Моей волны отправлен".into();
                             } else if op == "library" {
                                 self.library_items = data.as_array().cloned().unwrap_or_default();
                                 self.library_visible = true;
+                                self.wave_mode = false;
                                 self.catalog_detail = None;
                                 self.catalog_detail_kind.clear();
                                 self.status = format!("Плейлистов: {}", self.library_items.len());
@@ -278,18 +349,8 @@ impl App {
                                     self.catalog_detail = Some(data);
                                     self.catalog_detail_kind = "playlist_detail".into();
                                     self.library_visible = false;
+                                    self.wave_mode = false;
                                     self.status = "Плейлист загружен".into();
-                                }
-                            } else if op == "playlist_delete_track" {
-                                self.status = "Трек удалён из плейлиста".into();
-                                if !self.current_playlist_owner.is_empty() {
-                                    self.request(
-                                        "playlist_detail",
-                                        json!({
-                                            "owner": self.current_playlist_owner,
-                                            "kind": self.current_playlist_kind
-                                        }).to_string(),
-                                    );
                                 }
                             } else if op == "playlist_insert_track" {
                                 self.pending_add_track = None;
@@ -317,6 +378,7 @@ impl App {
                                 self.status = "Плейлисты обновлены".into();
                                 self.request("library", String::new());
                             } else if op == "catalog_search" {
+                                self.wave_mode = false;
                                 self.library_visible = false;
                                 self.catalog_results = data["results"]
                                     .as_array()
@@ -350,6 +412,8 @@ impl App {
                                 self.catalog_detail_kind = op;
                                 self.status = "Каталог загружен".into();
                             } else {
+                                self.wave_mode = false;
+                                self.wave_session.clear();
                                 self.tracks = data
                                     .as_array()
                                     .cloned()
@@ -488,6 +552,8 @@ impl eframe::App for App {
                     self.rename_title.clear();
                     self.current_playlist_owner.clear();
                     self.current_playlist_kind.clear();
+                    self.wave_mode = false;
+                    self.wave_session.clear();
                     self.stop();
                 }
                 if ui
@@ -509,6 +575,8 @@ impl eframe::App for App {
                     self.rename_title.clear();
                     self.current_playlist_owner.clear();
                     self.current_playlist_kind.clear();
+                    self.wave_mode = false;
+                    self.wave_session.clear();
                     self.stop();
                     self.request("account", String::new());
                 }
@@ -532,6 +600,8 @@ impl eframe::App for App {
                     self.rename_title.clear();
                     self.current_playlist_owner.clear();
                     self.current_playlist_kind.clear();
+                    self.wave_mode = false;
+                    self.wave_session.clear();
                     self.stop();
                 }
             });
@@ -616,7 +686,32 @@ impl eframe::App for App {
                     if ui.button("Моя волна · партия").clicked() {
                         self.catalog_detail = None;
                         self.library_visible = false;
-                        self.request("wave", String::new());
+                        self.wave_mode = false;
+                        self.wave_session.clear();
+                        self.request(
+                            "wave",
+                            json!({"station": self.wave_station, "previous": ""}).to_string(),
+                        );
+                    }
+                    if self.wave_mode && ui.button("Следующая партия").clicked() {
+                        let last = self.tracks.last().cloned().unwrap_or(Value::Null);
+                        let previous = last["id"].as_str().unwrap_or("").to_owned();
+                        let album = last["album"].as_str().unwrap_or("").to_owned();
+                        let mut next = json!({
+                            "station": self.wave_station,
+                            "previous": previous
+                        });
+                        if !self.wave_session.is_empty() {
+                            next["session"] = json!(self.wave_session);
+                        }
+                        if !album.is_empty() {
+                            next["album"] = json!(album);
+                        }
+                        self.request("wave", next.to_string());
+                    }
+                    if self.wave_mode && ui.button("Выйти из волны").clicked() {
+                        self.wave_mode = false;
+                        self.wave_session.clear();
                     }
                 });
             });
@@ -737,8 +832,7 @@ impl eframe::App for App {
             let mut selected_playlist: Option<(String, String)> = None;
             let mut selected_playlist_add: Option<(String, String)> = None;
             let mut selected_playlist_rename: Option<(String, String, String)> = None;
-            let mut selected_delete_playlist: Option<(String, String, String)> = None;
-            let mut selected_playlist_remove: Option<(String, String, usize, u64)> = None;
+            let mut selected_wave_feedback: Option<Value> = None;
             let mut selected_create_title: Option<String> = None;
             let mut open_library = false;
             let mut back_to_library = false;
@@ -835,10 +929,6 @@ impl eframe::App for App {
                                 self.rename_target = Some((owner.clone(), kind.clone()));
                                 self.rename_title = title.clone();
                             }
-                            if ui.button("Удалить").clicked() {
-                                selected_delete_playlist =
-                                    Some((owner.clone(), kind.clone(), title.clone()));
-                            }
                         });
                     }
                     if ui.button("Вернуться к каталогу").clicked() {
@@ -892,33 +982,21 @@ impl eframe::App for App {
                             ui.heading("Популярные треки");
                         }
                     }
-                    let playlist_detail = self.catalog_detail_kind == "playlist_detail";
-                    let revision = detail["revision"].as_u64().unwrap_or(1).max(1);
                     for (index, track) in detail_tracks.iter().enumerate() {
-                        ui.horizontal_wrapped(|ui| {
-                            let label = format!(
-                                "▶ {} — {}",
-                                track["title"].as_str().unwrap_or("Трек"),
-                                track["artists"].as_str().unwrap_or("")
-                            );
-                            if ui
-                                .add_enabled(
-                                    !self.jobs.busy() && track["available"] == true,
-                                    egui::Button::new(label),
-                                )
-                                .clicked()
-                            {
-                                selected_track = Some((detail_tracks.clone(), index));
-                            }
-                            if playlist_detail && ui.button("Убрать").clicked() {
-                                selected_playlist_remove = Some((
-                                    self.current_playlist_owner.clone(),
-                                    self.current_playlist_kind.clone(),
-                                    index,
-                                    revision,
-                                ));
-                            }
-                        });
+                        let label = format!(
+                            "▶ {} — {}",
+                            track["title"].as_str().unwrap_or("Трек"),
+                            track["artists"].as_str().unwrap_or("")
+                        );
+                        if ui
+                            .add_enabled(
+                                !self.jobs.busy() && track["available"] == true,
+                                egui::Button::new(label),
+                            )
+                            .clicked()
+                        {
+                            selected_track = Some((detail_tracks.clone(), index));
+                        }
                     }
                 } else if self.catalog_kind == "track" {
                     for (index, track) in self.tracks.iter().enumerate() {
@@ -945,6 +1023,20 @@ impl eframe::App for App {
                                 .clicked()
                             {
                                 selected_track = Some((self.tracks.clone(), index));
+                                if self.wave_mode {
+                                    selected_wave_feedback =
+                                        wave_event(track, &self.wave_station, "trackStarted");
+                                }
+                            }
+                            if self.wave_mode {
+                                if ui.button("♥").clicked() {
+                                    selected_wave_feedback =
+                                        wave_event(track, &self.wave_station, "like");
+                                }
+                                if ui.button("👎").clicked() {
+                                    selected_wave_feedback =
+                                        wave_event(track, &self.wave_station, "dislike");
+                                }
                             }
                             if ui.button("＋ В плейлист").clicked() {
                                 self.pending_add_track = Some(track.clone());
@@ -1009,25 +1101,13 @@ impl eframe::App for App {
             if back_to_library {
                 self.catalog_detail = None;
             }
+            if let Some(feedback) = selected_wave_feedback {
+                self.request("wave_feedback", feedback.to_string());
+            }
             if let Some(title) = selected_create_title {
                 self.request(
                     "playlist_create",
                     json!({"title": title, "visibility": "private"}).to_string(),
-                );
-            }
-            if let Some((owner, kind, title)) = selected_delete_playlist {
-                self.pending_delete_playlist = Some((owner, kind, title));
-            }
-            if let Some((owner, kind, index, revision)) = selected_playlist_remove {
-                self.request(
-                    "playlist_delete_track",
-                    json!({
-                        "owner": owner,
-                        "kind": kind,
-                        "from": index,
-                        "to": index,
-                        "revision": revision
-                    }).to_string(),
                 );
             }
             if let Some((owner, kind, title)) = selected_playlist_rename {
@@ -1055,28 +1135,6 @@ impl eframe::App for App {
             }
             if open_library {
                 self.request("library", String::new());
-            }
-            if let Some((owner, kind, title)) = self.pending_delete_playlist.clone() {
-                let mut confirm = false;
-                let mut cancel = false;
-                egui::Window::new("Удалить плейлист?")
-                    .collapsible(false)
-                    .show(ctx, |ui| {
-                        ui.label(format!("Удалить «{title}» из аккаунта?"));
-                        ui.horizontal(|ui| {
-                            confirm = ui.button("Удалить").clicked();
-                            cancel = ui.button("Отмена").clicked();
-                        });
-                    });
-                if confirm {
-                    self.pending_delete_playlist = None;
-                    self.request(
-                        "playlist_delete",
-                        json!({"owner": owner, "kind": kind}).to_string(),
-                    );
-                } else if cancel {
-                    self.pending_delete_playlist = None;
-                }
             }
             if let Some((queue, index)) = selected_track {
                 self.play_from(queue, index);
