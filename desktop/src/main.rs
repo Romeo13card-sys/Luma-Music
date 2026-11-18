@@ -287,11 +287,10 @@ impl App {
                                         .as_str()
                                         .unwrap_or("user:onyourwave")
                                         .to_owned();
-                                    self.wave_session = first["waveSession"]
-                                        .as_str()
-                                        .unwrap_or("")
-                                        .to_owned();
-                                    let batch = first["waveBatch"].as_str().unwrap_or("").to_owned();
+                                    self.wave_session =
+                                        first["waveSession"].as_str().unwrap_or("").to_owned();
+                                    let batch =
+                                        first["waveBatch"].as_str().unwrap_or("").to_owned();
                                     if !batch.is_empty() {
                                         let mut feedback = json!({
                                             "type": "radioStarted",
