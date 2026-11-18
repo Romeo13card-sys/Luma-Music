@@ -85,7 +85,9 @@ fn track(value: &Value) -> Option<Track> {
 
 fn catalog_item(kind: &str, value: &Value) -> Value {
     if kind == "track" {
-        return track(value).map(|item| json!(item)).unwrap_or_else(|| json!({}));
+        return track(value)
+            .map(|item| json!(item))
+            .unwrap_or_else(|| json!({}));
     }
     let mut item = value.clone();
     let cover = ["ogImage", "coverUri"]
@@ -257,7 +259,12 @@ impl MusicClient {
         let section = &value[kind];
         let results = section["results"]
             .as_array()
-            .map(|items| items.iter().map(|item| catalog_item(kind, item)).collect::<Vec<_>>())
+            .map(|items| {
+                items
+                    .iter()
+                    .map(|item| catalog_item(kind, item))
+                    .collect::<Vec<_>>()
+            })
             .unwrap_or_default();
         Ok(json!({
             "kind": kind,
@@ -630,13 +637,13 @@ pub fn dispatch(token: &str, operation: &str, argument: &str) -> String {
             "track" => client.track_info(argument),
             "search" => client.search(argument).map(|tracks| json!(tracks)),
             "catalog_search" => {
-                let options: Value = serde_json::from_str(argument)
-                    .map_err(|_| "Некорректный запрос каталога")?;
+                let options: Value =
+                    serde_json::from_str(argument).map_err(|_| "Некорректный запрос каталога")?;
                 let query = options["query"].as_str().unwrap_or("");
                 let kind = options["kind"].as_str().unwrap_or("");
                 let page = options["page"].as_u64().unwrap_or(0);
                 client.search_catalog(query, kind, page)
-            },
+            }
             "library" => client.library(),
             "playlist" => client.playlist(argument).map(|v| json!(v)),
             "likes" => client.likes().map(|v| json!(v)),
@@ -1179,7 +1186,6 @@ mod artwork_metadata_tests {
     }
 }
 
-
 #[cfg(test)]
 mod catalog_search_validation_tests {
     use super::catalog_search_query;
@@ -1190,11 +1196,7 @@ mod catalog_search_validation_tests {
             catalog_search_query("  Luma  ", "artist", 0).unwrap(),
             "Luma"
         );
-        for (query, kind, page) in [
-            ("", "track", 0),
-            ("x", "genre", 0),
-            ("x", "album", 1001),
-        ] {
+        for (query, kind, page) in [("", "track", 0), ("x", "genre", 0), ("x", "album", 1001)] {
             assert!(catalog_search_query(query, kind, page).is_err());
         }
         assert!(catalog_search_query(&"x".repeat(201), "artist", 0).is_err());
