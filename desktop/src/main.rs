@@ -71,6 +71,15 @@ struct App {
     catalog_has_next: bool,
     catalog_detail: Option<Value>,
     catalog_detail_kind: String,
+    library_items: Vec<Value>,
+    library_visible: bool,
+    new_playlist_title: String,
+    rename_target: Option<(String, String)>,
+    rename_title: String,
+    pending_add_track: Option<Value>,
+    pending_playlist_target: Option<(String, String)>,
+    current_playlist_owner: String,
+    current_playlist_kind: String,
     queue: Vec<Value>,
     connected: bool,
     jobs: Jobs,
@@ -104,6 +113,15 @@ impl App {
             catalog_has_next: false,
             catalog_detail: None,
             catalog_detail_kind: String::new(),
+            library_items: vec![],
+            library_visible: false,
+            new_playlist_title: String::new(),
+            rename_target: None,
+            rename_title: String::new(),
+            pending_add_track: None,
+            pending_playlist_target: None,
+            current_playlist_owner: String::new(),
+            current_playlist_kind: String::new(),
             queue: vec![],
             connected: false,
             jobs: Jobs::default(),
@@ -220,6 +238,66 @@ impl App {
                                     "Аккаунт: {}",
                                     data["name"].as_str().unwrap_or("Яндекс")
                                 );
+                            } else if op == "library" {
+                                self.library_items = data.as_array().cloned().unwrap_or_default();
+                                self.library_visible = true;
+                                self.catalog_detail = None;
+                                self.catalog_detail_kind.clear();
+                                self.status = format!("Плейлистов: {}", self.library_items.len());
+                            } else if op == "playlist_detail" {
+                                if let (Some((owner, kind)), Some(track)) = (
+                                    self.pending_playlist_target.take(),
+                                    self.pending_add_track.as_ref(),
+                                ) {
+                                    let track_id = track["id"].as_str().unwrap_or("");
+                                    let album_id = track["album"].as_str().unwrap_or("");
+                                    if track_id.is_empty() || album_id.is_empty() {
+                                        self.status = "У этого трека не найден ID альбома".into();
+                                    } else {
+                                        let at = data["tracks"].as_array().map_or(0, |items| items.len());
+                                        let revision = data["revision"].as_u64().unwrap_or(1).max(1);
+                                        self.request(
+                                            "playlist_insert_track",
+                                            json!({
+                                                "owner": owner,
+                                                "kind": kind,
+                                                "track_id": track_id,
+                                                "album_id": album_id,
+                                                "at": at,
+                                                "revision": revision
+                                            }).to_string(),
+                                        );
+                                    }
+                                } else {
+                                    self.catalog_detail = Some(data);
+                                    self.catalog_detail_kind = "playlist_detail".into();
+                                    self.library_visible = false;
+                                    self.status = "Плейлист загружен".into();
+                                }
+                            } else if op == "playlist_insert_track" {
+                                self.pending_add_track = None;
+                                self.pending_playlist_target = None;
+                                self.status = "Трек добавлен в плейлист".into();
+                                if !self.library_visible
+                                    && !self.current_playlist_owner.is_empty()
+                                    && self.catalog_detail_kind == "playlist_detail"
+                                {
+                                    self.request(
+                                        "playlist_detail",
+                                        json!({
+                                            "owner": self.current_playlist_owner,
+                                            "kind": self.current_playlist_kind
+                                        }).to_string(),
+                                    );
+                                } else {
+                                    self.request("library", String::new());
+                                }
+                            } else if op == "playlist_create"
+                                || op == "playlist_rename"
+                                || op == "playlist_delete"
+                            {
+                                self.status = "Плейлисты обновлены".into();
+                                self.request("library", String::new());
                             } else if op == "catalog_search" {
                                 self.catalog_results = data["results"]
                                     .as_array()
