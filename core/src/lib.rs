@@ -83,6 +83,30 @@ fn track(value: &Value) -> Option<Track> {
     })
 }
 
+fn catalog_item(kind: &str, value: &Value) -> Value {
+    if kind == "track" {
+        return track(value)
+            .map(|item| json!(item))
+            .unwrap_or_else(|| json!({}));
+    }
+    let mut item = value.clone();
+    let cover = ["ogImage", "coverUri"]
+        .iter()
+        .find_map(|key| value[key].as_str().and_then(artwork::normalize))
+        .or_else(|| {
+            value["cover"]
+                .as_str()
+                .and_then(artwork::normalize)
+                .or_else(|| value["cover"]["uri"].as_str().and_then(artwork::normalize))
+        });
+    if let Some(cover) = cover {
+        item["cover"] = json!(cover);
+    } else {
+        item.as_object_mut().map(|object| object.remove("cover"));
+    }
+    item
+}
+
 fn catalog_search_query(query: &str, kind: &str, page: u64) -> Result<String> {
     if !matches!(kind, "track" | "album" | "artist" | "playlist") {
         return Err("Неподдерживаемый тип поиска".into());
@@ -233,7 +257,15 @@ impl MusicClient {
             &[("text", &query), ("type", kind), ("page", &page)],
         )?;
         let section = &value[kind];
-        let results = section["results"].as_array().cloned().unwrap_or_default();
+        let results = section["results"]
+            .as_array()
+            .map(|items| {
+                items
+                    .iter()
+                    .map(|item| catalog_item(kind, item))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
         Ok(json!({
             "kind": kind,
             "query": query,
@@ -605,13 +637,13 @@ pub fn dispatch(token: &str, operation: &str, argument: &str) -> String {
             "track" => client.track_info(argument),
             "search" => client.search(argument).map(|tracks| json!(tracks)),
             "catalog_search" => {
-                let options: Value = serde_json::from_str(argument)
-                    .map_err(|_| "Некорректный запрос каталога")?;
+                let options: Value =
+                    serde_json::from_str(argument).map_err(|_| "Некорректный запрос каталога")?;
                 let query = options["query"].as_str().unwrap_or("");
                 let kind = options["kind"].as_str().unwrap_or("");
                 let page = options["page"].as_u64().unwrap_or(0);
                 client.search_catalog(query, kind, page)
-            },
+            }
             "library" => client.library(),
             "playlist" => client.playlist(argument).map(|v| json!(v)),
             "likes" => client.likes().map(|v| json!(v)),
@@ -891,6 +923,30 @@ mod tests {
         assert!(track(&json!({"title":"Без ID"})).is_none());
     }
     #[test]
+    fn catalog_items_normalize_tracks_and_public_artwork() {
+        let song = catalog_item(
+            "track",
+            &json!({"id":42,"title":"Трек","artists":[{"name":"А"},{"name":"Б"}],"available":true}),
+        );
+        assert_eq!(song["id"], "42");
+        assert_eq!(song["artists"], "А, Б");
+        let artist = catalog_item(
+            "artist",
+            &json!({"id":7,"name":"Исполнитель","coverUri":"avatars.yandex.net/get-music-content/abc/400x400"}),
+        );
+        assert_eq!(artist["name"], "Исполнитель");
+        assert_eq!(
+            artist["cover"],
+            "https://avatars.yandex.net/get-music-content/abc/%%"
+        );
+        let unsafe_cover = catalog_item(
+            "album",
+            &json!({"id":8,"title":"Альбом","coverUri":"https://evil.test/cover"}),
+        );
+        assert!(unsafe_cover.get("cover").is_none());
+    }
+
+    #[test]
     fn rejects_credentials_and_external_audio_hosts() {
         for url in [
             "http://a.yandex.net/x",
@@ -1130,7 +1186,6 @@ mod artwork_metadata_tests {
     }
 }
 
-
 #[cfg(test)]
 mod catalog_search_validation_tests {
     use super::catalog_search_query;
@@ -1141,11 +1196,7 @@ mod catalog_search_validation_tests {
             catalog_search_query("  Luma  ", "artist", 0).unwrap(),
             "Luma"
         );
-        for (query, kind, page) in [
-            ("", "track", 0),
-            ("x", "genre", 0),
-            ("x", "album", 1001),
-        ] {
+        for (query, kind, page) in [("", "track", 0), ("x", "genre", 0), ("x", "album", 1001)] {
             assert!(catalog_search_query(query, kind, page).is_err());
         }
         assert!(catalog_search_query(&"x".repeat(201), "artist", 0).is_err());

@@ -611,24 +611,234 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
     }
 
     private fun search() {
-        body.addView(text("Поиск",30f,white,true))
-        val box=EditText(this).apply {
-            hint=t("Трек или исполнитель");setHintTextColor(muted);setTextColor(white);setSingleLine()
-            background=surface(dp(18).toFloat());setPadding(dp(16),dp(12),dp(16),dp(12))
-            imeOptions=android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
+        body.addView(text("Поиск", 30f, white, true))
+        body.addView(text("Весь каталог Яндекс Музыки", 13f, muted))
+        val box = EditText(this).apply {
+            hint = t("Трек, альбом, исполнитель или плейлист")
+            setHintTextColor(muted)
+            setTextColor(white)
+            setSingleLine()
+            background = surface(dp(18).toFloat())
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
         }
         body.addView(box)
-        val results=column()
-        fun submit(){
-            if(token.isBlank()){notice("Подключите аккаунт для поиска в Яндекс Музыке");return}
-            val query=box.text.toString().trim();if(query.isEmpty())return
-            (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).hideSoftInputFromWindow(box.windowToken,0)
-            generation++
-            request("search",query){data->results.removeAllViews();renderTracks(results,(data as JSONArray).songs())}
+
+        val categories = listOf(
+            "track" to "Треки",
+            "album" to "Альбомы",
+            "artist" to "Исполнители",
+            "playlist" to "Плейлисты",
+        )
+        val categoryRow = row()
+        body.addView(categoryRow)
+        val results = column()
+        val pageStatus = text("", 12f, muted)
+        var selectedKind = "track"
+        var currentQuery = ""
+        var currentPage = 0
+        var pageSize = 20
+        var hasNext = false
+
+        var previous: LumaButton? = null
+        var next: LumaButton? = null
+
+        fun updateNavigation() {
+            previous?.visibility = if (currentPage > 0) View.VISIBLE else View.INVISIBLE
+            next?.visibility = if (hasNext) View.VISIBLE else View.INVISIBLE
         }
-        box.setOnEditorActionListener {_,id,_->if(id==android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH){submit();true}else false}
-        gap(body,8);body.addView(action("Искать",true){submit()});gap(body,8)
-        body.addView(text("Поиск по каталогу Яндекс Музыки",13f,muted));body.addView(results)
+
+        fun runCatalogSearch(resetPage: Boolean = true) {
+            if (token.isBlank()) {
+                notice("Подключите аккаунт для поиска в Яндекс Музыке")
+                return
+            }
+            val query = box.text.toString().trim()
+            if (query.isEmpty()) {
+                notice("Введите запрос для поиска")
+                return
+            }
+            if (query.length > 200) {
+                notice("Запрос не должен превышать 200 символов")
+                return
+            }
+            if (resetPage) currentPage = 0
+            currentQuery = query
+            (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
+                .hideSoftInputFromWindow(box.windowToken, 0)
+            generation++
+            results.removeAllViews()
+            pageStatus.text = "Ищем…"
+            request(
+                "catalog_search",
+                JSONObject()
+                    .put("query", currentQuery)
+                    .put("kind", selectedKind)
+                    .put("page", currentPage)
+                    .toString(),
+            ) { raw ->
+                val data = raw as JSONObject
+                val items = data.optJSONArray("results") ?: JSONArray()
+                val pager = data.optJSONObject("pager") ?: JSONObject()
+                val total = pager.optInt("total", pager.optInt("totalCount", -1))
+                pageSize = pager.optInt("perPage", pager.optInt("pageSize", 20)).coerceIn(1, 100)
+                hasNext = if (total >= 0) {
+                    (currentPage + 1) * pageSize < total
+                } else {
+                    items.length() >= pageSize
+                }
+                pageStatus.text = if (total >= 0) {
+                    "Страница ${currentPage + 1} · найдено $total"
+                } else {
+                    "Страница ${currentPage + 1} · результатов: ${items.length()}"
+                }
+                renderCatalogResults(results, items, selectedKind)
+                updateNavigation()
+            }
+        }
+
+        fun drawCategories() {
+            categoryRow.removeAllViews()
+            categories.forEach { (kind, label) ->
+                categoryRow.addView(
+                    action(label, kind == selectedKind) {
+                        selectedKind = kind
+                        currentPage = 0
+                        drawCategories()
+                        runCatalogSearch()
+                    },
+                    LinearLayout.LayoutParams(0, -2, 1f).apply {
+                        rightMargin = dp(4)
+                        topMargin = dp(8)
+                    },
+                )
+            }
+        }
+
+        previous = action("‹ Назад") {
+            if (currentPage > 0) {
+                currentPage--
+                runCatalogSearch(false)
+            }
+        }
+        next = action("Ещё ›") {
+            if (hasNext) {
+                currentPage++
+                runCatalogSearch(false)
+            }
+        }
+        val navigation = row().apply {
+            addView(previous!!, LinearLayout.LayoutParams(0, -2, 1f))
+            addView(next!!, LinearLayout.LayoutParams(0, -2, 1f))
+        }
+        drawCategories()
+        box.setOnEditorActionListener { _, id, _ ->
+            if (id == android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH) {
+                runCatalogSearch()
+                true
+            } else false
+        }
+        gap(body, 8)
+        body.addView(action("Искать", true) { runCatalogSearch() })
+        gap(body, 8)
+        body.addView(pageStatus)
+        body.addView(results)
+        body.addView(navigation)
+        updateNavigation()
+    }
+
+    private fun renderCatalogResults(target: LinearLayout, items: JSONArray, kind: String) {
+        target.removeAllViews()
+        if (kind == "track") {
+            val songs = (0 until items.length()).mapNotNull { index ->
+                runCatching { Song.from(items.getJSONObject(index)) }.getOrNull()
+            }
+            renderTracks(target, songs)
+            return
+        }
+        if (items.length() == 0) {
+            target.addView(text("Ничего не найдено. Попробуйте изменить запрос.", 15f, muted))
+            return
+        }
+        for (index in 0 until minOf(items.length(), 100)) {
+            val item = items.optJSONObject(index) ?: continue
+            val title = item.optString("title").takeIf { it.isNotBlank() }
+                ?: item.optString("name").takeIf { it.isNotBlank() }
+                ?: "Без названия"
+            val artistNames = item.optJSONArray("artists")?.let { artists ->
+                (0 until artists.length()).mapNotNull { artists.optJSONObject(it)?.optString("name") }
+                    .filter { it.isNotBlank() }.joinToString(", ")
+            }.orEmpty()
+            val subtitle = when (kind) {
+                "album" -> listOfNotNull(
+                    artistNames.takeIf { it.isNotBlank() },
+                    item.optString("year").takeIf { it.isNotBlank() && it != "0" },
+                    item.optString("genre").takeIf { it.isNotBlank() },
+                ).joinToString(" · ").ifBlank { "Альбом" }
+                "artist" -> item.optJSONArray("genres")?.let { genres ->
+                    (0 until genres.length()).map { genres.optString(it) }
+                        .filter { it.isNotBlank() }.joinToString(" · ")
+                }.orEmpty().ifBlank { "Исполнитель" }
+                else -> {
+                    val owner = item.optJSONObject("owner")?.optString("name").orEmpty()
+                    owner.ifBlank { "Плейлист" }
+                }
+            }
+            val card = row().apply {
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(10), dp(10), dp(8), dp(10))
+                background = surface(dp(16).toFloat())
+                isFocusable = true
+            }
+            val art = AlbumArt(this).apply { bind(item.optString("cover")) }
+            card.addView(art, LinearLayout.LayoutParams(dp(56), dp(56)).apply {
+                rightMargin = dp(12)
+            })
+            val labels = column()
+            labels.addView(text(title, 16f, white, true, raw = true).apply {
+                maxLines = 2
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            })
+            labels.addView(text(subtitle, 12f, muted, raw = true).apply {
+                maxLines = 2
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            })
+            card.addView(labels, LinearLayout.LayoutParams(0, -2, 1f))
+            val count = item.optInt("trackCount", item.optInt("tracksCount", 0))
+            if (count > 0) card.addView(text(count.toString(), 12f, muted))
+            card.setOnClickListener {
+                if (kind == "playlist") {
+                    val ownerId = item.optJSONObject("owner")?.optString("uid").orEmpty()
+                    val playlistId = item.optString("kind")
+                    if (ownerId.isNotBlank() && ownerId.all { it.isDigit() } &&
+                        playlistId.isNotBlank() && playlistId.all { it.isDigit() }
+                    ) {
+                        showTracks(title, "playlist", "$ownerId:$playlistId")
+                    } else {
+                        notice("Не удалось определить владельца плейлиста")
+                    }
+                } else {
+                    val details = buildString {
+                        append(title)
+                        if (subtitle.isNotBlank()) append("\n").append(subtitle)
+                        item.optString("description").takeIf { it.isNotBlank() }?.let {
+                            append("\n\n").append(it)
+                        }
+                        if (count > 0) append("\n\nТреков: ").append(count)
+                        item.optString("id").takeIf { it.isNotBlank() }?.let {
+                            append("\nID: ").append(it)
+                        }
+                    }
+                    LumaDialog(this).setTitle(if (kind == "album") "Альбом" else "Исполнитель")
+                        .setMessage(details)
+                        .setPositiveButton("Закрыть", null)
+                        .show()
+                }
+            }
+            target.addView(card, LinearLayout.LayoutParams(-1, -2).apply {
+                topMargin = dp(8)
+            })
+        }
     }
 
     private fun library() {
