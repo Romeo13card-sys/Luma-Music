@@ -373,6 +373,8 @@ impl eframe::App for App {
                 {
                     self.connected = false;
                     self.tracks.clear();
+                    self.catalog_results.clear();
+                    self.catalog_detail = None;
                     self.stop();
                 }
                 if ui
@@ -384,6 +386,8 @@ impl eframe::App for App {
                 {
                     self.connected = false;
                     self.tracks.clear();
+                    self.catalog_results.clear();
+                    self.catalog_detail = None;
                     self.stop();
                     self.request("account", String::new());
                 }
@@ -397,6 +401,8 @@ impl eframe::App for App {
                     self.connected = false;
                     self.token.clear();
                     self.tracks.clear();
+                    self.catalog_results.clear();
+                    self.catalog_detail = None;
                     self.stop();
                 }
             });
@@ -669,7 +675,11 @@ impl eframe::App for App {
                                     .map(str::to_owned)
                                     .or_else(|| item["owner"]["uid"].as_u64().map(|v| v.to_string()))
                                     .unwrap_or_default();
-                                let kind = item["kind"].as_str().unwrap_or("").to_owned();
+                                let kind = item["kind"]
+                                    .as_str()
+                                    .map(str::to_owned)
+                                    .or_else(|| item["kind"].as_u64().map(|v| v.to_string()))
+                                    .unwrap_or_default();
                                 if !owner.is_empty() && !kind.is_empty() {
                                     selected_playlist = Some((owner, kind));
                                 }
