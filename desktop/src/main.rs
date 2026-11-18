@@ -324,6 +324,7 @@ impl App {
                                     self.catalog_detail = Some(data);
                                     self.catalog_detail_kind = "playlist_detail".into();
                                     self.library_visible = false;
+                                    self.wave_mode = false;
                                     self.status = "Плейлист загружен".into();
                                 }
                             } else if op == "playlist_insert_track" {
@@ -386,6 +387,8 @@ impl App {
                                 self.catalog_detail_kind = op;
                                 self.status = "Каталог загружен".into();
                             } else {
+                                self.wave_mode = false;
+                                self.wave_session.clear();
                                 self.tracks = data
                                     .as_array()
                                     .cloned()
