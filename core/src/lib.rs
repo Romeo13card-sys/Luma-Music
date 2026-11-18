@@ -132,7 +132,8 @@ fn playlist_insert_diff(track_id: &str, album_id: &str, at: u64) -> Result<Strin
         "op": "insert",
         "at": at,
         "tracks": [{"id": track_id, "albumId": album_id}]
-    }]).to_string())
+    }])
+    .to_string())
 }
 
 fn playlist_delete_diff(from: u64, to: u64) -> Result<String> {
@@ -473,7 +474,10 @@ impl MusicClient {
         let track_id = options["track_id"].as_str().unwrap_or("");
         let album_id = options["album_id"].as_str().unwrap_or("");
         let at = options["at"].as_u64().unwrap_or(0);
-        let revision = options["revision"].as_u64().filter(|value| *value > 0).unwrap_or(1);
+        let revision = options["revision"]
+            .as_u64()
+            .filter(|value| *value > 0)
+            .unwrap_or(1);
         let diff = playlist_insert_diff(track_id, album_id, at)?;
         self.post(
             &format!("{path}/change-relative"),
@@ -1159,7 +1163,8 @@ mod tests {
         assert_eq!(playlist_title("  Luma  ").unwrap(), "Luma");
         assert!(playlist_title("  ").is_err());
         assert!(playlist_title(&"x".repeat(101)).is_err());
-        let insert: Value = serde_json::from_str(&playlist_insert_diff("42", "9", 3).unwrap()).unwrap();
+        let insert: Value =
+            serde_json::from_str(&playlist_insert_diff("42", "9", 3).unwrap()).unwrap();
         assert_eq!(insert[0]["op"], "insert");
         assert_eq!(insert[0]["at"], 3);
         assert_eq!(insert[0]["tracks"][0]["id"], "42");
