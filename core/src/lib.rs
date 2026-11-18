@@ -83,7 +83,7 @@ fn track(value: &Value) -> Option<Track> {
     })
 }
 
-fn catalog_search_query<'a>(query: &'a str, kind: &str, page: u64) -> Result<String> {
+fn catalog_search_query(query: &str, kind: &str, page: u64) -> Result<String> {
     if !matches!(kind, "track" | "album" | "artist" | "playlist") {
         return Err("Неподдерживаемый тип поиска".into());
     }
@@ -226,6 +226,7 @@ impl MusicClient {
     /// The response shape is preserved because artist/album/playlist metadata differs.
     pub fn search_catalog(&self, query: &str, kind: &str, page: u64) -> Result<Value> {
         let query = catalog_search_query(query, kind, page)?;
+        let page_number = page;
         let page = page.to_string();
         let value = self.get(
             "/search",
@@ -236,7 +237,7 @@ impl MusicClient {
         Ok(json!({
             "kind": kind,
             "query": query,
-            "page": page.parse::<u64>().unwrap_or(0),
+            "page": page_number,
             "results": results,
             "pager": section["pager"]
         }))
@@ -1144,9 +1145,9 @@ mod catalog_search_validation_tests {
             ("", "track", 0),
             ("x", "genre", 0),
             ("x", "album", 1001),
-            (&"x".repeat(201), "artist", 0),
         ] {
             assert!(catalog_search_query(query, kind, page).is_err());
         }
+        assert!(catalog_search_query(&"x".repeat(201), "artist", 0).is_err());
     }
 }
