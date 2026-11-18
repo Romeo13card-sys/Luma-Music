@@ -83,6 +83,20 @@ fn track(value: &Value) -> Option<Track> {
     })
 }
 
+fn catalog_search_query<'a>(query: &'a str, kind: &str, page: u64) -> Result<String> {
+    if !matches!(kind, "track" | "album" | "artist" | "playlist") {
+        return Err("Неподдерживаемый тип поиска".into());
+    }
+    let query = query.trim();
+    if query.is_empty() || query.chars().count() > 200 {
+        return Err("Введите запрос длиной от 1 до 200 символов".into());
+    }
+    if page > 1000 {
+        return Err("Слишком большая страница поиска".into());
+    }
+    Ok(query.to_owned())
+}
+
 pub struct MusicClient {
     client: Client,
     token: String,
@@ -206,6 +220,26 @@ impl MusicClient {
             .as_array()
             .ok_or("Сервис не вернул список треков")?;
         Ok(results.iter().filter_map(track).collect())
+    }
+
+    /// Searches a supported catalog entity without forcing the result into Track.
+    /// The response shape is preserved because artist/album/playlist metadata differs.
+    pub fn search_catalog(&self, query: &str, kind: &str, page: u64) -> Result<Value> {
+        let query = catalog_search_query(query, kind, page)?;
+        let page = page.to_string();
+        let value = self.get(
+            "/search",
+            &[("text", &query), ("type", kind), ("page", &page)],
+        )?;
+        let section = &value[kind];
+        let results = section["results"].as_array().cloned().unwrap_or_default();
+        Ok(json!({
+            "kind": kind,
+            "query": query,
+            "page": page.parse::<u64>().unwrap_or(0),
+            "results": results,
+            "pager": section["pager"]
+        }))
     }
     pub fn library(&self) -> Result<Value> {
         let account = self.account()?;
@@ -569,6 +603,14 @@ pub fn dispatch(token: &str, operation: &str, argument: &str) -> String {
             ),
             "track" => client.track_info(argument),
             "search" => client.search(argument).map(|tracks| json!(tracks)),
+            "catalog_search" => {
+                let options: Value = serde_json::from_str(argument)
+                    .map_err(|_| "Некорректный запрос каталога")?;
+                let query = options["query"].as_str().unwrap_or("");
+                let kind = options["kind"].as_str().unwrap_or("");
+                let page = options["page"].as_u64().unwrap_or(0);
+                client.search_catalog(query, kind, page)
+            },
             "library" => client.library(),
             "playlist" => client.playlist(argument).map(|v| json!(v)),
             "likes" => client.likes().map(|v| json!(v)),
@@ -1084,5 +1126,27 @@ mod artwork_metadata_tests {
         let wave=parse_wave(&json!({"batchId":"b","sequence":[{"track":{"id":42,"available":true,"coverUri":cover}}]})).unwrap();
         assert_eq!(wave[0]["cover"], format!("https://{cover}"));
         assert_eq!(wave[0]["waveBatch"], "b");
+    }
+}
+
+
+#[cfg(test)]
+mod catalog_search_validation_tests {
+    use super::catalog_search_query;
+
+    #[test]
+    fn catalog_search_accepts_only_supported_types_and_bounded_input() {
+        assert_eq!(
+            catalog_search_query("  Luma  ", "artist", 0).unwrap(),
+            "Luma"
+        );
+        for (query, kind, page) in [
+            ("", "track", 0),
+            ("x", "genre", 0),
+            ("x", "album", 1001),
+            (&"x".repeat(201), "artist", 0),
+        ] {
+            assert!(catalog_search_query(query, kind, page).is_err());
+        }
     }
 }
