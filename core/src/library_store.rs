@@ -290,7 +290,24 @@ pub fn dispatch(db: &mut Connection, operation: &str, v: &Value) -> Result<Value
         }
         "history_stats" => {
             let items = list(&tx, scope, "history")?;
-            json!({"tracks":items.len(),"starts":items.iter().map(|v|v["plays"].as_u64().unwrap_or(0)).sum::<u64>()})
+            let starts = items
+                .iter()
+                .map(|value| value["plays"].as_u64().unwrap_or(0))
+                .sum::<u64>();
+            let most_played = items
+                .iter()
+                .max_by_key(|value| value["plays"].as_u64().unwrap_or(0))
+                .map(|value| {
+                    json!({
+                        "song": value["song"],
+                        "plays": value["plays"]
+                    })
+                });
+            json!({
+                "tracks": items.len(),
+                "starts": starts,
+                "most_played": most_played
+            })
         }
         "history_clear" | "bookmark_clear" | "pin_clear" => {
             let kind = operation.split('_').next().unwrap();
@@ -350,6 +367,21 @@ mod tests {
         assert!(copy.get("history").is_none());
         assert!(!copy.to_string().contains("waveSession"));
     }
+    #[test]
+    fn history_stats_counts_unique_tracks_and_play_starts() {
+        let mut db = db();
+        let mut input = args();
+        for stamp in 0..3 {
+            input["now"] = json!(stamp);
+            dispatch(&mut db, "history_add", &input).unwrap();
+        }
+        let stats = dispatch(&mut db, "history_stats", &input).unwrap();
+        assert_eq!(stats["tracks"], 1);
+        assert_eq!(stats["starts"], 3);
+        assert_eq!(stats["most_played"]["song"]["id"], "42");
+        assert_eq!(stats["most_played"]["plays"], 3);
+    }
+
     #[test]
     fn restore_rejects_secret_settings_atomically_and_restores_bookmarks() {
         let mut db = db();
