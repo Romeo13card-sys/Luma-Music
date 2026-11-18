@@ -14,6 +14,7 @@ class OfflineActivity:MaterialActivity() {
     private val handler=Handler(Looper.getMainLooper())
     private lateinit var status:TextView
     private lateinit var storage:TextView
+    private lateinit var queueStatus:TextView
     private lateinit var progress:LinearProgressIndicator
     private lateinit var adapter:BaseAdapter
     private var tracks=JSONArray()
@@ -25,6 +26,7 @@ class OfflineActivity:MaterialActivity() {
         override fun run(){
             if(!visible)return
             status.text=loadError ?: L10n.text(this@OfflineActivity,DownloadService.message)
+            queueStatus.text=OfflineDownloads.queueSummary(this@OfflineActivity)
             progress.isIndeterminate=DownloadService.percent<0
             if(!progress.isIndeterminate)progress.progress=DownloadService.percent
             progress.visibility=if(DownloadService.busy)View.VISIBLE else View.GONE
@@ -41,9 +43,15 @@ class OfflineActivity:MaterialActivity() {
         root.addView(LumaTextView(this).apply {text="Загрузки";textSize=28f})
         root.addView(LumaTextView(this).apply {text="Скачанные треки играют без сети. Удерживайте трек для удаления.";textSize=14f})
         status=LumaTextView(this);root.addView(status)
+        queueStatus=LumaTextView(this);root.addView(queueStatus)
         storage=LumaTextView(this);root.addView(storage)
         progress=LinearProgressIndicator(this);root.addView(progress,LinearLayout.LayoutParams(-1,8))
-        button("Отменить загрузку",root){DownloadService.cancel()}
+        button("Отменить текущую загрузку",root){OfflineDownloads.cancelActive(this)}
+        button("Продолжить очередь",root){OfflineDownloads.resume(this)}
+        button("Очистить ожидающие загрузки",root){
+            LumaDialog(this).setTitle("Очистить очередь?").setMessage("Текущая загрузка продолжится, ожидающие треки будут удалены из очереди.")
+                .setNegativeButton("Отмена",null).setPositiveButton("Очистить"){_,_->OfflineDownloads.clearPending(this)}.show()
+        }
         val prefs=SettingsStore.get(this)
         val wifi=com.google.android.material.materialswitch.MaterialSwitch(this).apply {text=L10n.text(this@OfflineActivity,"Загружать только по Wi-Fi");isChecked=prefs.getBoolean("download_wifi_only",true)
             setOnCheckedChangeListener {_,checked->prefs.edit().putBoolean("download_wifi_only",checked).apply()}}
@@ -95,7 +103,8 @@ class OfflineActivity:MaterialActivity() {
         button("Удалить все загрузки",root){
             LumaDialog(this).setTitle("Удалить все загрузки?").setMessage("Будут удалены скачанные и незавершённые файлы этого аккаунта.")
                 .setNegativeButton("Отмена",null).setPositiveButton("Удалить") {_,_->
-                    DownloadService.cancel()
+                    OfflineDownloads.cancelActive(this)
+                    OfflineDownloads.clearPending(this)
                     val args=OfflineDownloads.arguments(this)
                     worker.execute {
                         val result=runCatching {NativeCore.call("offline_clear",args.toString())}
@@ -124,7 +133,7 @@ class OfflineActivity:MaterialActivity() {
             }
         }
     }
-    override fun onStart(){super.onStart();visible=true;handler.post(tick)}
+    override fun onStart(){super.onStart();visible=true;OfflineDownloads.resume(this);handler.post(tick)}
     override fun onStop(){visible=false;handler.removeCallbacks(tick);super.onStop()}
     override fun onDestroy(){worker.shutdownNow();super.onDestroy()}
 }
