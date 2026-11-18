@@ -992,8 +992,8 @@ mod tests {
     #[test]
     fn catalog_detail_ids_are_numeric_and_bounded() {
         assert_eq!(catalog_entity_id("42", "альбома").unwrap(), "42");
-        for invalid in ["", "../42", "42:7", "1".repeat(65).as_str()] {
-            assert!(catalog_entity_id(invalid, "альбома").is_err());
+        for invalid in [String::new(), "../42".into(), "42:7".into(), "1".repeat(65)] {
+            assert!(catalog_entity_id(&invalid, "альбома").is_err());
         }
     }
 
