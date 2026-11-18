@@ -652,7 +652,30 @@ impl eframe::App for App {
                     if ui.button("Моя волна · партия").clicked() {
                         self.catalog_detail = None;
                         self.library_visible = false;
-                        self.request("wave", String::new());
+                        self.wave_mode = false;
+                        self.wave_session.clear();
+                        self.request(
+                            "wave",
+                            json!({"station": self.wave_station, "previous": ""}).to_string(),
+                        );
+                    }
+                    if self.wave_mode && ui.button("Следующая партия").clicked() {
+                        let last = self.tracks.last().cloned().unwrap_or(Value::Null);
+                        let previous = last["id"].as_str().unwrap_or("").to_owned();
+                        let album = last["album"].as_str().unwrap_or("").to_owned();
+                        self.request(
+                            "wave",
+                            json!({
+                                "station": self.wave_station,
+                                "session": self.wave_session,
+                                "previous": previous,
+                                "album": album
+                            }).to_string(),
+                        );
+                    }
+                    if self.wave_mode && ui.button("Выйти из волны").clicked() {
+                        self.wave_mode = false;
+                        self.wave_session.clear();
                     }
                 });
             });
@@ -773,6 +796,7 @@ impl eframe::App for App {
             let mut selected_playlist: Option<(String, String)> = None;
             let mut selected_playlist_add: Option<(String, String)> = None;
             let mut selected_playlist_rename: Option<(String, String, String)> = None;
+            let mut selected_wave_feedback: Option<Value> = None;
             let mut selected_create_title: Option<String> = None;
             let mut open_library = false;
             let mut back_to_library = false;
@@ -964,6 +988,40 @@ impl eframe::App for App {
                             {
                                 selected_track = Some((self.tracks.clone(), index));
                             }
+                            if self.wave_mode {
+                                if ui.button("♥").clicked() {
+                                    let mut feedback = json!({
+                                        "type": "like",
+                                        "station": track["waveStation"].as_str().unwrap_or(&self.wave_station),
+                                        "timestamp": unix_millis(),
+                                        "batchId": track["waveBatch"].as_str().unwrap_or(""),
+                                        "trackId": track["id"].as_str().unwrap_or("")
+                                    });
+                                    if let Some(session) = track["waveSession"].as_str() {
+                                        feedback["session"] = json!(session);
+                                    }
+                                    if let Some(album) = track["album"].as_str() {
+                                        feedback["album"] = json!(album);
+                                    }
+                                    selected_wave_feedback = Some(feedback);
+                                }
+                                if ui.button("👎").clicked() {
+                                    let mut feedback = json!({
+                                        "type": "dislike",
+                                        "station": track["waveStation"].as_str().unwrap_or(&self.wave_station),
+                                        "timestamp": unix_millis(),
+                                        "batchId": track["waveBatch"].as_str().unwrap_or(""),
+                                        "trackId": track["id"].as_str().unwrap_or("")
+                                    });
+                                    if let Some(session) = track["waveSession"].as_str() {
+                                        feedback["session"] = json!(session);
+                                    }
+                                    if let Some(album) = track["album"].as_str() {
+                                        feedback["album"] = json!(album);
+                                    }
+                                    selected_wave_feedback = Some(feedback);
+                                }
+                            }
                             if ui.button("＋ В плейлист").clicked() {
                                 self.pending_add_track = Some(track.clone());
                                 self.library_visible = true;
@@ -1026,6 +1084,9 @@ impl eframe::App for App {
             });
             if back_to_library {
                 self.catalog_detail = None;
+            }
+            if let Some(feedback) = selected_wave_feedback {
+                self.request("wave_feedback", feedback.to_string());
             }
             if let Some(title) = selected_create_title {
                 self.request(
