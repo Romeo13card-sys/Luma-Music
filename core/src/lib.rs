@@ -90,6 +90,13 @@ fn catalog_item(kind: &str, value: &Value) -> Value {
             .unwrap_or_else(|| json!({}));
     }
     let mut item = value.clone();
+    if let Some(id) = value["id"]
+        .as_str()
+        .map(str::to_owned)
+        .or_else(|| value["id"].as_u64().map(|id| id.to_string()))
+    {
+        item["id"] = json!(id);
+    }
     let cover = ["ogImage", "coverUri"]
         .iter()
         .find_map(|key| value[key].as_str().and_then(artwork::normalize))
