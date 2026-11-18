@@ -698,7 +698,13 @@ impl eframe::App for App {
                             track["title"].as_str().unwrap_or("Трек"),
                             track["artists"].as_str().unwrap_or("")
                         );
-                        if ui.add_enabled(!self.jobs.busy() && track["available"] == true, egui::Button::new(label)).clicked() {
+                        if ui
+                            .add_enabled(
+                                !self.jobs.busy() && track["available"] == true,
+                                egui::Button::new(label),
+                            )
+                            .clicked()
+                        {
                             selected_track = Some((self.tracks.clone(), index));
                         }
                     }
