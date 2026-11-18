@@ -608,7 +608,7 @@ impl MusicClient {
             "undislike",
         ]
         .contains(&kind)
-            || body["timestamp"].as_str().is_none()
+            || (!body["timestamp"].is_string() && !body["timestamp"].is_number())
             || body["batchId"].as_str().is_none()
             || (kind != "radioStarted"
                 && !body["trackId"]
@@ -618,7 +618,11 @@ impl MusicClient {
         {
             return Err("Некорректный отзыв волны".into());
         }
-        let mut data = json!({"type":kind, "timestamp":body["timestamp"]});
+        let timestamp = body["timestamp"].clone();
+        if !timestamp.is_string() && !timestamp.is_number() {
+            return Err("Некорректное время события волны".into());
+        }
+        let mut data = json!({"type":kind, "timestamp":timestamp});
         if kind == "radioStarted" {
             data["from"] = json!("luma-music");
         } else {
