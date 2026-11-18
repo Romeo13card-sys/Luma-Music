@@ -1047,11 +1047,13 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
                 val owner=playlist.optJSONObject("owner")?.optString("uid").orEmpty()
                 val kind=playlist.optString("kind")
                 val revision=playlist.optLong("revision",1L).coerceAtLeast(1L)
-                val at=playlist.optInt("trackCount",playlist.optInt("tracksCount",0)).coerceAtLeast(0)
-                val args=JSONObject().put("owner",owner).put("kind",kind)
-                    .put("track_id",song.id).put("album_id",albumId)
-                    .put("at",at).put("revision",revision)
-                request("playlist_insert_track",args.toString()) {notice("Трек добавлен в плейлист")}
+                request("playlist","$owner:$kind"){playlistRaw->
+                    val at=(playlistRaw as JSONArray).length()
+                    val args=JSONObject().put("owner",owner).put("kind",kind)
+                        .put("track_id",song.id).put("album_id",albumId)
+                        .put("at",at).put("revision",revision)
+                    request("playlist_insert_track",args.toString()) {notice("Трек добавлен в плейлист")}
+                }
             }.show()
         }
     }
