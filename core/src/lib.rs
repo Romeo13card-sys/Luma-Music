@@ -143,6 +143,19 @@ fn playlist_delete_diff(from: u64, to: u64) -> Result<String> {
     Ok(json!([{"op": "delete", "from": from, "to": to}]).to_string())
 }
 
+fn playlist_move_diff(track_id: &str, album_id: &str, from: u64, to: u64) -> Result<String> {
+    let track_id = catalog_entity_id(track_id, "трека")?;
+    let album_id = catalog_entity_id(album_id, "альбома")?;
+    if from > 100_000 || to > 100_000 || from == to {
+        return Err("Некорректная позиция перемещения".into());
+    }
+    Ok(json!([
+        {"op": "delete", "from": from, "to": from},
+        {"op": "insert", "at": to, "tracks": [{"id": track_id, "albumId": album_id}]}
+    ])
+    .to_string())
+}
+
 fn catalog_entity_id(raw: &str, label: &str) -> Result<String> {
     if raw.is_empty() || raw.len() > 64 || !raw.bytes().all(|b| b.is_ascii_digit()) {
         return Err(format!("Некорректный идентификатор: {label}").into());
@@ -479,6 +492,31 @@ impl MusicClient {
             .filter(|value| *value > 0)
             .unwrap_or(1);
         let diff = playlist_insert_diff(track_id, album_id, at)?;
+        self.post(
+            &format!("{path}/change-relative"),
+            &[("diff", &diff), ("revision", &revision.to_string())],
+        )
+    }
+
+    pub fn playlist_move_track(&self, raw: &str) -> Result<Value> {
+        let options: Value =
+            serde_json::from_str(raw).map_err(|_| "Некорректное перемещение трека")?;
+        let path = self.owned_playlist_path(
+            options["owner"].as_str().unwrap_or(""),
+            options["kind"].as_str().unwrap_or(""),
+        )?;
+        let from = options["from"].as_u64().ok_or("Не указан индекс трека")?;
+        let to = options["to"].as_u64().ok_or("Не указана новая позиция")?;
+        let revision = options["revision"]
+            .as_u64()
+            .filter(|value| *value > 0)
+            .unwrap_or(1);
+        let diff = playlist_move_diff(
+            options["track_id"].as_str().unwrap_or(""),
+            options["album_id"].as_str().unwrap_or(""),
+            from,
+            to,
+        )?;
         self.post(
             &format!("{path}/change-relative"),
             &[("diff", &diff), ("revision", &revision.to_string())],
@@ -883,6 +921,7 @@ pub fn dispatch(token: &str, operation: &str, argument: &str) -> String {
             "playlist_delete" => client.playlist_delete(argument),
             "playlist_insert_track" => client.playlist_insert_track(argument),
             "playlist_delete_track" => client.playlist_delete_track(argument),
+            "playlist_move_track" => client.playlist_move_track(argument),
             "library" => client.library(),
             "playlist" => client.playlist(argument).map(|v| json!(v)),
             "likes" => client.likes().map(|v| json!(v)),
@@ -1178,6 +1217,12 @@ mod tests {
         assert_eq!(delete[0]["from"], 2);
         assert_eq!(delete[0]["to"], 4);
         assert!(playlist_delete_diff(4, 2).is_err());
+        let move_diff: Value =
+            serde_json::from_str(&playlist_move_diff("42", "9", 3, 1).unwrap()).unwrap();
+        assert_eq!(move_diff[0]["op"], "delete");
+        assert_eq!(move_diff[1]["op"], "insert");
+        assert_eq!(move_diff[1]["at"], 1);
+        assert!(playlist_move_diff("42", "9", 2, 2).is_err());
     }
 
     #[test]
