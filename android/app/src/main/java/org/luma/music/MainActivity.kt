@@ -968,6 +968,7 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
         if(token.isBlank()){
             body.addView(text("Подключите аккаунт, чтобы увидеть свои плейлисты.",15f,muted));return
         }
+        body.addView(action("＋ Создать плейлист", true) { createPlaylist() })
         request("library"){data->
             val items=data as JSONArray
             if(items.length()==0)body.addView(text("Пока нет плейлистов",15f,muted))
@@ -976,9 +977,82 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
                 val title=item.optString("title","Плейлист")
                 val owner=item.optJSONObject("owner")?.optString("uid").orEmpty()
                 val kind=item.optString("kind")
-                body.addView(action(title+"  ›"){showTracks(title,"playlist",owner+":"+kind)})
+                val line=row()
+                line.addView(action(title+"  ›"){showTracks(title,"playlist",owner+":"+kind)},LinearLayout.LayoutParams(0,-2,1f))
+                line.addView(action("⋯"){playlistActions(owner,kind,title)},LinearLayout.LayoutParams(dp(52),-2))
+                body.addView(line)
                 gap(body,6)
             }
+        }
+    }
+
+    private fun createPlaylist() {
+        val field=EditText(this).apply {hint="Название плейлиста";setTextColor(white);setHintTextColor(muted)}
+        LumaDialog(this).setTitle("Новый плейлист").setView(field)
+            .setNegativeButton("Отмена",null)
+            .setPositiveButton("Создать") {_,_->
+                request("playlist_create",JSONObject().put("title",field.text.toString()).put("visibility","private").toString()) {
+                    notice("Плейлист создан")
+                    shell("Медиатека",false);library()
+                }
+            }.show()
+    }
+
+    private fun playlistActions(owner:String,kind:String,title:String) {
+        LumaDialog(this).setTitle(title)
+            .setItems(arrayOf("Переименовать","Удалить")) {_,which->
+                if(which==0){
+                    val field=EditText(this).apply {setText(title);setTextColor(white)}
+                    LumaDialog(this).setTitle("Переименовать плейлист").setView(field)
+                        .setNegativeButton("Отмена",null)
+                        .setPositiveButton("Сохранить") {_,_->
+                            request("playlist_rename",JSONObject().put("owner",owner).put("kind",kind)
+                                .put("title",field.text.toString()).toString()) {
+                                notice("Название обновлено")
+                                shell("Медиатека",false);library()
+                            }
+                        }.show()
+                } else {
+                    LumaDialog(this).setTitle("Удалить плейлист?")
+                        .setMessage("«$title» будет удалён из вашего аккаунта.")
+                        .setNegativeButton("Отмена",null)
+                        .setPositiveButton("Удалить") {_,_->
+                            request("playlist_delete",JSONObject().put("owner",owner).put("kind",kind).toString()) {
+                                notice("Плейлист удалён")
+                                shell("Медиатека",false);library()
+                            }
+                        }.show()
+                }
+            }.show()
+    }
+
+    fun addToPlaylist(song:Song) {
+        val albumId=song.album.orEmpty()
+        if(albumId.isBlank() || !albumId.all { it.isDigit() }) {
+            notice("Для этого трека не найден ID альбома")
+            return
+        }
+        request("library"){raw->
+            val items=raw as JSONArray
+            val playlists=(0 until items.length()).mapNotNull { index ->
+                items.optJSONObject(index)?.takeIf { it.optString("kind").isNotBlank() && it.optJSONObject("owner")!=null }
+            }
+            if(playlists.isEmpty()){
+                notice("Сначала создайте плейлист")
+                return@request
+            }
+            val labels=playlists.map { it.optString("title","Плейлист") }.toTypedArray()
+            LumaDialog(this).setTitle("Добавить в плейлист").setItems(labels) {_,which->
+                val playlist=playlists[which]
+                val owner=playlist.optJSONObject("owner")?.optString("uid").orEmpty()
+                val kind=playlist.optString("kind")
+                val revision=playlist.optLong("revision",1L).coerceAtLeast(1L)
+                val at=playlist.optInt("trackCount",playlist.optInt("tracksCount",0)).coerceAtLeast(0)
+                val args=JSONObject().put("owner",owner).put("kind",kind)
+                    .put("track_id",song.id).put("album_id",albumId)
+                    .put("at",at).put("revision",revision)
+                request("playlist_insert_track",args.toString()) {notice("Трек добавлен в плейлист")}
+            }.show()
         }
     }
 
