@@ -43,7 +43,9 @@ def package(source: Path, destination: Path) -> Path:
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--variant', choices=['release', 'debug'], default='release')
+    parser.add_argument('--destination', type=Path, default=None)
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
-    output = package(root / 'android/app/build/outputs/apk' / args.variant, root / 'android/app/build/outputs/distribution')
+    destination = args.destination or root / 'android/app/build/outputs/distribution'
+    output = package(root / 'android/app/build/outputs/apk' / args.variant, destination)
     print(f'directory={output.relative_to(root)}')

@@ -123,6 +123,31 @@ jobs:
             ${{ steps.package.outputs.directory }}/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
+      - name: Build installable debug APKs
+        working-directory: android
+        run: ./gradlew --no-daemon assembleDebug
+      - name: Name debug APKs for distribution
+        id: debug-package
+        run: python3 scripts/package-apks.py --variant debug --destination android/app/build/outputs/debug-distribution >> "$GITHUB_OUTPUT"
+      - name: Verify signed debug APKs and 16 KB alignment
+        shell: bash
+        run: |
+          set -euo pipefail
+          for apk in "${{ steps.debug-package.outputs.directory }}"/*.apk; do
+            "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 4 "$apk"
+            "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$apk"
+          done
+          cd "${{ steps.debug-package.outputs.directory }}"
+          sha256sum --check SHA256SUMS.txt
+      - name: Upload installable debug APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: luma-music-installable-debug-apks-${{ github.run_number }}
+          path: |
+            ${{ steps.debug-package.outputs.directory }}/*.apk
+            ${{ steps.debug-package.outputs.directory }}/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
       - name: Upload Lint report
         if: always()
         uses: actions/upload-artifact@v4
