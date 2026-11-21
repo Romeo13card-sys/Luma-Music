@@ -65,7 +65,7 @@ def verify(root: Path):
         fingerprints = [
             value.replace(':', '').lower()
             for value in re.findall(
-                r'Signer #\\d+ certificate SHA-256 digest: ([0-9A-Fa-f:]+)', report
+                r'Signer #\d+ certificate SHA-256 digest: ([0-9A-Fa-f:]+)', report
             )
         ]
         if fingerprints != [expected]:
@@ -76,7 +76,7 @@ def verify(root: Path):
         )
         if not preview and (
             'application-debuggable' in metadata
-            or re.search(r"\\btestOnly='true'", metadata)
+            or re.search(r"\btestOnly='true'", metadata)
         ):
             raise ValueError('Stable APK must be a non-debuggable production build')
         if (
@@ -97,7 +97,7 @@ if __name__ == '__main__':
     tag, commit = verify(Path.cwd())
     info = json.loads((Path.cwd() / '.release-input/release.json').read_text())
     print(
-        f'tag={tag}\\ncommit={commit}\\n'
-        f'prerelease={str(release_identity(tag, info["version"])).lower()}\\n'
+        f'tag={tag}\ncommit={commit}\n'
+        f'prerelease={str(release_identity(tag, info["version"])).lower()}\n'
         f'version={info["version"]}'
     )
