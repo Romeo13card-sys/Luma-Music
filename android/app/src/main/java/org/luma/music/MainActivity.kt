@@ -251,7 +251,7 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
             action = ::action,
             panel = ::panel,
             dp = ::dp,
-            surface = { radius -> surface(radius) },
+            surface = { radius, accent -> surface(radius, accent) },
             translate = { value -> t(value) },
             primaryColor = white,
             mutedColor = muted,
@@ -350,144 +350,56 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
     private fun shell(target: String, loadContent: Boolean = true) {
         page = target
         backdrop()
-
-        val header = row().apply {
-            setPadding(0, dp(8), 0, dp(14))
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        val identity = row().apply { gravity = Gravity.CENTER_VERTICAL }
-        identity.addView(
-            text("L", 26f, mint, true, raw = true).apply {
-                gravity = Gravity.CENTER
-                background = surface(dp(14).toFloat(), true)
-                setPadding(dp(10), dp(6), dp(10), dp(6))
-            },
-            LinearLayout.LayoutParams(dp(44), dp(44)).apply { rightMargin = dp(12) },
+        val bindings = MainShell(
+            context = this,
+            root = root,
+            page = page,
+            demo = demo,
+            backgroundColor = palette.background,
+            textColor = white,
+            mutedColor = muted,
+            accentColor = mint,
+            text = ::text,
+            row = ::row,
+            column = ::column,
+            gap = ::gap,
+            dp = ::dp,
+            surface = { radius -> surface(radius) },
+            translate = { value -> t(value) },
+            swipeTracks = { view, onClick -> swipeTracks(view, onClick) },
+        ).render(
+            loadContent = loadContent,
+            actions = MainShell.Actions(
+                openSettings = { settings() },
+                navigate = { destination ->
+                    when (destination) {
+                        "Настройки" -> settings()
+                        else -> if (destination != page) shell(destination)
+                    }
+                },
+                openPlayer = ::fullPlayer,
+                togglePlayback = {
+                    PlaybackService.command(this, "toggle")
+                    refreshPlayer()
+                },
+                next = { PlaybackService.command(this, "next") },
+                renderContent = { content ->
+                    body = content
+                    when (target) {
+                        "Поиск" -> search()
+                        "Медиатека" -> library()
+                        else -> home()
+                    }
+                },
+            ),
         )
-        val brand = column()
-        brand.addView(text("LUMA MUSIC", 15f, white, true, raw = true))
-        brand.addView(text("ВАША МУЗЫКА · ВАШ РИТМ", 9f, muted, true, raw = true))
-        identity.addView(brand)
-        header.addView(identity, LinearLayout.LayoutParams(0, -2, 1f))
-        header.addView(
-            MusicUi.icon(this, android.R.drawable.ic_menu_manage, "Настройки", muted) { settings() },
-            LinearLayout.LayoutParams(dp(48), dp(48)),
-        )
-        root.addView(header)
-
-        status = text(
-            if (demo) "ДЕМО · ЛОКАЛЬНЫЙ РЕЖИМ" else "",
-            10f,
-            mint,
-            true,
-            raw = true,
-        ).apply {
-            visibility = if (demo) View.VISIBLE else View.GONE
-            background = surface(dp(14).toFloat())
-            setPadding(dp(12), dp(8), dp(12), dp(8))
-        }
-        root.addView(status)
-
-        val scroll = ScrollView(this).apply {
-            isFillViewport = false
-            clipToPadding = false
-            setPadding(0, dp(10), 0, dp(10))
-        }
-        body = column()
-        body.clipChildren = false
-        scroll.addView(body)
-        root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
-
-        val miniPanel = column().apply {
-            background = surface(dp(22).toFloat())
-            setPadding(dp(10), dp(8), dp(8), dp(8))
-        }
-        val miniBar = row()
-        miniCover = AlbumArt(this).apply {
-            prominent = true
-            swipeTracks(this) { fullPlayer() }
-        }
-        miniBar.addView(
-            miniCover,
-            LinearLayout.LayoutParams(dp(48), dp(48)).apply { rightMargin = dp(12) },
-        )
-        val miniLabels = column().apply {
-            isFocusable = true
-            swipeTracks(this) { fullPlayer() }
-        }
-        mini = text(t("Выберите трек"), 14f, white, true, raw = true).apply {
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            setPadding(0, 0, 0, 0)
-        }
-        miniArtist = text(t("Открыть плеер"), 11f, muted, raw = true).apply {
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            setPadding(0, dp(3), 0, 0)
-        }
-        miniLabels.addView(mini)
-        miniLabels.addView(miniArtist)
-        miniBar.addView(miniLabels, LinearLayout.LayoutParams(0, -2, 1f))
-        miniToggle = MusicUi.icon(this, R.drawable.luma_play, "Воспроизвести", mint) {
-            PlaybackService.command(this, "toggle")
-            refreshPlayer()
-        }
-        miniBar.addView(miniToggle, LinearLayout.LayoutParams(dp(48), dp(48)))
-        miniBar.addView(
-            MusicUi.icon(this, R.drawable.luma_next, "Следующий трек", muted) {
-                PlaybackService.command(this, "next")
-            },
-            LinearLayout.LayoutParams(dp(44), dp(48)),
-        )
-        miniPanel.addView(miniBar)
-        miniProgress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
-            isIndeterminate = false
-            progressTintList = android.content.res.ColorStateList.valueOf(mint)
-        }
-        miniPanel.addView(
-            miniProgress,
-            LinearLayout.LayoutParams(-1, dp(2)).apply {
-                leftMargin = dp(4)
-                rightMargin = dp(8)
-                topMargin = dp(5)
-            },
-        )
-        root.addView(miniPanel)
-        gap(root, 8)
-
-        val nav = com.google.android.material.bottomnavigation.BottomNavigationView(this).apply {
-            labelVisibilityMode = com.google.android.material.navigation.NavigationBarView.LABEL_VISIBILITY_LABELED
-            setBackgroundColor(palette.background)
-        }
-        val destinations = listOf("Главная", "Поиск", "Медиатека", "Настройки")
-        val icons = listOf(
-            R.drawable.luma_wave,
-            android.R.drawable.ic_menu_search,
-            android.R.drawable.ic_menu_agenda,
-            android.R.drawable.ic_menu_manage,
-        )
-        val labels = listOf("Волна", "Поиск", "Коллекция", "Настройки")
-        destinations.forEachIndexed { index, _ ->
-            nav.menu.add(0, index + 1, index, t(labels[index])).setIcon(icons[index])
-        }
-        nav.selectedItemId = destinations.indexOf(page).coerceAtLeast(0) + 1
-        nav.setOnItemSelectedListener { item ->
-            val destination = destinations[item.itemId - 1]
-            when (destination) {
-                "Настройки" -> settings()
-                else -> if (destination != page) shell(destination)
-            }
-            true
-        }
-        root.addView(nav)
-
-        if (loadContent) {
-            when (target) {
-                "Поиск" -> search()
-                "Медиатека" -> library()
-                else -> home()
-            }
-        }
+        body = bindings.body
+        status = bindings.status
+        miniCover = bindings.miniCover
+        mini = bindings.title
+        miniArtist = bindings.subtitle
+        miniToggle = bindings.toggle
+        miniProgress = bindings.progress
         refreshPlayer()
     }
 
