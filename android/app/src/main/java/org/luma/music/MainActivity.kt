@@ -653,7 +653,9 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
                 currentSong = currentSong,
                 textColor = white,
                 mutedColor = muted,
-                accentColor = mint,
+                textColor = white,
+            mutedColor = muted,
+            accentColor = mint,
             ),
             actions = HomeScreen.Actions(
                 startWave = ::startWave,
