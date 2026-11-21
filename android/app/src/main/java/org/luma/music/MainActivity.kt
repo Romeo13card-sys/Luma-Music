@@ -129,28 +129,14 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
     }
 
     private fun text(value: String, size: Float = 16f, color: Int = white, bold: Boolean = false, raw: Boolean = false) =
-        LumaTextView(this).apply {
-            localize = !raw
-            text = value
-            textSize = size * preferences.getInt("font_size", 100) / 100f
-            setTextColor(color)
-            letterSpacing = if (bold && size >= 24f) -0.025f else if (size <= 12f) 0.035f else 0f
-            setLineSpacing(dp(1).toFloat(), 1f)
-            setPadding(0, dp(if (size >= 28f) 3 else 5), 0, dp(if (size >= 28f) 3 else 5))
-            if (bold) typeface = LumaDesign.typeface("sans-serif-medium")
-            includeFontPadding = false
-        }
+        LumaScreenComponents.text(this, preferences, value, size, color, bold, raw)
 
-    private fun column() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+    private fun column() = LumaScreenComponents.column(this)
 
-    private fun row() =
-        LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
+    private fun row() = LumaScreenComponents.row(this)
 
     private fun gap(target: LinearLayout, height: Int = 12) {
-        target.addView(View(this), LinearLayout.LayoutParams(1, dp(height)))
+        LumaScreenComponents.gap(this, target, height)
     }
 
     private fun action(label: String, accent: Boolean = false, click: () -> Unit) =
@@ -180,11 +166,7 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
         }
 
     private fun panel(target: LinearLayout): LinearLayout =
-        column().apply {
-            setPadding(dp(20), dp(18), dp(20), dp(18))
-            background = surface(dp(LumaDesign.CARD_RADIUS_DP).toFloat())
-            target.addView(this, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(LumaDesign.ROW_GAP_DP + 4) })
-        }
+        LumaScreenComponents.panel(this, target)
 
     private fun backdrop() {
         AppThemes.active = palette
