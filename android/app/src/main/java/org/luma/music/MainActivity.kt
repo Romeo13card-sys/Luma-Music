@@ -1474,7 +1474,10 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
                 settingSwitch(update,"Проверять при запуске","Не чаще раза в сутки. Скачивание и установка требуют вашего действия.","auto_update_check",true)
                 val last=preferences.getLong("last_update_check",0)
                 update.addView(text(if(last<=0) "Проверка ещё не запускалась" else t("Последняя попытка: %1\$s",java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT,java.text.DateFormat.SHORT).format(java.util.Date(last))),13f,muted))
-                update.addView(action("Проверить обновления",true) {checkUpdates()})
+                update.addView(action("Проверить обновления", true) { checkUpdates() })
+                GitHubUpdater(this).partialDownloadInfo()?.let { partial ->
+                    update.addView(text("Прерванная загрузка: $partial. При повторном скачивании Luma продолжит с сохранённого места.", 13f, muted))
+                }
                 if (GitHubUpdater(this).hasSavedUpdate()) {
                     update.addView(action("Установить сохранённое обновление", true) {
                         installUpdate(java.io.File(filesDir, "updates/update.apk"))
