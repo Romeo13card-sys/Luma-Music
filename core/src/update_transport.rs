@@ -209,6 +209,10 @@ fn validated_response_offset(
     }
 }
 
+fn same_asset_identity(saved: Option<&Value>, expected: &Value) -> bool {
+    saved == Some(expected)
+}
+
 fn hash_file(path: &Path) -> Result<(u64, String)> {
     let mut file = fs::File::open(path).map_err(|_| "Не удалось прочитать сохранённый APK")?;
     let mut hash = Sha256::new();
@@ -283,7 +287,7 @@ pub fn download(argument: &Value, mut progress: impl FnMut(i32) -> bool) -> Resu
     let saved_identity = fs::read_to_string(&metadata)
         .ok()
         .and_then(|raw| serde_json::from_str::<Value>(&raw).ok());
-    if saved_identity.as_ref() != Some(&identity) {
+    if !same_asset_identity(saved_identity.as_ref(), &identity) {
         let _ = fs::remove_file(&partial);
         let _ = fs::remove_file(&ready);
         let temporary = folder.join("update.json.tmp");
@@ -491,6 +495,22 @@ mod tests {
             "v1.0.1"
         );
     }
+    #[test]
+    fn partial_download_identity_must_match_every_asset_field() {
+        let expected = json!({"tag":"v2.0.0","assetId":42,"name":"Luma.apk","size":100,"sha256":"abc"});
+        assert!(same_asset_identity(Some(&expected), &expected));
+        for changed in [
+            json!({"tag":"v2.0.1","assetId":42,"name":"Luma.apk","size":100,"sha256":"abc"}),
+            json!({"tag":"v2.0.0","assetId":43,"name":"Luma.apk","size":100,"sha256":"abc"}),
+            json!({"tag":"v2.0.0","assetId":42,"name":"Other.apk","size":100,"sha256":"abc"}),
+            json!({"tag":"v2.0.0","assetId":42,"name":"Luma.apk","size":101,"sha256":"abc"}),
+            json!({"tag":"v2.0.0","assetId":42,"name":"Luma.apk","size":100,"sha256":"def"}),
+        ] {
+            assert!(!same_asset_identity(Some(&changed), &expected));
+        }
+        assert!(!same_asset_identity(None, &expected));
+    }
+
     #[test]
     fn rejects_unsafe_hosts_and_asset_identifiers() {
         for url in [
