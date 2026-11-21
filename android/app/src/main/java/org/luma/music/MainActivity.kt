@@ -756,8 +756,7 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
         val duration=service?.duration() ?: 0;val position=service?.position() ?: 0
         miniProgress?.max=duration;miniProgress?.progress=position
         if(!playerUiState.isSeeking){seek?.max=duration;seek?.progress=position}
-        fun clock(ms:Int)=(ms/60000).toString()+":"+String.format(java.util.Locale.ROOT,"%02d",(ms/1000)%60)
-        time?.text=clock(position)+"  /  "+clock(duration)
+        time?.text=PlayerTimeFormatter.format(position, duration)
     }
 
     private fun settingRow(parent: LinearLayout, title: String, summary: String, onClick: () -> Unit) {
