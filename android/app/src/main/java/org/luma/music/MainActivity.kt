@@ -636,7 +636,6 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
             target = body,
             text = ::text,
             row = ::row,
-            column = ::column,
             gap = ::gap,
             panel = ::panel,
             action = ::action,
@@ -667,9 +666,6 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
                         refreshPlayer()
                     }
                 },
-                openCollection = ::showCollection,
-                openOffline = { startActivity(Intent(this, OfflineActivity::class.java)) },
-                openSpotify = { startActivity(Intent(this, SpotifyActivity::class.java)) },
                 openFile = ::openFile,
             ),
         )
