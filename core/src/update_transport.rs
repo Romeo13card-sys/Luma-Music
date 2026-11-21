@@ -642,6 +642,38 @@ mod tests {
     }
 
     #[test]
+    fn stable_2_0_release_is_selected_for_existing_1_3_installations() {
+        let stable = json!({
+            "tag_name":"v2.0.0",
+            "draft":false,
+            "prerelease":false,
+            "assets":[
+                {"name":"Luma-Music-2.0.0-arm64-v8a.apk","size":1024,"id":20},
+                {"name":"SHA256SUMS.txt","size":128,"id":21}
+            ]
+        });
+        let preview = json!({
+            "tag_name":"v2.1.0-rc.1",
+            "draft":false,
+            "prerelease":false,
+            "assets":[
+                {"name":"Luma-Music-2.1.0-rc.1-arm64-v8a.apk","size":1024,"id":22},
+                {"name":"SHA256SUMS.txt","size":128,"id":23}
+            ]
+        });
+        let releases = json!([preview, stable]);
+
+        let update = select_release(&releases, "1.3", false, &json!(["arm64-v8a"])).unwrap();
+        assert_eq!(update["tag"], "v2.0.0");
+        assert_eq!(update["asset"]["name"], "Luma-Music-2.0.0-arm64-v8a.apk");
+
+        assert_eq!(
+            select_release(&releases, "2.0.0", false, &json!(["arm64-v8a"])).unwrap(),
+            Value::Null
+        );
+    }
+
+    #[test]
     fn stable_channel_rejects_semantic_preview_even_if_github_flag_is_wrong() {
         let list = json!([release("v0.6.0-rc.1", false), release("v0.5.0", false)]);
         assert_eq!(
