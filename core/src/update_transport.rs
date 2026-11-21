@@ -175,6 +175,12 @@ fn content_range_matches(raw: &str, start: u64, size: u64) -> bool {
     let Some((first, last)) = range.split_once('-') else {
         return false;
     };
+    if [first, last, total]
+        .iter()
+        .any(|part| part.is_empty() || !part.bytes().all(|byte| byte.is_ascii_digit()))
+    {
+        return false;
+    }
     let parsed = (
         first.parse::<u64>(),
         last.parse::<u64>(),
