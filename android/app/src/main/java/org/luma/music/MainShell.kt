@@ -99,18 +99,12 @@ internal class MainShell(
             setPadding(dp(10), dp(8), dp(8), dp(8))
         }
         val miniBar = row()
-        val miniCover = AlbumArt(context).apply {
-            prominent = true
-            swipeTracks(this, actions.openPlayer)
-        }
+        val miniCover = AlbumArt(context).apply { prominent = true }
         miniBar.addView(
             miniCover,
             LinearLayout.LayoutParams(dp(48), dp(48)).apply { rightMargin = dp(12) },
         )
-        val miniLabels = column().apply {
-            isFocusable = true
-            swipeTracks(this, actions.openPlayer)
-        }
+        val miniLabels = column().apply { isFocusable = true }
         val title = text(translate("Выберите трек"), 14f, textColor, true, true).apply {
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
@@ -124,6 +118,8 @@ internal class MainShell(
         miniLabels.addView(title)
         miniLabels.addView(subtitle)
         miniBar.addView(miniLabels, LinearLayout.LayoutParams(0, -2, 1f))
+        miniBar.setOnClickListener { actions.openPlayer() }
+        swipeTracks(miniBar, actions.openPlayer)
         val toggle = MusicUi.icon(
             context,
             R.drawable.luma_play,
