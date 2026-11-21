@@ -82,7 +82,7 @@ jobs:
             exit 1
           fi
           echo "LUMA_YANDEX_CLIENT_ID=$OAUTH_CLIENT" >> "$GITHUB_ENV"
-          if [[ -n "$SPOTIFY_CLIENT" && ! "$SPOTIFY_CLIENT" =~ ^[A-Fa-f0-9]{32}$ ]]; then
+          if [[ -n "$SPOTIFY_CLIENT" && ! "$SPOTIFY_CLIENT" =~ ^[A-Za-z0-9]{32}$ ]]; then
             echo '::error::Invalid LUMA_SPOTIFY_CLIENT_ID'
             exit 1
           fi
