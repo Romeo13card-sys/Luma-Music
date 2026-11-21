@@ -251,7 +251,7 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
             action = ::action,
             panel = ::panel,
             dp = ::dp,
-            surface = { radius, accent -> surface(radius, accent) },
+            surface = { radius -> surface(radius) },
             translate = { value -> t(value) },
             primaryColor = white,
             mutedColor = muted,
@@ -364,7 +364,7 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
             column = ::column,
             gap = ::gap,
             dp = ::dp,
-            surface = { radius -> surface(radius) },
+            surface = { radius, accent -> surface(radius, accent) },
             translate = { value -> t(value) },
             swipeTracks = { view, onClick -> swipeTracks(view, onClick) },
         ).render(
