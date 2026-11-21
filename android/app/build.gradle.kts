@@ -45,7 +45,7 @@ android {
         require(sourceCommit == "local" || sourceCommit.matches(Regex("[a-f0-9]{40}")))
         buildConfigField("String", "SOURCE_COMMIT", "\"$sourceCommit\"")
         val spotifyClient=(System.getenv("LUMA_SPOTIFY_CLIENT_ID") ?: "").trim()
-        require(spotifyClient.isEmpty() || spotifyClient.matches(Regex("[A-Fa-f0-9]{32}")))
+        require(spotifyClient.isEmpty() || spotifyClient.matches(Regex("[A-Za-z0-9]{32}")))
         buildConfigField("String", "SPOTIFY_CLIENT_ID", "\"$spotifyClient\"")
         applicationId = "org.luma.music"
         testInstrumentationRunner = "org.luma.music.LumaInstrumentation"
