@@ -39,8 +39,12 @@ class GitHubUpdater(private val context: Context) {
 
     fun download(release: Release, progress: (Int) -> Unit): File {
         val size = release.asset.getLong("size")
+        val partial = File(context.filesDir, "updates/update.part")
+        val savedBytes = if (partial.isFile) partial.length().coerceIn(0, size) else 0L
+        val remainingBytes = (size - savedBytes).coerceAtLeast(0)
         require(
-            size in 1..UpdatePolicy.MAX_APK && context.filesDir.usableSpace > size * 2 + 1024 * 1024
+            size in 1..UpdatePolicy.MAX_APK &&
+                context.filesDir.usableSpace > remainingBytes + 1024 * 1024
         ) {
             "Недостаточно места или недопустимый размер APK"
         }
@@ -86,6 +90,26 @@ class GitHubUpdater(private val context: Context) {
             val expectedHash = metadata.getString("sha256")
             expectedSize == file.length() && expectedHash.matches(Regex("[a-fA-F0-9]{64}"))
         }.getOrDefault(false)
+    }
+
+    /** Returns progress for an interrupted APK without hashing or reading its contents. */
+    fun partialDownloadInfo(): String? {
+        val folder = File(context.filesDir, "updates")
+        val partial = File(folder, "update.part")
+        if (!partial.isFile) return null
+        return runCatching {
+            val metadata = JSONObject(File(folder, "update.json").readText())
+            val size = metadata.getLong("size")
+            val downloaded = partial.length()
+            val tag = metadata.getString("tag")
+            val hash = metadata.getString("sha256")
+            require(size in 1..UpdatePolicy.MAX_APK && downloaded in 1 until size)
+            require(tag.isNotBlank() && hash.matches(Regex("[a-fA-F0-9]{64}")))
+            val mib = 1024.0 * 1024.0
+            val done = String.format(java.util.Locale.ROOT, "%.1f", downloaded / mib)
+            val total = String.format(java.util.Locale.ROOT, "%.1f", size / mib)
+            "$tag · $done / $total МиБ"
+        }.getOrNull()
     }
 
     /** A fully downloaded GitHub APK is kept in app-private files across restarts. */
