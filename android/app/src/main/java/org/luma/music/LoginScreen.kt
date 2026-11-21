@@ -20,6 +20,9 @@ internal class LoginScreen(
     private val dp: (Int) -> Int,
     private val surface: (Float) -> android.graphics.drawable.GradientDrawable,
     private val translate: (String) -> String,
+    private val primaryColor: Int,
+    private val mutedColor: Int,
+    private val accentColor: Int,
 ) {
     data class Actions(
         val openYandexLogin: () -> Unit,
@@ -41,19 +44,19 @@ internal class LoginScreen(
         val body = column()
         scroll.addView(body)
         gap(body, 24)
-        body.addView(text(context.getString(R.string.app_name), 18f, LumaColors.MINT, true, false))
-        body.addView(text("Ваша музыка.\nВаш момент.", 36f, LumaColors.WHITE, true, false))
+        body.addView(text(context.getString(R.string.app_name), 18f, accentColor, true, false))
+        body.addView(text("Ваша музыка.\nВаш момент.", 36f, primaryColor, true, false))
         body.addView(
             text(
                 "Войдите в Яндекс Музыку, чтобы открыть свою коллекцию и Мою волну.",
                 15f,
-                LumaColors.MUTED,
+                mutedColor,
                 false,
                 false,
             ),
         )
         gap(body, 18)
-        val status = text("", 13f, LumaColors.MUTED, false, false).apply {
+        val status = text("", 13f, mutedColor, false, false).apply {
             accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
         }
         body.addView(status)
@@ -66,7 +69,7 @@ internal class LoginScreen(
             text(
                 "Вход как в YAYMA: защищённая страница Яндекса в отдельном окне. Пароль обрабатывает Яндекс.",
                 13f,
-                LumaColors.MUTED,
+                mutedColor,
                 false,
                 false,
             ),
@@ -77,13 +80,13 @@ internal class LoginScreen(
         alternative.setOnClickListener {
             card.visibility = if (card.visibility == View.GONE) View.VISIBLE else View.GONE
         }
-        card.addView(text("Вход в аккаунт", 24f, LumaColors.WHITE, true, false))
-        card.addView(text("Личный OAuth-токен", 13f, LumaColors.MINT, true, false))
+        card.addView(text("Вход в аккаунт", 24f, primaryColor, true, false))
+        card.addView(text("Личный OAuth-токен", 13f, accentColor, true, false))
         val input = EditText(context).apply {
             filters = arrayOf(android.text.InputFilter.LengthFilter(4096))
             hint = translate("Вставьте токен")
-            setTextColor(LumaColors.WHITE)
-            setHintTextColor(LumaColors.MUTED)
+            setTextColor(primaryColor)
+            setHintTextColor(mutedColor)
             setSingleLine()
             background = surface(dp(16).toFloat())
             setPadding(dp(14), dp(14), dp(14), dp(14))
@@ -95,7 +98,7 @@ internal class LoginScreen(
         card.addView(
             CheckBox(context).apply {
                 text = translate("Показать токен")
-                setTextColor(LumaColors.MUTED)
+                setTextColor(mutedColor)
                 setOnCheckedChangeListener { _, checked ->
                     val cursor = input.selectionStart
                     input.transformationMethod = if (checked) {
@@ -111,15 +114,15 @@ internal class LoginScreen(
             text(
                 "Токен шифруется на устройстве через Android Keystore. Пароль Яндекса не нужен.",
                 13f,
-                LumaColors.MUTED,
+                mutedColor,
                 false,
                 false,
             ),
         )
-        val submit = action("Войти", true) {
+        lateinit var submitButton: LumaButton
+        submitButton = action("Войти", true) {
             actions.submitToken(input.text.toString().trim(), input, submitButton)
         }
-        val submitButton = submit
         card.addView(submitButton)
         input.setOnEditorActionListener { _, id, _ ->
             if (id == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) {
@@ -135,7 +138,7 @@ internal class LoginScreen(
             text(
                 "Неофициальный клиент. Для каталога и прослушивания нужна подписка Яндекс Музыки.",
                 12f,
-                LumaColors.MUTED,
+                mutedColor,
                 false,
                 false,
             ),
