@@ -47,5 +47,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     destination = args.destination or root / 'android/app/build/outputs/distribution'
+    if not destination.is_absolute():
+        destination = root / destination
+    destination = destination.resolve()
     output = package(root / 'android/app/build/outputs/apk' / args.variant, destination)
     print(f'directory={output.relative_to(root)}')
