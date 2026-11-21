@@ -251,7 +251,7 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
             action = ::action,
             panel = ::panel,
             dp = ::dp,
-            surface = { radius -> surface(radius) },
+            surface = { radius, accent -> surface(radius, accent) },
             translate = { value -> t(value) },
             primaryColor = white,
             mutedColor = muted,
