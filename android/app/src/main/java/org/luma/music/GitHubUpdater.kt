@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import java.io.File
+import java.io.FileInputStream
+import java.security.MessageDigest
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -75,9 +77,26 @@ class GitHubUpdater(private val context: Context) {
 
     /** A fully downloaded GitHub APK is kept in app-private files across restarts. */
     fun savedUpdate(): File? {
-        val file = File(context.filesDir, "updates/update.apk")
+        val folder = File(context.filesDir, "updates")
+        val file = File(folder, "update.apk")
         if (!file.isFile) return null
-        return runCatching { validate(file); file }.getOrNull()
+        return runCatching {
+            val expected = JSONObject(File(folder, "update.json").readText()).getString("sha256")
+            require(expected.matches(Regex("[a-fA-F0-9]{64}"))) { "Нет контрольной суммы GitHub APK" }
+            val digest = MessageDigest.getInstance("SHA-256")
+            FileInputStream(file).use { input ->
+                val buffer = ByteArray(32768)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    digest.update(buffer, 0, count)
+                }
+            }
+            val actual = digest.digest().joinToString("") { "%02x".format(it) }
+            require(actual.equals(expected, ignoreCase = true)) { "Сохранённый APK повреждён или изменён" }
+            validate(file)
+            file
+        }.getOrNull()
     }
 
     fun validate(file: File) {
