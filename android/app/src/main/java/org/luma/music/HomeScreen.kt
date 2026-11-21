@@ -12,7 +12,6 @@ internal class HomeScreen(
     private val target: LinearLayout,
     private val text: (String, Float, Int, Boolean, Boolean) -> LumaTextView,
     private val row: () -> LinearLayout,
-    private val column: () -> LinearLayout,
     private val gap: (LinearLayout, Int) -> Unit,
     private val panel: (LinearLayout) -> LinearLayout,
     private val action: (String, Boolean, () -> Unit) -> LumaButton,
@@ -35,9 +34,6 @@ internal class HomeScreen(
         val configureWave: () -> Unit,
         val openPlayer: () -> Unit,
         val openTrackMenu: (Song) -> Unit,
-        val openCollection: (String) -> Unit,
-        val openOffline: () -> Unit,
-        val openSpotify: () -> Unit,
         val openFile: () -> Unit,
     )
 
