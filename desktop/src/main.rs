@@ -7,8 +7,8 @@ fn app_version() -> &'static str {
         v.strip_suffix(".0").unwrap_or(v)
     }
 }
-mod engine;
 mod app;
+mod engine;
 use app::{App, Screen};
 use eframe::egui;
 use serde_json::json;
