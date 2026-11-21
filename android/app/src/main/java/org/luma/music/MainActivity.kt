@@ -624,77 +624,51 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
     }
 
     private fun home() {
-        gap(body, 8)
-        body.addView(text("ВАША МУЗЫКАЛЬНАЯ СРЕДА", 10f, mint, true))
-        body.addView(text(if (demo) "Знакомство с Luma" else "Что послушаем сегодня?", 29f, white, true))
-        body.addView(text("Откройте подборку, вернитесь к любимому или найдите что-то новое.", 14f, muted))
-        gap(body, 14)
-
-        val wave = panel(body).apply {
-            background = surface(dp(24).toFloat())
-            setPadding(dp(20), dp(20), dp(20), dp(18))
-        }
-        wave.addView(
-            row().apply {
-                gravity = Gravity.CENTER_VERTICAL
-                addView(
-                    MusicUi.icon(this@MainActivity, R.drawable.luma_wave, "Моя волна", mint) { startWave() },
-                    LinearLayout.LayoutParams(dp(48), dp(48)).apply { rightMargin = dp(12) },
-                )
-                addView(text("ПОД ВАШЕ НАСТРОЕНИЕ", 10f, mint, true, raw = true))
-            },
-        )
-        wave.addView(text(if (demo) "Попробуйте Luma" else "Моя волна", 30f, white, true))
         val stations = NativeCore.call("wave_stations", "{}") as JSONArray
         val chosen = preferences.getString("wave_station", "user:onyourwave")
-        val station = (0 until stations.length()).map { stations.getJSONObject(it) }
+        val station = (0 until stations.length())
+            .map { stations.getJSONObject(it) }
             .firstOrNull { it.getString("id") == chosen }
-        wave.addView(
-            text(
-                if (demo) "Локальный режим: можно послушать тестовый звук без аккаунта."
-                else t(station?.getString("title") ?: "Музыка, подобранная для вас"),
-                13f,
-                muted,
-            ),
-        )
-        gap(wave, 8)
-        val controls = row()
-        controls.addView(
-            action(if (demo) "Слушать демо" else "Слушать волну", true) {
-                if (demo) playDemo() else startWave()
-            },
-            LinearLayout.LayoutParams(0, -2, 1f),
-        )
-        controls.addView(
-            MusicUi.icon(this, android.R.drawable.ic_menu_manage, "Настроить Мою волну", muted) {
-                WaveSheet.show(this) { startWave() }
-            },
-            LinearLayout.LayoutParams(dp(52), dp(52)),
-        )
-        wave.addView(controls)
+        val currentSong = PlaybackService.queue.getOrNull(PlaybackService.index)
 
-        PlaybackService.queue.getOrNull(PlaybackService.index)?.let { song ->
-            gap(body, 8)
-            body.addView(text("ПРОДОЛЖИТЬ", 10f, mint, true))
-            val current = SongRow(this).apply {
-                bind(song, true)
-                setOnClickListener { fullPlayer() }
-                more.setOnClickListener {
-                    TrackSheet.show(this@MainActivity, song) {
+        HomeScreen(
+            context = this,
+            target = body,
+            text = ::text,
+            row = ::row,
+            gap = ::gap,
+            panel = ::panel,
+            action = ::action,
+            dp = ::dp,
+            surface = { radius -> surface(radius) },
+            collectionCards = ::collectionCards,
+        ).render(
+            data = HomeScreen.Data(
+                demo = demo,
+                stationDescription = if (demo) {
+                    "Локальный режим: можно послушать тестовый звук без аккаунта."
+                } else {
+                    t(station?.getString("title") ?: "Музыка, подобранная для вас")
+                },
+                currentSong = currentSong,
+                textColor = white,
+                mutedColor = muted,
+                accentColor = mint,
+            ),
+            actions = HomeScreen.Actions(
+                startWave = ::startWave,
+                playDemo = ::playDemo,
+                configureWave = { WaveSheet.show(this) { startWave() } },
+                openPlayer = ::fullPlayer,
+                openTrackMenu = { song ->
+                    TrackSheet.show(this, song) {
                         heartTrackId = ""
                         refreshPlayer()
                     }
-                }
-            }
-            body.addView(current)
-        }
-
-        gap(body, LumaDesign.SECTION_GAP_DP)
-        body.addView(text("БЫСТРЫЙ ДОСТУП", 10f, mint, true))
-        body.addView(text("Ваша коллекция", 22f, white, true))
-        collectionCards(body)
-        gap(body, 4)
-        body.addView(action("Музыка с устройства") { openFile() })
+                },
+                openFile = ::openFile,
+            ),
+        )
     }
 
     private fun startWave(){
