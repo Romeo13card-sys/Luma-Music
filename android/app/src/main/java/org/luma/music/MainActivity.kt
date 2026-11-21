@@ -712,7 +712,7 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
             surface = { radius -> surface(radius) },
             textColor = white,
             mutedColor = muted,
-            translate = ::t,
+            translate = { value -> t(value) },
             canSearch = { token.isNotBlank() },
             beginSearch = { generation++ },
             searchCatalog = { query, kind, page, onResult ->
