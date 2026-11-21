@@ -1090,12 +1090,24 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
                 body.addView(action("Открыть загрузки",true){startActivity(Intent(this,OfflineActivity::class.java))})
             }
             "wave" -> {
-                val wave=group("Подборка")
-                val choices=NativeCore.call("wave_stations","{}") as JSONArray
-                val selected=preferences.getString("wave_station","user:onyourwave")
-                val chosen=(0 until choices.length()).map {choices.getJSONObject(it)}.firstOrNull {it.getString("id")==selected}
-                settingRow(wave,"Настроить Мою волну",chosen?.getString("title") ?: "Моя волна"){WaveSheet.show(this){settings("wave")}}
-                wave.addView(action("Слушать подборку",true){startWave()})
+                val choices = NativeCore.call("wave_stations", "{}") as JSONArray
+                val selected = preferences.getString("wave_station", "user:onyourwave")
+                val chosen = (0 until choices.length())
+                    .map { choices.getJSONObject(it) }
+                    .firstOrNull { it.getString("id") == selected }
+                WaveSettingsScreen(
+                    group = { title -> group(title) },
+                    settingRow = ::settingRow,
+                    action = ::action,
+                ).render(
+                    data = WaveSettingsScreen.Data(
+                        stationTitle = chosen?.getString("title") ?: "Моя волна",
+                    ),
+                    actions = WaveSettingsScreen.Actions(
+                        configure = { WaveSheet.show(this) { settings("wave") } },
+                        start = ::startWave,
+                    ),
+                )
             }
             "sound" -> {
                 val network = getSystemService(android.net.ConnectivityManager::class.java)
