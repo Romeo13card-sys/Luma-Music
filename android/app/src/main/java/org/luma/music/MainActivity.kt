@@ -1048,27 +1048,22 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
             settings(section)
         }
         fun group(title: String): LinearLayout = panel(body).also { it.addView(text(title, 21f, white, true)) }
-        fun controls(id:String){
-            val groups=schema.getJSONObject("groups").optJSONArray(id) ?: return
-            for(i in 0 until groups.length()){
-                val model=groups.getJSONObject(i);val target=group(model.getString("title"));val fields=model.getJSONArray("fields")
-                for(j in 0 until fields.length()){
-                    val field=fields.getJSONObject(j);val key=field.getString("key");val title=field.getString("title");val summary=field.getString("summary")
-                    if(field.getString("type")=="bool")settingSwitch(target,title,summary,key,field.getBoolean("default"))
-                    else {
-                        val values=field.getJSONArray("values");val choices=field.getJSONArray("labels")
-                        val selected=preferences.getInt(key,field.getInt("default"))
-                        val index=(0 until values.length()).firstOrNull {values.getInt(it)==selected} ?: 0
-                        settingRow(target,title,t(choices.getString(index))+" · "+t(summary)){
-                            LumaDialog(this).setTitle(title).setSingleChoiceItems((0 until choices.length()).map {t(choices.getString(it))}.toTypedArray(),index){dialog,at->
-                                preferences.edit().putInt(key,values.getInt(at)).apply();dialog.dismiss()
-                                PlaybackService.instance?.refreshAudioSettings();PlaybackService.instance?.refreshBufferPolicy();settings(id)
-                            }.setNegativeButton("Отмена",null).show()
-                        }
-                    }
-                }
-            }
-        }
+        val schemaControls = SettingsSchemaRenderer(
+            context = this,
+            schema = schema,
+            preferences = preferences,
+            group = { title -> group(title) },
+            settingSwitch = { parent, title, summary, key, default ->
+                settingSwitch(parent, title, summary, key, default)
+            },
+            settingRow = ::settingRow,
+            translate = { value -> t(value) },
+            onChanged = { id ->
+                PlaybackService.instance?.refreshAudioSettings()
+                PlaybackService.instance?.refreshBufferPolicy()
+                settings(id)
+            },
+        )
         when (section) {
             "network","lyrics" -> controls(section)
             "data" -> {
