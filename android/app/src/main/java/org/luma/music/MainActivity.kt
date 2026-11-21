@@ -1095,17 +1095,17 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
                 val chosen = (0 until choices.length())
                     .map { choices.getJSONObject(it) }
                     .firstOrNull { it.getString("id") == selected }
-                WaveSettingsScreen(
+                WaveSettingsSection(
                     group = { title -> group(title) },
                     settingRow = ::settingRow,
                     action = ::action,
                 ).render(
-                    data = WaveSettingsScreen.Data(
+                    data = WaveSettingsSection.Data(
                         stationTitle = chosen?.getString("title") ?: "Моя волна",
                     ),
-                    actions = WaveSettingsScreen.Actions(
+                    actions = WaveSettingsSection.Actions(
                         configure = { WaveSheet.show(this) { settings("wave") } },
-                        start = ::startWave,
+                        play = ::startWave,
                     ),
                 )
             }
