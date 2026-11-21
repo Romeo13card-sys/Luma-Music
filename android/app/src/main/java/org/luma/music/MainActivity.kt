@@ -1364,7 +1364,6 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
             }
             "account" -> {
                 AccountSettingsScreen(
-                    target = body,
                     group = { title -> group(title) },
                     text = ::text,
                     action = ::action,
