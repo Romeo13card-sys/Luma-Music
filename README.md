@@ -3,10 +3,14 @@
 made by Romeo13card
 
 Неофициальный Android-клиент Яндекс Музыки: Rust-ядро, нативный Kotlin-интерфейс,
-Material Design 3 на нативных Views. WebView создаётся только для входа. Версия 1.2, applicationId `org.luma.music`.
+Material Design 3 на нативных Views. WebView создаётся только для входа.
+Package ID: `org.luma.music`.
 
-Последний опубликованный выпуск — **1.3**. В `main` готовится **1.3.1**:
-[состояние разработки](docs/V1.3-DEVELOPMENT.md).
+Последний опубликованный стабильный выпуск — **v1.3.0**. В `main` продолжается
+линия **1.3.1** (versionCode 24). Параллельно ведётся следующая крупная версия
+**Luma Music 2.0** в отдельной ветке `v2.0-development`:
+[аудит](docs/V2.0-AUDIT.md), [план](docs/V2.0-ROADMAP.md),
+[обсуждение изменений](https://github.com/Romeo13card-sys/Luma-Music/pulls).
 
 ## Версия 1.3
 
