@@ -1109,8 +1109,8 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
                     },
                     text = ::text,
                     action = ::action,
-                    translate = { value -> t(value) },
                 ).render(
+                    target = body,
                     data = SoundSettingsSection.Data(
                         networkState = if (network.activeNetwork == null) {
                             "Нет подключённой сети"
@@ -1123,7 +1123,8 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
                         },
                         wifiQuality = preferences.getInt("quality_wifi", 320),
                         mobileQuality = preferences.getInt("quality_mobile", 128),
-                        metered = metered,
+                        wifiQualityLabel = t("%1\$s · до %2\$d кбит/с", t("Безлимитная сеть"), preferences.getInt("quality_wifi", 320)),
+                        mobileQualityLabel = t("%1\$s · до %2\$d кбит/с", t("Сеть с лимитом"), preferences.getInt("quality_mobile", 128)),
                         accentColor = mint,
                         mutedColor = muted,
                     ),
