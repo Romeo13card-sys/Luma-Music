@@ -5,13 +5,13 @@ import android.widget.LinearLayout
 /** Account settings presentation. OAuth and credential lifecycle stay in the host activities. */
 internal class AccountSettingsScreen(
     private val target: LinearLayout,
+    private val group: (String) -> LinearLayout,
     private val text: (String, Float, Int, Boolean, Boolean) -> LumaTextView,
     private val action: (String, Boolean, () -> Unit) -> LumaButton,
     private val settingRow: (LinearLayout, String, String, () -> Unit) -> Unit,
     private val gap: (LinearLayout, Int) -> Unit,
 ) {
     data class Data(
-        val spotifyConnected: Boolean,
         val yandexConnected: Boolean,
         val mutedColor: Int,
     )
@@ -24,15 +24,8 @@ internal class AccountSettingsScreen(
     )
 
     fun render(data: Data, actions: Actions) {
-        val spotify = LinearLayout(target.context).apply {
-            orientation = LinearLayout.VERTICAL
-        }
-        target.addView(spotify)
-        spotify.addView(action(
-            if (data.spotifyConnected) "Управление Spotify" else "Подключить Spotify",
-            data.spotifyConnected,
-            actions.connectSpotify,
-        ))
+        val spotify = group("Spotify")
+        spotify.addView(action("Подключить Spotify", false, actions.connectSpotify))
         spotify.addView(text(
             "Аккаунты Spotify и Яндекса подключаются независимо.",
             13f,
@@ -41,17 +34,7 @@ internal class AccountSettingsScreen(
             false,
         ))
 
-        val account = LinearLayout(target.context).apply {
-            orientation = LinearLayout.VERTICAL
-        }
-        target.addView(account)
-        account.addView(text(
-            "Яндекс Музыка",
-            18f,
-            data.mutedColor,
-            true,
-            false,
-        ))
+        val account = group("Яндекс Музыка")
         account.addView(text(
             if (data.yandexConnected) "Вход сохранён на устройстве" else "Вход не выполнен",
             15f,
