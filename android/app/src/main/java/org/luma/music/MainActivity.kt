@@ -222,6 +222,20 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
         )
     }
 
+    private val accountLoginCoordinator by lazy {
+        AccountLoginCoordinator(
+            updateCredential = { token = it },
+            invalidateRequests = { generation++ },
+            setDemo = { demo = it },
+            saveCredential = { TokenStore(this).save(it) },
+            requestAccount = { finished, done ->
+                request("account", finished = finished, done = done)
+            },
+            showStatus = { status.text = it },
+            openHome = { shell("Главная") },
+        )
+    }
+
     private fun request(
         op: String,
         arg: String = "",
@@ -279,57 +293,27 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
         submit.isEnabled = false
         submit.alpha = .55f
         submit.text = "Проверяем аккаунт…"
-        token = candidate
-        generation++
-        request(
-            "account",
+        accountLoginCoordinator.authenticate(
+            credential = candidate,
             finished = {
                 submit.isEnabled = true
                 submit.alpha = 1f
                 submit.text = "Войти"
             },
-        ) {
-            try {
-                TokenStore(this).save(token)
+            failureMessage = "Не удалось защитить токен. Попробуйте ещё раз.",
+            onAuthenticated = {
                 input.text.clear()
-                demo = false
                 shell("Главная")
-            } catch (_: Exception) {
-                status.text = "Не удалось защитить токен. Попробуйте ещё раз."
-            }
-        }
-    }
-
-    private fun browserLogin() {
-        YandexOAuthFlow(this, { message -> status.text = message }, ::completeOAuthLogin).browserLogin()
-    }
-
-    private fun configureOAuth() {
-        YandexOAuthFlow(this, { message -> status.text = message }, ::completeOAuthLogin).configureOAuth()
-    }
-
-    private fun handleOAuth(incoming: Intent?) {
-        val uri = incoming?.data ?: return
-        if (uri.scheme != "yamusicrust" || uri.host != "oauth") return
-        // Do not leave credentials attached to the activity intent.
-        intent = Intent(this, MainActivity::class.java)
-        YandexOAuthFlow(this, { message -> status.text = message }, ::completeOAuthLogin)
-            .handleCallback(incoming)
+            },
+        )
     }
 
     private fun completeOAuthLogin(credential: String) {
-        token = credential
-        generation++
-        request("account") {
-            try {
-                TokenStore(this).save(token)
-                demo = false
-                shell("Главная")
-            } catch (_: Exception) {
-                token = ""
-                status.text = "Не удалось сохранить токен"
-            }
-        }
+        accountLoginCoordinator.authenticate(
+            credential = credential,
+            clearCredentialOnFailure = true,
+            failureMessage = "Не удалось сохранить токен",
+        )
     }
 
     override fun onNewIntent(newIntent: Intent) {
