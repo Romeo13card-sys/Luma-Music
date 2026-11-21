@@ -370,7 +370,7 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
         ).render(
             loadContent = loadContent,
             actions = MainShell.Actions(
-                openSettings = ::settings,
+                openSettings = { settings() },
                 navigate = { destination ->
                     when (destination) {
                         "Настройки" -> settings()
