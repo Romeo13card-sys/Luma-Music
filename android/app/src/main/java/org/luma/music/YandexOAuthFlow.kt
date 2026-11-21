@@ -78,10 +78,17 @@ internal class YandexOAuthFlow(
         val prefs = activity.getSharedPreferences("oauth", Activity.MODE_PRIVATE)
         val params = Uri.parse("https://callback.invalid/?" + (uri.fragment ?: uri.query.orEmpty()))
         val expected = prefs.getString("state", null)
-        val age = System.currentTimeMillis() - prefs.getLong("created", 0)
+        val createdAt = prefs.getLong("created", 0)
+        // Consume the state before validation so every callback attempt is one-shot,
+        // including malformed, expired, or attacker-controlled callbacks.
         prefs.edit().remove("state").remove("created").apply()
         if (
-            expected == null || params.getQueryParameter("state") != expected || age !in 0..600000
+            !OAuthStateValidator.isValid(
+                expected = expected,
+                actual = params.getQueryParameter("state"),
+                createdAtMs = createdAt,
+                nowMs = System.currentTimeMillis(),
+            )
         ) {
             showStatus("Вход отклонён: неверный или просроченный ответ. Начните вход заново.")
             return
