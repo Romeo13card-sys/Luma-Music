@@ -1150,7 +1150,6 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
                             t(if (renderPolicy.economy) "экономичный" else "обычный"),
                             renderPolicy.pageSize,
                         ),
-                        economy = renderPolicy.economy,
                         mutedColor = muted,
                     ),
                     actions = AppearanceSettingsSection.Actions(
