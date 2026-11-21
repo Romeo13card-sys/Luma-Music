@@ -105,11 +105,14 @@ class SpotifyActivity:MaterialActivity() {
         val uri=intent?.data ?: return
         // Do not retain codes in Activity state or subsequent intents.
         setIntent(Intent(this,SpotifyActivity::class.java))
-        val raw=pending.load() ?: run {status.text=t("Начните вход в Spotify заново");return}
+        // Consume the pending OAuth attempt before parsing any callback parameters.
+        // Even malformed, denied, or replayed callbacks must not leave a reusable state.
+        val raw=synchronized(SpotifyCredentialLock.value) {
+            pending.load().also { pending.clear() }
+        } ?: run {status.text=t("Начните вход в Spotify заново");return}
         try{
             val session=JSONObject(raw).put("url",uri.toString()).put("now",System.currentTimeMillis()/1000)
             val code=NativeCore.call("spotify_callback",session.toString()) as JSONObject
-            pending.clear() // Accepted codes/states are consumed before any token request.
             session.put("code",code.getString("code"))
             task({
                 val tokens=NativeCore.call("spotify_exchange",session.toString()) as JSONObject
