@@ -31,12 +31,11 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
     private var heartTrackId=""
     private var seenLibraryRevision=-1L
     private var pendingReactionId:String?=null
-    private var lastPlaying:Boolean?=null
+    private val playerUiState = PlayerUiState()
     private var playerScreen=false
     private var playerAccent:Int?=null
     private var time: TextView? = null
     private var seek: SeekBar? = null
-    private var dragging = false
     private var page = "Главная"
     private var creditScreen = false
     private var settingsSection = ""
@@ -175,7 +174,7 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
         miniArtist = null
         miniToggle = null
         miniProgress=null;heartButton=null;shuffleButton=null;repeatButton=null
-        heartTrackId="";seenLibraryRevision=-1;lastPlaying=null;playerScreen=false;playerAccent=null
+        heartTrackId="";seenLibraryRevision=-1;playerUiState.resetPlaybackObservation();playerScreen=false;playerAccent=null
         miniCover = null
         playerCover = null
         trackMarkers.clear()
@@ -620,10 +619,10 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
                 openQueue = { startActivity(Intent(this, QueueActivity::class.java)) },
                 openCurrentTrack = ::currentTrackSheet,
                 likeCurrent = ::likeCurrent,
-                seekStarted = { dragging = true },
+                seekStarted = { playerUiState.beginSeeking() },
                 seekStopped = { progress ->
                     PlaybackService.instance?.seek(progress)
-                    dragging = false
+                    playerUiState.finishSeeking()
                 },
                 jump = ::jump,
                 toggleShuffle = {
@@ -726,8 +725,7 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
         miniCover?.bind(song?.cover);playerCover?.bind(song?.cover,true)
         mini?.text=song?.title ?: t("Выберите трек");miniArtist?.text=song?.artist ?: t("Музыка появится здесь")
         miniToggle?.isEnabled=song!=null
-        if(lastPlaying!=PlaybackService.playing){
-            lastPlaying=PlaybackService.playing
+        if(playerUiState.playbackStateChanged(PlaybackService.playing)){
             val icon=if(PlaybackService.playing)R.drawable.luma_pause else R.drawable.luma_play
             val label=t(if(PlaybackService.playing)"Приостановить" else "Воспроизвести")
             miniToggle?.setIconResource(icon);playButton?.setIconResource(icon)
@@ -757,7 +755,7 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
         val service=PlaybackService.instance
         val duration=service?.duration() ?: 0;val position=service?.position() ?: 0
         miniProgress?.max=duration;miniProgress?.progress=position
-        if(!dragging){seek?.max=duration;seek?.progress=position}
+        if(!playerUiState.isSeeking){seek?.max=duration;seek?.progress=position}
         fun clock(ms:Int)=(ms/60000).toString()+":"+String.format(java.util.Locale.ROOT,"%02d",(ms/1000)%60)
         time?.text=clock(position)+"  /  "+clock(duration)
     }
