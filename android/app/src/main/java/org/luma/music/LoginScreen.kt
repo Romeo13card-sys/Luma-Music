@@ -128,6 +128,7 @@ internal class LoginScreen(
                 false
             }
         }
+        gap(body)
         body.addView(action("Попробовать без аккаунта", false, actions.tryDemo))
         body.addView(
             text(
