@@ -1130,37 +1130,87 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
                 })
             }
             "appearance" -> {
-                val appearance = group("Ваш интерфейс")
-                settingRow(appearance, "Тема", labels[modes.indexOf(mode).coerceAtLeast(0)]) {
-                    LumaDialog(this).setTitle("Тема оформления")
-                        .setSingleChoiceItems(labels, modes.indexOf(mode).coerceAtLeast(0)) { dialog,index ->
-                            preferences.edit().putString("theme_mode", modes[index]).apply();dialog.dismiss();themed()
-                        }.setNegativeButton("Отмена",null).show()
-                }
-                settingRow(appearance,"Язык приложения",L10n.name(this)) {
-                    val languages=NativeCore.call("languages","{}") as JSONArray
-                    val codes=listOf("system")+(0 until languages.length()).map {languages.getJSONObject(it).getString("code")}
-                    val names=arrayOf(t("Как в системе"))+(0 until languages.length()).map {
-                        val item=languages.getJSONObject(it)
-                        item.getString("name")+if(item.optBoolean("preview")) " · "+t("Предварительный перевод") else ""
-                    }
-                    LumaDialog(this).setTitle("Язык приложения").setSingleChoiceItems(names,
-                        codes.indexOf(preferences.getString("language","system")).coerceAtLeast(0)) {dialog,index ->
-                        preferences.edit().putString("language",codes[index]).apply()
-                        dialog.dismiss();recreate()
-                    }.setNegativeButton("Отмена",null).show()
-                }
-                settingRow(appearance, "Размер текста Luma", t("%1\$d%% · вместе с системным размером текста",preferences.getInt("font_size",100))) {
-                    val sizes=intArrayOf(90,100,115,130)
-                    LumaDialog(this).setTitle("Размер текста")
-                        .setSingleChoiceItems(arrayOf("Компактный · 90%","Обычный · 100%","Крупный · 115%","Очень крупный · 130%"),sizes.indexOf(preferences.getInt("font_size",100)).coerceAtLeast(0)) { dialog,index ->
-                            preferences.edit().putInt("font_size",sizes[index]).apply();dialog.dismiss();settings("appearance")
-                        }.setNegativeButton("Отмена",null).show()
-                }
-                settingSwitch(appearance,"Вибрация кнопок","Лёгкий тактильный отклик при нажатии.","haptics",true)
-                val performance=group("Быстродействие")
-                settingSwitch(performance,"Экономичный интерфейс","Меньше строк на странице и реже обновляется плеер. На малом объёме ОЗУ режим включается автоматически.","reduce_effects",false) {settings("appearance")}
-                performance.addView(text(t("Сейчас: %1\$s профиль · %2\$d треков на странице. Анимации фона и размытие не используются.",t(if(renderPolicy.economy) "экономичный" else "обычный"),renderPolicy.pageSize),13f,muted))
+                AppearanceSettingsSection(
+                    group = { title -> group(title) },
+                    settingRow = ::settingRow,
+                    settingSwitch = { parent, title, summary, key, default, changed ->
+                        settingSwitch(parent, title, summary, key, default, changed)
+                    },
+                    text = ::text,
+                ).render(
+                    data = AppearanceSettingsSection.Data(
+                        themeLabel = labels[modes.indexOf(mode).coerceAtLeast(0)],
+                        languageName = L10n.name(this),
+                        fontSizeSummary = t(
+                            "%1\$d%% · вместе с системным размером текста",
+                            preferences.getInt("font_size", 100),
+                        ),
+                        performanceSummary = t(
+                            "Сейчас: %1\$s профиль · %2\$d треков на странице. Анимации фона и размытие не используются.",
+                            t(if (renderPolicy.economy) "экономичный" else "обычный"),
+                            renderPolicy.pageSize,
+                        ),
+                        economy = renderPolicy.economy,
+                        mutedColor = muted,
+                    ),
+                    actions = AppearanceSettingsSection.Actions(
+                        chooseTheme = {
+                            LumaDialog(this).setTitle("Тема оформления")
+                                .setSingleChoiceItems(labels, modes.indexOf(mode).coerceAtLeast(0)) { dialog, index ->
+                                    preferences.edit().putString("theme_mode", modes[index]).apply()
+                                    dialog.dismiss()
+                                    themed()
+                                }
+                                .setNegativeButton("Отмена", null)
+                                .show()
+                        },
+                        chooseLanguage = {
+                            val languages = NativeCore.call("languages", "{}") as JSONArray
+                            val codes = listOf("system") + (0 until languages.length()).map {
+                                languages.getJSONObject(it).getString("code")
+                            }
+                            val names = arrayOf(t("Как в системе")) + (0 until languages.length()).map {
+                                val item = languages.getJSONObject(it)
+                                item.getString("name") + if (item.optBoolean("preview")) {
+                                    " · " + t("Предварительный перевод")
+                                } else {
+                                    ""
+                                }
+                            }
+                            LumaDialog(this).setTitle("Язык приложения")
+                                .setSingleChoiceItems(
+                                    names,
+                                    codes.indexOf(preferences.getString("language", "system")).coerceAtLeast(0),
+                                ) { dialog, index ->
+                                    preferences.edit().putString("language", codes[index]).apply()
+                                    dialog.dismiss()
+                                    recreate()
+                                }
+                                .setNegativeButton("Отмена", null)
+                                .show()
+                        },
+                        chooseFontSize = {
+                            val sizes = intArrayOf(90, 100, 115, 130)
+                            LumaDialog(this).setTitle("Размер текста")
+                                .setSingleChoiceItems(
+                                    arrayOf(
+                                        "Компактный · 90%",
+                                        "Обычный · 100%",
+                                        "Крупный · 115%",
+                                        "Очень крупный · 130%",
+                                    ),
+                                    sizes.indexOf(preferences.getInt("font_size", 100)).coerceAtLeast(0),
+                                ) { dialog, index ->
+                                    preferences.edit().putInt("font_size", sizes[index]).apply()
+                                    dialog.dismiss()
+                                    settings("appearance")
+                                }
+                                .setNegativeButton("Отмена", null)
+                                .show()
+                        },
+                        onEconomyChanged = { settings("appearance") },
+                    ),
+                )
             }
             "player" -> {
                 val player=group("Поведение плеера")
