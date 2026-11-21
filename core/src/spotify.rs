@@ -7,7 +7,7 @@ const REDIRECT: &str = "org.luma.music://spotify-callback";
 fn client_id(v: &Value) -> Result<&str> {
     v["client_id"]
         .as_str()
-        .filter(|s| s.len() == 32 && s.bytes().all(|b| b.is_ascii_hexdigit()))
+        .filter(|s| s.len() == 32 && s.bytes().all(|b| b.is_ascii_alphanumeric()))
         .ok_or_else(|| "Укажите Client ID приложения Spotify (32 символа)".into())
 }
 fn opaque<'a>(v: &'a Value, key: &str, min: usize, max: usize) -> Result<&'a str> {
@@ -230,7 +230,8 @@ mod tests {
     }
     #[test]
     fn pkce_matches_rfc_7636_and_has_no_secret() {
-        let v = json!({"client_id":"0123456789abcdef0123456789abcdef","verifier":"dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk","state":"a".repeat(43)});
+        // Spotify Client IDs are base-62 alphanumeric, not hexadecimal.
+        let v = json!({"client_id":"0123456789abcdefghijklmnopqrstuv","verifier":"dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk","state":"a".repeat(43)});
         let r = dispatch("spotify_start", &v).unwrap();
         let u = reqwest::Url::parse(r["url"].as_str().unwrap()).unwrap();
         assert_eq!(
