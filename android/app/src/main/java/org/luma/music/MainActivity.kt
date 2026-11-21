@@ -1251,7 +1251,7 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
                             preferences.edit().putBoolean("test_updates", preview).apply()
                             settings("updates")
                         },
-                        checkUpdates = ::checkUpdates,
+                        checkUpdates = { checkUpdates() },
                         installSaved = {
                             installUpdate(java.io.File(filesDir, "updates/update.apk"))
                         },
