@@ -1065,15 +1065,15 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
             },
         )
         when (section) {
-            "network","lyrics" -> controls(section)
+            "network","lyrics" -> schemaControls.render(section)
             "data" -> {
-                controls(section)
+                schemaControls.render(section)
                 body.addView(action("История прослушивания"){startActivity(Intent(this,HistoryActivity::class.java))})
                 body.addView(action("Закладки в песнях"){startActivity(Intent(this,HistoryActivity::class.java).putExtra("bookmarks",true))})
                 body.addView(action("Резервная копия"){startActivity(Intent(this,BackupActivity::class.java))})
             }
             "audio" -> {
-                controls(section)
+                schemaControls.render(section)
                 val audio=group("Эквалайзер")
                 settingRow(audio,"Системный эквалайзер","Настройки звука Android для текущего аудиосеанса"){
                     val session=PlaybackService.instance?.audioSessionId() ?: 0
@@ -1086,7 +1086,7 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
                 }
             }
             "downloads" -> {
-                controls(section)
+                schemaControls.render(section)
                 body.addView(action("Открыть загрузки",true){startActivity(Intent(this,OfflineActivity::class.java))})
             }
             "wave" -> {
