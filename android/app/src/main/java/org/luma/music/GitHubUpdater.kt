@@ -42,7 +42,8 @@ class GitHubUpdater(private val context: Context) {
         val partial = File(context.filesDir, "updates/update.part")
         val folder = File(context.filesDir, "updates")
         val savedMetadata = runCatching { JSONObject(File(folder, "update.json").readText()) }.getOrNull()
-        val sameAsset = savedMetadata?.optString("tag") == release.tag &&
+        val sameAsset = savedMetadata != null &&
+            savedMetadata.optString("tag") == release.tag &&
             savedMetadata.optLong("assetId", -1L) == release.asset.optLong("id", -2L) &&
             savedMetadata.optString("name") == release.asset.optString("name") &&
             savedMetadata.optLong("size", -1L) == size
