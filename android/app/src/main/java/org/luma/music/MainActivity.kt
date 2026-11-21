@@ -356,7 +356,7 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
             column = ::column,
             gap = ::gap,
             dp = ::dp,
-            surface = { radius -> surface(radius) },
+            surface = { radius, accent -> surface(radius, accent) },
             translate = { value -> t(value) },
             swipeTracks = { view, onClick -> swipeTracks(view, onClick) },
         ).render(
@@ -412,7 +412,7 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
             panel = ::panel,
             action = ::action,
             dp = ::dp,
-            surface = { radius, accent -> surface(radius, accent) },
+            surface = { radius -> surface(radius) },
             collectionCards = ::collectionCards,
         ).render(
             data = HomeScreen.Data(
