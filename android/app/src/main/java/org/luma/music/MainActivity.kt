@@ -1009,7 +1009,6 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
                     )
                 }
                 AudioQualitySettingsSection(
-                    target = body,
                     group = { title -> group(title) },
                     text = ::text,
                     settingRow = ::settingRow,
@@ -1301,7 +1300,6 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
             }
             "account" -> {
                 AccountSettingsScreen(
-                    target = body,
                     group = { title -> group(title) },
                     text = ::text,
                     action = ::action,
