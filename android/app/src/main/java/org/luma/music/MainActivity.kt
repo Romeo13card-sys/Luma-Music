@@ -746,26 +746,21 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
     }
 
     private fun library() {
-        body.addView(text("Коллекция",30f,white,true))
-        collectionCards(body)
-        gap(body,12)
-        body.addView(action("Музыка с устройства"){openFile()})
-        gap(body,12);body.addView(text("Плейлисты",22f,white,true))
-        if(token.isBlank()){
-            body.addView(text("Подключите аккаунт, чтобы увидеть свои плейлисты.",15f,muted));return
-        }
-        request("library"){data->
-            val items=data as JSONArray
-            if(items.length()==0)body.addView(text("Пока нет плейлистов",15f,muted))
-            for(i in 0 until minOf(items.length(),200)){
-                val item=items.getJSONObject(i)
-                val title=item.optString("title","Плейлист")
-                val owner=item.optJSONObject("owner")?.optString("uid").orEmpty()
-                val kind=item.optString("kind")
-                body.addView(action(title+"  ›"){showTracks(title,"playlist",owner+":"+kind)})
-                gap(body,6)
-            }
-        }
+        LibraryScreen(
+            target = body,
+            text = ::text,
+            action = ::action,
+            gap = ::gap,
+            collectionCards = ::collectionCards,
+            hasAccount = token.isNotBlank(),
+            loadPlaylists = { onResult ->
+                request("library") { data -> onResult(data as JSONArray) }
+            },
+            openPlaylist = { title, id -> showTracks(title, "playlist", id) },
+            openFile = ::openFile,
+            textColor = white,
+            mutedColor = muted,
+        ).render()
     }
 
     private fun showCollection(kind:String,offset:Int=0,refresh:Boolean=false){
