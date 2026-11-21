@@ -1,7 +1,6 @@
 package org.luma.music
 
 import android.content.Context
-import android.content.SharedPreferences
 import android.view.Gravity
 import android.view.View
 import android.widget.LinearLayout
@@ -15,7 +14,7 @@ import android.widget.LinearLayout
 internal object LumaScreenComponents {
     fun text(
         context: Context,
-        preferences: SharedPreferences,
+        preferences: SettingsStore,
         value: String,
         size: Float = 16f,
         color: Int = AppThemes.active.text,
