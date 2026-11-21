@@ -188,8 +188,7 @@ fn content_range_matches(raw: &str, start: u64, size: u64) -> bool {
 }
 
 fn hash_file(path: &Path) -> Result<(u64, String)> {
-    let mut file =
-        fs::File::open(path).map_err(|_| "Не удалось прочитать сохранённый APK")?;
+    let mut file = fs::File::open(path).map_err(|_| "Не удалось прочитать сохранённый APK")?;
     let mut hash = Sha256::new();
     let mut bytes = 0u64;
     let mut buffer = [0u8; 32768];
@@ -208,9 +207,7 @@ fn hash_file(path: &Path) -> Result<(u64, String)> {
 
 pub fn download(argument: &Value, mut progress: impl FnMut(i32) -> bool) -> Result<String> {
     let release = &argument["release"];
-    let size = release["asset"]["size"]
-        .as_u64()
-        .ok_or("Нет размера APK")?;
+    let size = release["asset"]["size"].as_u64().ok_or("Нет размера APK")?;
     if !(1..=MAX_APK).contains(&size) {
         return Err("Размер APK вне допустимого диапазона".into());
     }
@@ -228,12 +225,7 @@ pub fn download(argument: &Value, mut progress: impl FnMut(i32) -> bool) -> Resu
         .ok_or("Нет версии выпуска")?;
     let client = client(true)?;
     let expected = updates::checksum(
-        &text(
-            &client,
-            &asset_url(&release["sums"])?,
-            true,
-            128 * 1024,
-        )?,
+        &text(&client, &asset_url(&release["sums"])?, true, 128 * 1024)?,
         name,
     )?;
 
@@ -275,8 +267,7 @@ pub fn download(argument: &Value, mut progress: impl FnMut(i32) -> bool) -> Resu
         let temporary = folder.join("update.json.tmp");
         fs::write(&temporary, identity.to_string())
             .map_err(|_| "Не удалось сохранить сведения об обновлении")?;
-        fs::rename(&temporary, &metadata)
-            .map_err(|_| "Не удалось обновить сведения о загрузке")?;
+        fs::rename(&temporary, &metadata).map_err(|_| "Не удалось обновить сведения о загрузке")?;
     }
 
     // A completed file survives process death and is reused only after a fresh hash check.
@@ -294,8 +285,7 @@ pub fn download(argument: &Value, mut progress: impl FnMut(i32) -> bool) -> Resu
 
     let mut offset = fs::metadata(&partial).map(|m| m.len()).unwrap_or(0);
     if offset > size {
-        fs::remove_file(&partial)
-            .map_err(|_| "Не удалось сбросить повреждённую загрузку")?;
+        fs::remove_file(&partial).map_err(|_| "Не удалось сбросить повреждённую загрузку")?;
         offset = 0;
     }
     if offset == size {
@@ -305,8 +295,7 @@ pub fn download(argument: &Value, mut progress: impl FnMut(i32) -> bool) -> Resu
             progress(100);
             return Ok(ready.to_string_lossy().into_owned());
         }
-        fs::remove_file(&partial)
-            .map_err(|_| "Не удалось удалить повреждённый APK")?;
+        fs::remove_file(&partial).map_err(|_| "Не удалось удалить повреждённый APK")?;
         offset = 0;
     }
 
@@ -389,9 +378,7 @@ pub fn download(argument: &Value, mut progress: impl FnMut(i32) -> bool) -> Resu
     loop {
         let read = response
             .read(&mut buffer)
-            .map_err(|_| {
-                "Загрузка APK прервана. Частичная загрузка сохранена для продолжения."
-            })?;
+            .map_err(|_| "Загрузка APK прервана. Частичная загрузка сохранена для продолжения.")?;
         if read == 0 {
             break;
         }
@@ -400,9 +387,9 @@ pub fn download(argument: &Value, mut progress: impl FnMut(i32) -> bool) -> Resu
             let _ = fs::remove_file(&partial);
             return Err("Размер загрузки превышен".into());
         }
-        output.write_all(&buffer[..read]).map_err(|_| {
-            "Ошибка записи APK. Частичная загрузка сохранена."
-        })?;
+        output
+            .write_all(&buffer[..read])
+            .map_err(|_| "Ошибка записи APK. Частичная загрузка сохранена.")?;
         hash.update(&buffer[..read]);
         if count.saturating_sub(synced) >= 1024 * 1024 {
             output
@@ -432,9 +419,7 @@ pub fn download(argument: &Value, mut progress: impl FnMut(i32) -> bool) -> Resu
         let _ = fs::remove_file(&partial);
         return Err("SHA-256 APK не совпадает. Повреждённая загрузка удалена.".into());
     }
-    output
-        .sync_all()
-        .map_err(|_| "Не удалось сохранить APK")?;
+    output.sync_all().map_err(|_| "Не удалось сохранить APK")?;
     drop(output);
     if ready.exists() {
         fs::remove_file(&ready).map_err(|_| "Не удалось заменить предыдущий APK")?;
