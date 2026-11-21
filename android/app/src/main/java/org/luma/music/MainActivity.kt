@@ -1294,7 +1294,7 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
                     textColor = white,
                     mutedColor = muted,
                 ).render()
-            }}
+            }
         }
     }
 
