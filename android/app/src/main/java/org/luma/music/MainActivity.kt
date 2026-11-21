@@ -1212,28 +1212,43 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
                 )
             }
             "player" -> {
-                val player=group("Поведение плеера")
-                settingSwitch(player,"Перемешивание","Выбор следующего доступного трека в случайном порядке.","shuffle",false) {PlaybackService.shuffle=it}
-                settingSwitch(player,"Повтор трека","Повторять текущую композицию после окончания.","repeat",false) {PlaybackService.repeat=it}
-                settingSwitch(player,"Пауза без наушников","Останавливать звук при отключении проводных или Bluetooth-наушников.","pause_on_unplug",true)
-                settingSwitch(player,"Цвет плеера по обложке","Акцентные кнопки и спокойный фон в цвет альбома. OLED сохраняет чёрный фон.","cover_colors",true)
-                val fast=group("Быстрое переключение")
-                settingSwitch(fast,"Подготавливать следующий трек","Один следующий трек готовится заранее. Использует дополнительный трафик и память.","preload_next",true){PlaybackService.instance?.refreshBufferPolicy()}
-                settingSwitch(fast,"Предзагрузка только без лимита","Отключать предзагрузку в тарифицируемой сети.","preload_wifi_only",false){PlaybackService.instance?.refreshBufferPolicy()}
-                settingSwitch(player,"Остановиться после трека","Одноразовая пауза в конце текущей композиции.","sleep_end",false){if(it)PlaybackService.instance?.setSleepTimer(0)}
-                val remaining=PlaybackService.instance?.sleepMinutesRemaining() ?: 0
-                settingRow(player,"Таймер сна",if(remaining>0) t("Осталось около %1\$d мин",remaining) else "Выключен") {
-                    val service=PlaybackService.instance
-                    if(service==null) {status.text="Сначала запустите трек";return@settingRow}
-                    val minutes=intArrayOf(0,15,30,60,90)
-                    LumaDialog(this).setTitle("Таймер сна")
-                        .setItems(arrayOf("Выключить","15 минут","30 минут","60 минут","90 минут")) { _,index ->
-                            service.setSleepTimer(minutes[index]);settings("player")
-                        }.show()
-                }
-                settingRow(player,"Уведомления и экран блокировки","Разрешения и категории уведомлений Android") {
-                    startActivity(Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE,packageName))
-                }
+                PlayerSettingsSection(
+                    group = { title -> group(title) },
+                    settingRow = ::settingRow,
+                    settingSwitch = { parent, title, summary, key, default, changed ->
+                        settingSwitch(parent, title, summary, key, default, changed)
+                    },
+                ).render(
+                    data = PlayerSettingsSection.Data(
+                        sleepMinutesRemaining = PlaybackService.instance?.sleepMinutesRemaining() ?: 0,
+                    ),
+                    actions = PlayerSettingsSection.Actions(
+                        onShuffleChanged = { PlaybackService.shuffle = it },
+                        onRepeatChanged = { PlaybackService.repeat = it },
+                        onPreloadChanged = { PlaybackService.instance?.refreshBufferPolicy() },
+                        onSleepEndChanged = { if (it) PlaybackService.instance?.setSleepTimer(0) },
+                        openSleepTimer = {
+                            val service = PlaybackService.instance
+                            if (service == null) {
+                                status.text = "Сначала запустите трек"
+                            } else {
+                                val minutes = intArrayOf(0, 15, 30, 60, 90)
+                                LumaDialog(this).setTitle("Таймер сна")
+                                    .setItems(arrayOf("Выключить", "15 минут", "30 минут", "60 минут", "90 минут")) { _, index ->
+                                        service.setSleepTimer(minutes[index])
+                                        settings("player")
+                                    }
+                                    .show()
+                            }
+                        },
+                        openNotifications = {
+                            startActivity(
+                                Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                                    .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, packageName),
+                            )
+                        },
+                    ),
+                )
             }
             "storage" -> {
                 val storage=group("Место на устройстве")
