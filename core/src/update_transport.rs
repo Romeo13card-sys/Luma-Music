@@ -205,7 +205,10 @@ fn validated_response_offset(
         // A server or mirror may ignore Range; restart instead of appending a full body.
         Ok(0)
     } else {
-        Err(format!("GitHub вернул HTTP {} при загрузке APK", status.as_u16()))
+        Err(format!(
+            "GitHub вернул HTTP {} при загрузке APK",
+            status.as_u16()
+        ))
     }
 }
 
@@ -538,16 +541,30 @@ mod tests {
     fn response_status_controls_resume_or_safe_restart() {
         use reqwest::StatusCode;
         assert_eq!(
-            validated_response_offset(StatusCode::PARTIAL_CONTENT, Some("bytes 100-199/200"), 100, 200).unwrap(),
+            validated_response_offset(
+                StatusCode::PARTIAL_CONTENT,
+                Some("bytes 100-199/200"),
+                100,
+                200
+            )
+            .unwrap(),
             100
         );
         assert_eq!(
             validated_response_offset(StatusCode::OK, None, 100, 200).unwrap(),
             0
         );
-        assert!(validated_response_offset(StatusCode::PARTIAL_CONTENT, Some("bytes 99-199/200"), 100, 200).is_err());
+        assert!(validated_response_offset(
+            StatusCode::PARTIAL_CONTENT,
+            Some("bytes 99-199/200"),
+            100,
+            200
+        )
+        .is_err());
         assert!(validated_response_offset(StatusCode::PARTIAL_CONTENT, None, 100, 200).is_err());
-        assert!(validated_response_offset(StatusCode::RANGE_NOT_SATISFIABLE, None, 100, 200).is_err());
+        assert!(
+            validated_response_offset(StatusCode::RANGE_NOT_SATISFIABLE, None, 100, 200).is_err()
+        );
     }
 
     #[test]
