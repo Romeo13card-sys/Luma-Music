@@ -1531,7 +1531,12 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
 
     private fun installUpdate(file: java.io.File) {
         try {
-            GitHubUpdater(this).validate(file)
+            val updater = GitHubUpdater(this)
+            val githubMetadata = java.io.File(filesDir, "updates/update.json")
+            if (file.canonicalFile == java.io.File(filesDir, "updates/update.apk").canonicalFile && githubMetadata.isFile) {
+                require(updater.savedUpdate() != null) { "Сохранённый APK не прошёл повторную проверку SHA-256 или подписи" }
+            }
+            updater.validate(file)
             if (!packageManager.canRequestPackageInstalls()) {
                 pendingUpdate = file
                 LumaDialog(this)
@@ -1631,6 +1636,8 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
                 executor.execute {
                     try {
                         val folder = java.io.File(filesDir, "updates").apply { mkdirs() }
+                        // A manually selected APK is not a GitHub download; discard stale resume metadata.
+                        listOf("update.json", "update.json.tmp", "update.part").forEach { java.io.File(folder, it).delete() }
                         val file = java.io.File(folder, "update.apk")
                         contentResolver.openInputStream(uri)?.use { input ->
                             file.outputStream().use { output ->
