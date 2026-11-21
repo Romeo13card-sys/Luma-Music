@@ -1269,13 +1269,13 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
             "account" -> {
                 AccountSettingsScreen(
                     target = body,
+                    group = { title -> group(title) },
                     text = ::text,
                     action = ::action,
                     settingRow = ::settingRow,
                     gap = ::gap,
                 ).render(
                     data = AccountSettingsScreen.Data(
-                        spotifyConnected = SpotifyAuth.isConnected(this),
                         yandexConnected = token.isNotBlank(),
                         mutedColor = muted,
                     ),
