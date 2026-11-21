@@ -1331,16 +1331,27 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
                 )
             }
             "account" -> {
-                val spotify=group("Spotify")
-                spotify.addView(action("Подключить Spotify") {startActivity(Intent(this,SpotifyActivity::class.java))})
-                spotify.addView(text("Аккаунты Spotify и Яндекса подключаются независимо.",13f,muted))
-                val account=group("Яндекс Музыка")
-                account.addView(text(if(token.isBlank()) "Вход не выполнен" else "Вход сохранён на устройстве",15f,muted))
-                account.addView(action(if(token.isBlank()) "Войти через Яндекс" else "Сменить аккаунт",true) {startActivityForResult(Intent(this,YandexLoginActivity::class.java),12)})
-                gap(account,8)
-                settingRow(account,"Дополнительный вход","Браузер со своим OAuth-клиентом") {configureOAuth()}
-                if(token.isNotBlank()) account.addView(action("Выйти из аккаунта") {logout()})
-                account.addView(text("Токен хранится зашифрованным на этом устройстве. Для каталога и прослушивания нужна действующая подписка.",13f,muted))
+                AccountSettingsScreen(
+                    target = body,
+                    group = { title -> group(title) },
+                    text = ::text,
+                    action = ::action,
+                    settingRow = ::settingRow,
+                    gap = ::gap,
+                ).render(
+                    data = AccountSettingsScreen.Data(
+                        yandexConnected = token.isNotBlank(),
+                        mutedColor = muted,
+                    ),
+                    actions = AccountSettingsScreen.Actions(
+                        connectSpotify = { startActivity(Intent(this, SpotifyActivity::class.java)) },
+                        connectYandex = {
+                            startActivityForResult(Intent(this, YandexLoginActivity::class.java), 12)
+                        },
+                        configureOAuth = ::configureOAuth,
+                        logout = ::logout,
+                    ),
+                )
             }
             "about" -> showAbout(current)
             else -> {
