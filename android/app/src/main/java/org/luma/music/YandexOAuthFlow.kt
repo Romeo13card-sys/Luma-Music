@@ -28,7 +28,7 @@ internal class YandexOAuthFlow(
     fun configureOAuth() {
         val prefs = activity.getSharedPreferences("oauth", Activity.MODE_PRIVATE)
         val input = EditText(activity).apply {
-            hint = "Client ID OAuth-приложения"
+            hint = L10n.text(activity, "Client ID OAuth-приложения")
             setSingleLine()
             setText(prefs.getString("client", ""))
         }
