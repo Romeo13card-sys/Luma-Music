@@ -25,6 +25,7 @@ internal class FullPlayerScreen(
     private val accentColor: Int,
     private val translate: (String) -> String,
     private val swipeTracks: (View, () -> Unit) -> Unit,
+    private val isCurrentCover: (AlbumArt) -> Boolean,
     private val actions: Actions,
 ) {
     data class Actions(
@@ -98,7 +99,7 @@ internal class FullPlayerScreen(
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
             contentDescription = translate("Обложка текущего трека")
         }
-        cover.onImage = actions.onCoverImage
+        cover.onImage = { image -> if (isCurrentCover(cover)) actions.onCoverImage(image) }
         swipeTracks(cover, actions.openCurrentTrack)
         val side = minOf(
             context.resources.configuration.screenWidthDp - 64,
