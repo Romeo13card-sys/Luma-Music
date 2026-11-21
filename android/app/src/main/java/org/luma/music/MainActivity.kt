@@ -412,7 +412,7 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
             panel = ::panel,
             action = ::action,
             dp = ::dp,
-            surface = { radius, accent -> surface(radius, accent) },
+            surface = { radius -> surface(radius) },
             collectionCards = ::collectionCards,
         ).render(
             data = HomeScreen.Data(
