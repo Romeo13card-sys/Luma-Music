@@ -255,6 +255,7 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
             textColor = white,
             mutedColor = muted,
             accentColor = mint,
+            translate = { value -> t(value) },
         ).render(
             actions = LoginScreen.Actions(
                 openYandexLogin = {
@@ -268,37 +269,38 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
                     shell("Главная")
                 },
                 connectToken = { candidate, input, submit ->
-                    if (!submit.isEnabled) return@Actions
-                    if (candidate.isEmpty()) {
-                        status.text = "Сначала вставьте OAuth-токен"
-                        input.requestFocus()
-                        return@Actions
-                    }
-                    (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
-                        .hideSoftInputFromWindow(input.windowToken, 0)
-                    submit.isEnabled = false
-                    submit.alpha = .55f
-                    submit.text = "Проверяем аккаунт…"
-                    token = candidate
-                    generation++
-                    request(
-                        "account",
-                        finished = {
-                            submit.isEnabled = true
-                            submit.alpha = 1f
-                            submit.text = "Войти"
-                        },
-                    ) {
-                        try {
-                            TokenStore(this).save(token)
-                            input.text.clear()
-                            demo = false
-                            shell("Главная")
-                        } catch (_: Exception) {
-                            status.text = "Не удалось защитить токен. Попробуйте ещё раз."
+                    if (submit.isEnabled) {
+                        if (candidate.isEmpty()) {
+                            status.text = "Сначала вставьте OAuth-токен"
+                            input.requestFocus()
+                        } else {
+                            (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
+                                .hideSoftInputFromWindow(input.windowToken, 0)
+                            submit.isEnabled = false
+                            submit.alpha = .55f
+                            submit.text = "Проверяем аккаунт…"
+                            token = candidate
+                            generation++
+                            request(
+                                "account",
+                                finished = {
+                                    submit.isEnabled = true
+                                    submit.alpha = 1f
+                                    submit.text = "Войти"
+                                },
+                            ) {
+                                try {
+                                    TokenStore(this).save(token)
+                                    input.text.clear()
+                                    demo = false
+                                    shell("Главная")
+                                } catch (_: Exception) {
+                                    status.text = "Не удалось защитить токен. Попробуйте ещё раз."
+                                }
+                            }
                         }
                     }
-                },
+                }
             ),
         )
         body = views.body
