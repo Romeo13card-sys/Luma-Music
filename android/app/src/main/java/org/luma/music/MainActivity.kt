@@ -211,32 +211,24 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
         root.requestApplyInsets()
     }
 
+    private val requestCoordinator by lazy {
+        MusicRequestCoordinator(
+            activity = this,
+            requests = apiRequests,
+            generation = { generation },
+            credential = { token },
+            destroyed = { destroyed },
+            status = { status },
+        )
+    }
+
     private fun request(
         op: String,
         arg: String = "",
         finished: (() -> Unit)? = null,
         done: (Any) -> Unit,
     ) {
-        val version = generation
-        val credential = token
-        status.text = "Загрузка…"
-        apiRequests.submit {ticket ->
-            if(destroyed || version!=generation || !ticket.valid) return@submit
-            val result =
-                try {
-                    JSONObject(Native.request(credential, op, arg))
-                } catch (_: Exception) {
-                    JSONObject().put("ok", false).put("error", "Не удалось обработать ответ")
-                }
-            runOnUiThread {
-                if (destroyed || version != generation || !ticket.valid) return@runOnUiThread
-                finished?.invoke()
-                if (result.optBoolean("ok")) {
-                    status.text = ""
-                    done(result.get("data"))
-                } else status.text = result.optString("error", "Ошибка сервиса")
-            }
-        }
+        requestCoordinator.submit(op, arg, finished, done)
     }
 
     private fun login() {
