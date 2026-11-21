@@ -272,8 +272,6 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
         )
         val alternative = action("Другой способ: OAuth-токен") {}
         body.addView(alternative)
-        body.addView(action("Spotify") {startActivity(Intent(this,SpotifyActivity::class.java))})
-        body.addView(action("Загрузки") {startActivity(Intent(this,OfflineActivity::class.java))})
         val card = panel(body)
         card.visibility = View.GONE
         alternative.setOnClickListener {
