@@ -606,7 +606,7 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
         gap(root, 8)
 
         val nav = com.google.android.material.bottomnavigation.BottomNavigationView(this).apply {
-            labelVisibilityMode = com.google.android.material.bottomnavigation.LabelVisibilityMode.LABEL_VISIBILITY_LABELED
+            labelVisibilityMode = com.google.android.material.navigation.NavigationBarView.LABEL_VISIBILITY_LABELED
             setBackgroundColor(palette.background)
         }
         val destinations = listOf("Главная", "Поиск", "Медиатека", "Настройки")
