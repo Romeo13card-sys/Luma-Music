@@ -11,6 +11,8 @@ internal class CollectionCardsRenderer(
     private val column: () -> LinearLayout,
     private val dp: (Int) -> Int,
     private val surface: (Float) -> android.graphics.drawable.GradientDrawable,
+    private val textColor: Int,
+    private val mutedColor: Int,
     private val accentColor: Int,
     private val openCollection: (String) -> Unit,
     private val openOffline: () -> Unit,
@@ -35,9 +37,9 @@ internal class CollectionCardsRenderer(
                 MusicUi.icon(context, icon, label, accentColor) { click() },
                 LinearLayout.LayoutParams(dp(40), dp(36)),
             )
-            item.addView(text(label, 17f, AppThemes.active.text, true, false).apply { maxLines = 2 })
+            item.addView(text(label, 17f, textColor, true, false).apply { maxLines = 2 })
             item.addView(
-                text(description, 12f, AppThemes.active.muted, false, false).apply {
+                text(description, 12f, mutedColor, false, false).apply {
                     maxLines = 2
                     setPadding(0, 0, 0, 0)
                 },
