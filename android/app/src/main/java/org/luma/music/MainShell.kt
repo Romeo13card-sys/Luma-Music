@@ -24,7 +24,7 @@ internal class MainShell(
     private val column: () -> LinearLayout,
     private val gap: (LinearLayout, Int) -> Unit,
     private val dp: (Int) -> Int,
-    private val surface: (Float) -> android.graphics.drawable.GradientDrawable,
+    private val surface: (Float, Boolean) -> android.graphics.drawable.GradientDrawable,
     private val translate: (String) -> String,
     private val swipeTracks: (View, () -> Unit) -> Unit,
 ) {
@@ -56,7 +56,7 @@ internal class MainShell(
         identity.addView(
             text("L", 26f, accentColor, true, true).apply {
                 gravity = Gravity.CENTER
-                background = surface(dp(14).toFloat())
+                background = surface(dp(14).toFloat(), true)
                 setPadding(dp(10), dp(6), dp(10), dp(6))
             },
             LinearLayout.LayoutParams(dp(44), dp(44)).apply { rightMargin = dp(12) },
@@ -80,7 +80,7 @@ internal class MainShell(
             true,
         ).apply {
             visibility = if (demo) View.VISIBLE else View.GONE
-            background = surface(dp(14).toFloat())
+            background = surface(dp(14).toFloat(), false)
             setPadding(dp(12), dp(8), dp(12), dp(8))
         }
         root.addView(status)
@@ -95,16 +95,22 @@ internal class MainShell(
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
 
         val miniPanel = column().apply {
-            background = surface(dp(22).toFloat())
+            background = surface(dp(22).toFloat(), false)
             setPadding(dp(10), dp(8), dp(8), dp(8))
         }
         val miniBar = row()
-        val miniCover = AlbumArt(context).apply { prominent = true }
+        val miniCover = AlbumArt(context).apply {
+            prominent = true
+            swipeTracks(this, actions.openPlayer)
+        }
         miniBar.addView(
             miniCover,
             LinearLayout.LayoutParams(dp(48), dp(48)).apply { rightMargin = dp(12) },
         )
-        val miniLabels = column().apply { isFocusable = true }
+        val miniLabels = column().apply {
+            isFocusable = true
+            swipeTracks(this, actions.openPlayer)
+        }
         val title = text(translate("Выберите трек"), 14f, textColor, true, true).apply {
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
@@ -118,8 +124,6 @@ internal class MainShell(
         miniLabels.addView(title)
         miniLabels.addView(subtitle)
         miniBar.addView(miniLabels, LinearLayout.LayoutParams(0, -2, 1f))
-        miniBar.setOnClickListener { actions.openPlayer() }
-        swipeTracks(miniBar, actions.openPlayer)
         val toggle = MusicUi.icon(
             context,
             R.drawable.luma_play,
