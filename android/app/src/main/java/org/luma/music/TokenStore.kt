@@ -13,7 +13,7 @@ import javax.crypto.spec.GCMParameterSpec
 class TokenStore(context: Context, namespace: String = "auth") {
     private val app = context.applicationContext
     private val yandexAuth = namespace == "auth"
-    private val prefs = context.getSharedPreferences(namespace, Context.MODE_PRIVATE)
+    private val prefs = app.getSharedPreferences(namespace, Context.MODE_PRIVATE)
     private val alias = if (namespace == "auth") "yamusic.oauth" else "luma.$namespace"
 
     private fun key(): SecretKey {
@@ -74,7 +74,13 @@ class TokenStore(context: Context, namespace: String = "auth") {
     }
 
     fun clear() {
-        prefs.edit().clear().commit()
-        if(yandexAuth)runCatching {NativeCore.call("catalog_clear","{}")}
+        check(prefs.edit().clear().commit()) { "Не удалось удалить сохранённые данные" }
+        runCatching {
+            KeyStore.getInstance("AndroidKeyStore").apply {
+                load(null)
+                deleteEntry(alias)
+            }
+        }
+        if (yandexAuth) runCatching { NativeCore.call("catalog_clear", "{}") }
     }
 }
