@@ -71,7 +71,7 @@ internal class AboutScreen(
                 text(
                     "Предварительный перевод. Часть пояснений показана на английском.",
                     13f,
-                    AppThemes.active.muted,
+                    data.mutedColor,
                     false,
                     false,
                 ),
@@ -111,7 +111,7 @@ internal class AboutScreen(
             text(
                 "YAYMA — DarkPlayOff · YaMusic — Vyfor\nLuma — Romeo13card\nGPL-3.0",
                 14f,
-                AppThemes.active.muted,
+                data.mutedColor,
                 false,
                 true,
             ),
