@@ -1100,34 +1100,49 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
             "sound" -> {
                 val network = getSystemService(android.net.ConnectivityManager::class.java)
                 val metered = network.isActiveNetworkMetered
-                val qualityKey = if (metered) "quality_mobile" else "quality_wifi"
-                val selected = preferences.getInt(qualityKey, if (metered) 128 else 320)
-                val state = if (network.activeNetwork == null) "Нет подключённой сети" else
-                    t("%1\$s · до %2\$d кбит/с",t(if(metered) "Сеть с лимитом" else "Безлимитная сеть"),selected)
-                body.addView(text(state, 15f, mint, true))
-                val sound = group("Качество MP3")
-                fun quality(title: String, key: String, default: Int, detail: String) {
-                    settingRow(sound, t("%1\$s · до %2\$d кбит/с",t(title),preferences.getInt(key, default)), detail) {
-                        val values = intArrayOf(128,192,320)
-                        LumaDialog(this).setTitle(title)
-                            .setSingleChoiceItems(arrayOf("Экономия · 128 кбит/с", "Баланс · 192 кбит/с", "Высокое · 320 кбит/с"),
-                                values.indexOf(preferences.getInt(key, default)).coerceAtLeast(0)) { dialog, index ->
-                                preferences.edit().putInt(key, values[index]).apply()
-                                PlaybackService.instance?.refreshBufferPolicy()
-                                dialog.dismiss(); settings("sound")
-                            }.setNegativeButton("Отмена", null).show()
-                    }
-                }
-                quality("Безлимитная сеть", "quality_wifi", 320, "Обычно Wi-Fi. Максимальное качество в пределах выбранного лимита.")
-                quality("Сеть с лимитом", "quality_mobile", 128, "Обычно мобильная связь. Android может считать Wi-Fi тарифицируемым.")
-                sound.addView(text("Применяется к следующему запуску трека. Если Яндекс предлагает только более высокий битрейт, Luma сообщит об этом и не превысит лимит автоматически.", 13f, muted))
-                val traffic = group("Трафик")
-                settingSwitch(traffic, "Только сеть без лимита", "В сети с лимитом сетевое аудио не загружается. Файлы с устройства доступны.", "unmetered_only", false)
-                body.addView(action("Повторить текущий трек", true) {
-                    if (PlaybackService.index !in PlaybackService.queue.indices) {status.text="Сначала выберите трек";return@action}
-                    PlaybackService.command(this, "play", PlaybackService.index)
-                    fullPlayer()
-                })
+                SoundSettingsSection(
+                    context = this,
+                    group = { title -> group(title) },
+                    settingRow = ::settingRow,
+                    settingSwitch = { parent, title, summary, key, default, changed ->
+                        settingSwitch(parent, title, summary, key, default, changed)
+                    },
+                    text = ::text,
+                    action = ::action,
+                    translate = { value -> t(value) },
+                ).render(
+                    data = SoundSettingsSection.Data(
+                        networkState = if (network.activeNetwork == null) {
+                            "Нет подключённой сети"
+                        } else {
+                            t(
+                                "%1\$s · до %2\$d кбит/с",
+                                t(if (metered) "Сеть с лимитом" else "Безлимитная сеть"),
+                                preferences.getInt(if (metered) "quality_mobile" else "quality_wifi", if (metered) 128 else 320),
+                            )
+                        },
+                        wifiQuality = preferences.getInt("quality_wifi", 320),
+                        mobileQuality = preferences.getInt("quality_mobile", 128),
+                        metered = metered,
+                        accentColor = mint,
+                        mutedColor = muted,
+                    ),
+                    actions = SoundSettingsSection.Actions(
+                        selectQuality = { key, value ->
+                            preferences.edit().putInt(key, value).apply()
+                            PlaybackService.instance?.refreshBufferPolicy()
+                            settings("sound")
+                        },
+                        replayCurrent = {
+                            if (PlaybackService.index !in PlaybackService.queue.indices) {
+                                status.text = "Сначала выберите трек"
+                            } else {
+                                PlaybackService.command(this, "play", PlaybackService.index)
+                                fullPlayer()
+                            }
+                        },
+                    ),
+                )
             }
             "appearance" -> {
                 AppearanceSettingsSection(
