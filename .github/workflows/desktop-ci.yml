@@ -1,0 +1,72 @@
+name: Luma Music Desktop CI
+
+on:
+  pull_request:
+    paths:
+      - 'core/**'
+      - 'desktop/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - '.github/workflows/desktop-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'core/**'
+      - 'desktop/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - '.github/workflows/desktop-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  desktop:
+    name: Desktop tests and build · ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: Linux
+          - os: windows-latest
+            platform: Windows
+          - os: macos-latest
+            platform: macOS
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_BUILD_JOBS: '2'
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install Linux audio and window dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev \
+            libwayland-dev \
+            libgl1-mesa-dev
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@1.90.0
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: desktop-ci-${{ matrix.os }}
+      - name: Test shared core and Desktop
+        run: cargo test --locked -p yamusic-core -p luma-desktop
+      - name: Build Desktop
+        run: cargo build --release --locked -p luma-desktop

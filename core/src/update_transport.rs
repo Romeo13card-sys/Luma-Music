@@ -503,14 +503,6 @@ mod tests {
         assert!(!content_range_matches("bytes 100-199/201", 100, 200));
         assert!(!content_range_matches("items 100-199/200", 100, 200));
     }
-    #[test]
-    fn validates_content_range_before_appending_resumed_bytes() {
-        assert!(content_range_matches("bytes 100-199/200", 100, 200));
-        assert!(!content_range_matches("bytes 99-199/200", 100, 200));
-        assert!(!content_range_matches("bytes 100-200/200", 100, 200));
-        assert!(!content_range_matches("bytes 100-199/201", 100, 200));
-        assert!(!content_range_matches("items 100-199/200", 100, 200));
-    }
 
     #[test]
     fn stable_channel_rejects_semantic_preview_even_if_github_flag_is_wrong() {
