@@ -134,8 +134,11 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
             text = value
             textSize = size * preferences.getInt("font_size", 100) / 100f
             setTextColor(color)
-            setPadding(0, dp(6), 0, dp(6))
-            if (bold) typeface = Typeface.create("sans-serif", Typeface.BOLD)
+            letterSpacing = if (bold && size >= 24f) -0.025f else if (size <= 12f) 0.035f else 0f
+            setLineSpacing(dp(1).toFloat(), 1f)
+            setPadding(0, dp(if (size >= 28f) 3 else 5), 0, dp(if (size >= 28f) 3 else 5))
+            if (bold) typeface = LumaDesign.typeface("sans-serif-medium")
+            includeFontPadding = false
         }
 
     private fun column() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -153,28 +156,34 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
     private fun action(label: String, accent: Boolean = false, click: () -> Unit) =
         LumaButton(this).apply {
             text = t(label)
-            textSize = 15f * preferences.getInt("font_size",100)/100f
+            textSize = 14f * preferences.getInt("font_size", 100) / 100f
             isAllCaps = false
-            minHeight = dp(48)
-            cornerRadius = dp(24)
-            setTextColor(if(accent) {
-                if(com.google.android.material.color.MaterialColors.isColorLight(mint)) Color.BLACK else Color.WHITE
-            } else white)
-            backgroundTintList = android.content.res.ColorStateList.valueOf(if(accent) mint else
-                com.google.android.material.color.MaterialColors.getColor(this,com.google.android.material.R.attr.colorSurfaceContainer,0xFF303030.toInt()))
-            setPadding(dp(16),dp(8),dp(16),dp(8))
-            contentDescription=t(label)
+            minHeight = dp(LumaDesign.TOUCH_TARGET_DP)
+            insetTop = 0
+            insetBottom = 0
+            cornerRadius = dp(if (accent) LumaDesign.CONTROL_RADIUS_DP else 16)
+            setTextColor(LumaDesign.contentColor(accent))
+            backgroundTintList = android.content.res.ColorStateList.valueOf(
+                if (accent) mint else if (palette.light) 0xFFE9EDF3.toInt()
+                else if (palette.oled) 0xFF12151B.toInt() else 0xFF202630.toInt()
+            )
+            strokeWidth = dp(1)
+            strokeColor = android.content.res.ColorStateList.valueOf(
+                if (accent) mint else if (palette.light) 0xFFDDE2EA.toInt() else 0xFF303846.toInt()
+            )
+            setPadding(dp(16), dp(9), dp(16), dp(9))
+            contentDescription = t(label)
             setOnClickListener {
-                if(preferences.getBoolean("haptics",true))performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                if (preferences.getBoolean("haptics", true)) performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
                 click()
             }
         }
 
     private fun panel(target: LinearLayout): LinearLayout =
         column().apply {
-            setPadding(dp(18), dp(14), dp(18), dp(14))
-            background = surface(dp(18).toFloat())
-            target.addView(this, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(12) })
+            setPadding(dp(20), dp(18), dp(20), dp(18))
+            background = surface(dp(LumaDesign.CARD_RADIUS_DP).toFloat())
+            target.addView(this, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(LumaDesign.ROW_GAP_DP + 4) })
         }
 
     private fun backdrop() {
