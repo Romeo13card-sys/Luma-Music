@@ -863,97 +863,19 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
     }
 
     private fun renderCatalogResults(target: LinearLayout, items: JSONArray, kind: String) {
-        target.removeAllViews()
-        if (kind == "track") {
-            val songs = (0 until items.length()).mapNotNull { index ->
-                runCatching { Song.from(items.getJSONObject(index)) }.getOrNull()
-            }
-            renderTracks(target, songs)
-            return
-        }
-        if (items.length() == 0) {
-            target.addView(text("Ничего не найдено. Попробуйте изменить запрос.", 15f, muted))
-            return
-        }
-        for (index in 0 until minOf(items.length(), 100)) {
-            val item = items.optJSONObject(index) ?: continue
-            val title = item.optString("title").takeIf { it.isNotBlank() }
-                ?: item.optString("name").takeIf { it.isNotBlank() }
-                ?: "Без названия"
-            val artistNames = item.optJSONArray("artists")?.let { artists ->
-                (0 until artists.length()).mapNotNull { artists.optJSONObject(it)?.optString("name") }
-                    .filter { it.isNotBlank() }.joinToString(", ")
-            }.orEmpty()
-            val subtitle = when (kind) {
-                "album" -> listOfNotNull(
-                    artistNames.takeIf { it.isNotBlank() },
-                    item.optString("year").takeIf { it.isNotBlank() && it != "0" },
-                    item.optString("genre").takeIf { it.isNotBlank() },
-                ).joinToString(" · ").ifBlank { "Альбом" }
-                "artist" -> item.optJSONArray("genres")?.let { genres ->
-                    (0 until genres.length()).map { genres.optString(it) }
-                        .filter { it.isNotBlank() }.joinToString(" · ")
-                }.orEmpty().ifBlank { "Исполнитель" }
-                else -> {
-                    val owner = item.optJSONObject("owner")?.optString("name").orEmpty()
-                    owner.ifBlank { "Плейлист" }
-                }
-            }
-            val card = row().apply {
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(10), dp(10), dp(8), dp(10))
-                background = surface(dp(16).toFloat())
-                isFocusable = true
-            }
-            val art = AlbumArt(this).apply { bind(item.optString("cover")) }
-            card.addView(art, LinearLayout.LayoutParams(dp(56), dp(56)).apply {
-                rightMargin = dp(12)
-            })
-            val labels = column()
-            labels.addView(text(title, 16f, white, true, raw = true).apply {
-                maxLines = 2
-                ellipsize = android.text.TextUtils.TruncateAt.END
-            })
-            labels.addView(text(subtitle, 12f, muted, raw = true).apply {
-                maxLines = 2
-                ellipsize = android.text.TextUtils.TruncateAt.END
-            })
-            card.addView(labels, LinearLayout.LayoutParams(0, -2, 1f))
-            val count = item.optInt("trackCount", item.optInt("tracksCount", 0))
-            if (count > 0) card.addView(text(count.toString(), 12f, muted))
-            card.setOnClickListener {
-                if (kind == "playlist") {
-                    val ownerId = item.optJSONObject("owner")?.optString("uid").orEmpty()
-                    val playlistId = item.optString("kind")
-                    if (ownerId.isNotBlank() && ownerId.all { it.isDigit() } &&
-                        playlistId.isNotBlank() && playlistId.all { it.isDigit() }
-                    ) {
-                        showTracks(title, "playlist", "$ownerId:$playlistId")
-                    } else {
-                        notice("Не удалось определить владельца плейлиста")
-                    }
-                } else {
-                    val details = buildString {
-                        append(title)
-                        if (subtitle.isNotBlank()) append("\n").append(subtitle)
-                        item.optString("description").takeIf { it.isNotBlank() }?.let {
-                            append("\n\n").append(it)
-                        }
-                        if (count > 0) append("\n\nТреков: ").append(count)
-                        item.optString("id").takeIf { it.isNotBlank() }?.let {
-                            append("\nID: ").append(it)
-                        }
-                    }
-                    LumaDialog(this).setTitle(if (kind == "album") "Альбом" else "Исполнитель")
-                        .setMessage(details)
-                        .setPositiveButton("Закрыть", null)
-                        .show()
-                }
-            }
-            target.addView(card, LinearLayout.LayoutParams(-1, -2).apply {
-                topMargin = dp(8)
-            })
-        }
+        CatalogResultsRenderer(
+            context = this,
+            text = ::text,
+            row = ::row,
+            column = ::column,
+            dp = ::dp,
+            surface = { radius -> surface(radius) },
+            renderTracks = ::renderTracks,
+            openPlaylist = { title, id -> showTracks(title, "playlist", id) },
+            notify = ::notice,
+            textColor = white,
+            mutedColor = muted,
+        ).render(target, items, kind)
     }
 
     private fun library() {
