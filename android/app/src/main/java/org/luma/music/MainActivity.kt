@@ -839,6 +839,7 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
             accentColor = mint,
             translate = { value -> t(value) },
             swipeTracks = { view, onClick -> swipeTracks(view, onClick) },
+            isCurrentCover = { cover -> playerCover === cover },
             actions = FullPlayerScreen.Actions(
                 collapse = { shell(page) },
                 openQueue = { startActivity(Intent(this, QueueActivity::class.java)) },
