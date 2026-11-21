@@ -11,10 +11,7 @@ mod engine;
 use eframe::egui;
 use engine::Jobs;
 use serde_json::{json, Value};
-use std::{
-    sync::mpsc,
-    time::Duration,
-};
+use std::{sync::mpsc, time::Duration};
 mod player;
 mod screens;
 use player::{prepare_audio, Player, Reply};
