@@ -399,9 +399,18 @@ pub fn download(argument: &Value, mut progress: impl FnMut(i32) -> bool) -> Resu
     }
     let mut synced = count;
     loop {
-        let read = response
-            .read(&mut buffer)
-            .map_err(|_| "Загрузка APK прервана. Частичная загрузка сохранена для продолжения.")?;
+        let read = match response.read(&mut buffer) {
+            Ok(read) => read,
+            Err(_) => {
+                // Persist the newest tail as well as the periodic 1 MiB checkpoints.
+                // A process death immediately after a socket error must not lose bytes
+                // that the next Range request will assume are already on disk.
+                let _ = output.sync_all();
+                return Err(
+                    "Загрузка APK прервана. Частичная загрузка сохранена для продолжения.".into(),
+                );
+            }
+        };
         if read == 0 {
             break;
         }
@@ -410,9 +419,10 @@ pub fn download(argument: &Value, mut progress: impl FnMut(i32) -> bool) -> Resu
             let _ = fs::remove_file(&partial);
             return Err("Размер загрузки превышен".into());
         }
-        output
-            .write_all(&buffer[..read])
-            .map_err(|_| "Ошибка записи APK. Частичная загрузка сохранена.")?;
+        if output.write_all(&buffer[..read]).is_err() {
+            let _ = output.sync_all();
+            return Err("Ошибка записи APK. Частичная загрузка сохранена.".into());
+        }
         hash.update(&buffer[..read]);
         if count.saturating_sub(synced) >= 1024 * 1024 {
             output
