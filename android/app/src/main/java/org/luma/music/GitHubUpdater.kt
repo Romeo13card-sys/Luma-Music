@@ -38,13 +38,13 @@ class GitHubUpdater(private val context: Context) {
     fun download(release: Release, progress: (Int) -> Unit): File {
         val size = release.asset.getLong("size")
         require(
-            size in 1..UpdatePolicy.MAX_APK && context.cacheDir.usableSpace > size * 2 + 1024 * 1024
+            size in 1..UpdatePolicy.MAX_APK && context.filesDir.usableSpace > size * 2 + 1024 * 1024
         ) {
             "Недостаточно места или недопустимый размер APK"
         }
         val data =
             JSONObject()
-                .put("cacheDir", context.cacheDir.absolutePath)
+                .put("filesDir", context.filesDir.absolutePath)
                 .put(
                     "release",
                     JSONObject()
@@ -71,6 +71,13 @@ class GitHubUpdater(private val context: Context) {
             throw error
         }
         return file
+    }
+
+    /** A fully downloaded GitHub APK is kept in app-private files across restarts. */
+    fun savedUpdate(): File? {
+        val file = File(context.filesDir, "updates/update.apk")
+        if (!file.isFile) return null
+        return runCatching { validate(file); file }.getOrNull()
     }
 
     fun validate(file: File) {
