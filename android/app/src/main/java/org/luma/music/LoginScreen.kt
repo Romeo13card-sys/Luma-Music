@@ -23,6 +23,7 @@ internal class LoginScreen(
     private val textColor: Int,
     private val mutedColor: Int,
     private val accentColor: Int,
+    private val translate: (String) -> String,
 ) {
     data class Actions(
         val openYandexLogin: () -> Unit,
@@ -82,7 +83,7 @@ internal class LoginScreen(
         card.addView(text("Личный OAuth-токен", 13f, accentColor, true, false))
         val input = EditText(context).apply {
             filters = arrayOf(android.text.InputFilter.LengthFilter(4096))
-            hint = "Вставьте токен"
+            hint = translate("Вставьте токен")
             setTextColor(textColor)
             setHintTextColor(mutedColor)
             setSingleLine()
@@ -94,7 +95,7 @@ internal class LoginScreen(
         }
         card.addView(input)
         val show = CheckBox(context).apply {
-            text = "Показать токен"
+            text = translate("Показать токен")
             setTextColor(mutedColor)
             setOnCheckedChangeListener { _, checked ->
                 val cursor = input.selectionStart
