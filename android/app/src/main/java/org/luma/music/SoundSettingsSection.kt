@@ -11,13 +11,13 @@ internal class SoundSettingsSection(
     private val settingSwitch: (LinearLayout, String, String, String, Boolean, (Boolean) -> Unit) -> Unit,
     private val text: (String, Float, Int, Boolean, Boolean) -> LumaTextView,
     private val action: (String, Boolean, () -> Unit) -> LumaButton,
-    private val translate: (String) -> String,
 ) {
     data class Data(
         val networkState: String,
         val wifiQuality: Int,
         val mobileQuality: Int,
-        val metered: Boolean,
+        val wifiQualityLabel: String,
+        val mobileQualityLabel: String,
         val accentColor: Int,
         val mutedColor: Int,
     )
@@ -27,14 +27,15 @@ internal class SoundSettingsSection(
         val replayCurrent: () -> Unit,
     )
 
-    fun render(data: Data, actions: Actions) {
-        targetState(data)
+    fun render(target: LinearLayout, data: Data, actions: Actions) {
+        target.addView(text(data.networkState, 15f, data.accentColor, true, false))
         val sound = group("Качество MP3")
         quality(
             sound,
             "Безлимитная сеть",
             "quality_wifi",
             data.wifiQuality,
+            data.wifiQualityLabel,
             "Обычно Wi-Fi. Максимальное качество в пределах выбранного лимита.",
             actions.selectQuality,
         )
@@ -43,6 +44,7 @@ internal class SoundSettingsSection(
             "Сеть с лимитом",
             "quality_mobile",
             data.mobileQuality,
+            data.mobileQualityLabel,
             "Обычно мобильная связь. Android может считать Wi-Fi тарифицируемым.",
             actions.selectQuality,
         )
@@ -66,25 +68,16 @@ internal class SoundSettingsSection(
         traffic.addView(action("Повторить текущий трек", true, actions.replayCurrent))
     }
 
-    private fun targetState(data: Data) {
-        // The host-provided state reflects Android's active/metered network classification.
-        // Add it as a standalone line above the quality controls.
-        stateText = text(data.networkState, 15f, data.accentColor, true, false)
-        stateTarget?.addView(stateText)
-    }
-
-    private var stateTarget: LinearLayout? = null
-    private lateinit var stateText: LumaTextView
-
     private fun quality(
         parent: LinearLayout,
         title: String,
         key: String,
         selected: Int,
+        label: String,
         detail: String,
         onSelected: (String, Int) -> Unit,
     ) {
-        settingRow(parent, translate("%1\$s · до %2\$d кбит/с", title, selected), detail) {
+        settingRow(parent, label, detail) {
             val values = intArrayOf(128, 192, 320)
             LumaDialog(context).setTitle(title)
                 .setSingleChoiceItems(
