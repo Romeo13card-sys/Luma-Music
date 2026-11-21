@@ -3,7 +3,6 @@ package org.luma.music
 import android.content.Context
 import android.text.TextUtils
 import android.view.Gravity
-import android.view.View
 import android.widget.LinearLayout
 import org.json.JSONArray
 
