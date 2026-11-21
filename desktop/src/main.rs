@@ -383,10 +383,10 @@ impl eframe::App for App {
         ctx.style_mut(|style| {
             style.spacing.item_spacing = egui::vec2(10.0, 10.0);
             style.spacing.button_padding = egui::vec2(14.0, 10.0);
-            style.visuals.widgets.noninteractive.corner_radius = egui::CornerRadius::same(14);
-            style.visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(14);
-            style.visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(14);
-            style.visuals.widgets.active.corner_radius = egui::CornerRadius::same(14);
+            style.visuals.widgets.noninteractive.corner_radius = egui::Rounding::same(14.0);
+            style.visuals.widgets.inactive.corner_radius = egui::Rounding::same(14.0);
+            style.visuals.widgets.hovered.corner_radius = egui::Rounding::same(14.0);
+            style.visuals.widgets.active.corner_radius = egui::Rounding::same(14.0);
         });
 
         let mut request: Option<(String, String)> = None;
@@ -509,7 +509,7 @@ impl eframe::App for App {
                         egui::Frame::group(ui.style())
                             .fill(ui.visuals().window_fill)
                             .stroke(egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color))
-                            .inner_margin(egui::Margin::same(20))
+                            .inner_margin(egui::Margin::same(20.0))
                             .show(ui, |ui| {
                                 ui.label(egui::RichText::new("LUMA · PERSONAL RADIO").small().strong().color(egui::Color32::from_rgb(255, 190, 45)));
                                 ui.add_space(4.0);
