@@ -383,10 +383,10 @@ impl eframe::App for App {
         ctx.style_mut(|style| {
             style.spacing.item_spacing = egui::vec2(10.0, 10.0);
             style.spacing.button_padding = egui::vec2(14.0, 10.0);
-            style.visuals.widgets.noninteractive.corner_radius = egui::Rounding::same(14.0);
-            style.visuals.widgets.inactive.corner_radius = egui::Rounding::same(14.0);
-            style.visuals.widgets.hovered.corner_radius = egui::Rounding::same(14.0);
-            style.visuals.widgets.active.corner_radius = egui::Rounding::same(14.0);
+            style.visuals.widgets.noninteractive.rounding = egui::Rounding::same(14.0);
+            style.visuals.widgets.inactive.rounding = egui::Rounding::same(14.0);
+            style.visuals.widgets.hovered.rounding = egui::Rounding::same(14.0);
+            style.visuals.widgets.active.rounding = egui::Rounding::same(14.0);
         });
 
         let mut request: Option<(String, String)> = None;
@@ -397,7 +397,7 @@ impl eframe::App for App {
         egui::TopBottomPanel::top("luma_status")
             .exact_height(42.0)
             .show(ctx, |ui| {
-                ui.horizontal_centered(|ui| {
+                ui.horizontal(|ui| {
                     ui.label(
                         egui::RichText::new(if self.connected { "● ПОДКЛЮЧЕНО" } else { "○ НЕ ПОДКЛЮЧЕНО" })
                             .small()
