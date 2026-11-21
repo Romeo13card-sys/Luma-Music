@@ -605,7 +605,7 @@ mod tests {
         assert_eq!(size, bytes.len() as u64);
         assert_eq!(
             digest,
-            "3b19b9d81c7b1d93b0d6d38c58a1dbbcd70e7d9e9b8b0e6c3e4b5d6a7f8b9c0d"
+            "bf09f13018c3f63fb5082c286b56bbf68df31c23c9d679249683eef93f2731ee"
         );
 
         fs::remove_file(path).unwrap();
