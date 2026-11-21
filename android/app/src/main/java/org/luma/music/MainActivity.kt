@@ -700,140 +700,32 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
     }
 
     private fun search() {
-        body.addView(text("Поиск", 30f, white, true))
-        body.addView(text("Весь каталог Яндекс Музыки", 13f, muted))
-        val box = EditText(this).apply {
-            hint = t("Трек, альбом, исполнитель или плейлист")
-            setHintTextColor(muted)
-            setTextColor(white)
-            setSingleLine()
-            background = surface(dp(18).toFloat())
-            setPadding(dp(16), dp(12), dp(16), dp(12))
-            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
-        }
-        body.addView(box)
-
-        val categories = listOf(
-            "track" to "Треки",
-            "album" to "Альбомы",
-            "artist" to "Исполнители",
-            "playlist" to "Плейлисты",
-        )
-        val categoryRow = row()
-        body.addView(categoryRow)
-        val results = column()
-        val pageStatus = text("", 12f, muted)
-        var selectedKind = "track"
-        var currentQuery = ""
-        var currentPage = 0
-        var pageSize = 20
-        var hasNext = false
-
-        var previous: LumaButton? = null
-        var next: LumaButton? = null
-
-        fun updateNavigation() {
-            previous?.visibility = if (currentPage > 0) View.VISIBLE else View.INVISIBLE
-            next?.visibility = if (hasNext) View.VISIBLE else View.INVISIBLE
-        }
-
-        fun runCatalogSearch(resetPage: Boolean = true) {
-            if (token.isBlank()) {
-                notice("Подключите аккаунт для поиска в Яндекс Музыке")
-                return
-            }
-            val query = box.text.toString().trim()
-            if (query.isEmpty()) {
-                notice("Введите запрос для поиска")
-                return
-            }
-            if (query.length > 200) {
-                notice("Запрос не должен превышать 200 символов")
-                return
-            }
-            if (resetPage) currentPage = 0
-            currentQuery = query
-            (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
-                .hideSoftInputFromWindow(box.windowToken, 0)
-            generation++
-            results.removeAllViews()
-            pageStatus.text = "Ищем…"
-            request(
-                "catalog_search",
-                JSONObject()
-                    .put("query", currentQuery)
-                    .put("kind", selectedKind)
-                    .put("page", currentPage)
-                    .toString(),
-            ) { raw ->
-                val data = raw as JSONObject
-                val items = data.optJSONArray("results") ?: JSONArray()
-                val pager = data.optJSONObject("pager") ?: JSONObject()
-                val total = pager.optInt("total", pager.optInt("totalCount", -1))
-                pageSize = pager.optInt("perPage", pager.optInt("pageSize", 20)).coerceIn(1, 100)
-                hasNext = if (total >= 0) {
-                    (currentPage + 1) * pageSize < total
-                } else {
-                    items.length() >= pageSize
-                }
-                pageStatus.text = if (total >= 0) {
-                    "Страница ${currentPage + 1} · найдено $total"
-                } else {
-                    "Страница ${currentPage + 1} · результатов: ${items.length()}"
-                }
-                renderCatalogResults(results, items, selectedKind)
-                updateNavigation()
-            }
-        }
-
-        fun drawCategories() {
-            categoryRow.removeAllViews()
-            categories.forEach { (kind, label) ->
-                categoryRow.addView(
-                    action(label, kind == selectedKind) {
-                        selectedKind = kind
-                        currentPage = 0
-                        drawCategories()
-                        runCatalogSearch()
-                    },
-                    LinearLayout.LayoutParams(0, -2, 1f).apply {
-                        rightMargin = dp(4)
-                        topMargin = dp(8)
-                    },
-                )
-            }
-        }
-
-        previous = action("‹ Назад") {
-            if (currentPage > 0) {
-                currentPage--
-                runCatalogSearch(false)
-            }
-        }
-        next = action("Ещё ›") {
-            if (hasNext) {
-                currentPage++
-                runCatalogSearch(false)
-            }
-        }
-        val navigation = row().apply {
-            addView(previous!!, LinearLayout.LayoutParams(0, -2, 1f))
-            addView(next!!, LinearLayout.LayoutParams(0, -2, 1f))
-        }
-        drawCategories()
-        box.setOnEditorActionListener { _, id, _ ->
-            if (id == android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH) {
-                runCatalogSearch()
-                true
-            } else false
-        }
-        gap(body, 8)
-        body.addView(action("Искать", true) { runCatalogSearch() })
-        gap(body, 8)
-        body.addView(pageStatus)
-        body.addView(results)
-        body.addView(navigation)
-        updateNavigation()
+        SearchScreen(
+            context = this,
+            target = body,
+            text = ::text,
+            row = ::row,
+            column = ::column,
+            gap = ::gap,
+            action = ::action,
+            dp = ::dp,
+            surface = { radius -> surface(radius) },
+            textColor = white,
+            mutedColor = muted,
+            translate = ::t,
+            canSearch = { token.isNotBlank() },
+            beginSearch = { generation++ },
+            searchCatalog = { query, kind, page, onResult ->
+                val args = JSONObject()
+                    .put("query", query)
+                    .put("kind", kind)
+                    .put("page", page)
+                    .toString()
+                request("catalog_search", args) { raw -> onResult(raw as JSONObject) }
+            },
+            renderResults = ::renderCatalogResults,
+            notify = ::notice,
+        ).render()
     }
 
     private fun renderCatalogResults(target: LinearLayout, items: JSONArray, kind: String) {
