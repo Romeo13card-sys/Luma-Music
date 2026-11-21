@@ -1256,39 +1256,45 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
             }
             "about" -> showAbout(current)
             else -> {
-                val search=EditText(this).apply {
-                    hint = t("Найти настройку");setTextColor(white);setHintTextColor(muted);setSingleLine()
-                    background=surface(dp(14).toFloat());setPadding(dp(14),dp(8),dp(14),dp(8))
-                }
-                body.addView(search)
-                val rows=panel(body)
-                fun filter(query:String) {
-                    rows.removeAllViews()
-                    val found=categories.filter {item->listOf(t(item.getString("title")),t(item.getString("summary")),item.getString("title"),item.getString("summary"),item.optString("keywords")).joinToString(" ").contains(query.trim(),ignoreCase=true)}
-                    found.forEach {item->settingRow(rows,item.getString("title"),item.getString("summary")) {
-                        (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).hideSoftInputFromWindow(search.windowToken,0)
-                        settings(item.getString("id"))
-                    }}
-                    if(found.isEmpty()) rows.addView(text("Настройка не найдена",15f,muted))
-                }
-                search.addTextChangedListener(object:android.text.TextWatcher {
-                    override fun beforeTextChanged(s:CharSequence?,start:Int,count:Int,after:Int) {}
-                    override fun onTextChanged(s:CharSequence?,start:Int,before:Int,count:Int) {filter(s?.toString().orEmpty())}
-                    override fun afterTextChanged(s:android.text.Editable?) {}
-                })
-                filter("")
-                body.addView(action("Сбросить настройки") {
-                    LumaDialog(this).setTitle("Вернуть настройки по умолчанию?")
-                        .setMessage("Тема, качество и поведение плеера будут сброшены. Аккаунт, очередь и ваши файлы сохранятся.")
-                        .setNegativeButton("Отмена",null).setPositiveButton("Сбросить") {_,_->
-                            preferences.reset {saved->if(!destroyed && creditScreen) status.text=if(saved) "Настройки сброшены" else "Не удалось сохранить сброс. Проверьте свободное место."}
-                            PlaybackService.shuffle=false;PlaybackService.repeat=false
-                            PlaybackService.instance?.setSleepTimer(0)
-                            recreate()
-                        }.show()
-                })
-                body.addView(text("Luma Music · $current",12f,muted))
-            }
+                SettingsIndexScreen(
+                    context = this,
+                    target = body,
+                    categories = categories,
+                    text = ::text,
+                    action = ::action,
+                    panel = ::panel,
+                    settingRow = ::settingRow,
+                    dp = ::dp,
+                    surface = { radius -> surface(radius) },
+                    translate = { value -> t(value) },
+                    hideKeyboard = { view ->
+                        (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
+                            .hideSoftInputFromWindow(view.windowToken, 0)
+                    },
+                    openSection = { id -> settings(id) },
+                    resetSettings = {
+                        LumaDialog(this).setTitle("Вернуть настройки по умолчанию?")
+                            .setMessage("Тема, качество и поведение плеера будут сброшены. Аккаунт, очередь и ваши файлы сохранятся.")
+                            .setNegativeButton("Отмена", null)
+                            .setPositiveButton("Сбросить") { _, _ ->
+                                preferences.reset { saved ->
+                                    if (!destroyed && creditScreen) {
+                                        status.text = if (saved) "Настройки сброшены" else
+                                            "Не удалось сохранить сброс. Проверьте свободное место."
+                                    }
+                                }
+                                PlaybackService.shuffle = false
+                                PlaybackService.repeat = false
+                                PlaybackService.instance?.setSleepTimer(0)
+                                recreate()
+                            }
+                            .show()
+                    },
+                    version = current,
+                    textColor = white,
+                    mutedColor = muted,
+                ).render()
+            }}
         }
     }
 
