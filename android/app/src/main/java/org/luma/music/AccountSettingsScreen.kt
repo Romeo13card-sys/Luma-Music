@@ -4,7 +4,6 @@ import android.widget.LinearLayout
 
 /** Account settings presentation. OAuth and credential lifecycle stay in the host activities. */
 internal class AccountSettingsScreen(
-    private val target: LinearLayout,
     private val group: (String) -> LinearLayout,
     private val text: (String, Float, Int, Boolean, Boolean) -> LumaTextView,
     private val action: (String, Boolean, () -> Unit) -> LumaButton,
