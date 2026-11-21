@@ -75,6 +75,19 @@ class GitHubUpdater(private val context: Context) {
         return file
     }
 
+    /** Cheap UI check; cryptographic verification is deferred to the background before install. */
+    fun hasSavedUpdate(): Boolean {
+        val folder = File(context.filesDir, "updates")
+        val file = File(folder, "update.apk")
+        if (!file.isFile || file.length() !in 1..UpdatePolicy.MAX_APK) return false
+        return runCatching {
+            val metadata = JSONObject(File(folder, "update.json").readText())
+            val expectedSize = metadata.getLong("size")
+            val expectedHash = metadata.getString("sha256")
+            expectedSize == file.length() && expectedHash.matches(Regex("[a-fA-F0-9]{64}"))
+        }.getOrDefault(false)
+    }
+
     /** A fully downloaded GitHub APK is kept in app-private files across restarts. */
     fun savedUpdate(): File? {
         val folder = File(context.filesDir, "updates")
