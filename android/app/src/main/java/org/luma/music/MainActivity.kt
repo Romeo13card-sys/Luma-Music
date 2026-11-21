@@ -1718,7 +1718,10 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
                 abis = Build.SUPPORTED_ABIS.joinToString(),
                 memory = String.format(java.util.Locale.ROOT, "%.1f GiB", memory.totalMem / 1073741824.0),
                 renderProfile = t(if (renderPolicy.economy) "Экономичный" else "Обычный"),
-                themeMode = mode,
+                authorCredit = getString(R.string.author_credit),
+                textColor = white,
+                mutedColor = muted,
+                accentColor = mint,
             ),
             actions = AboutScreen.Actions(
                 openWhatsNew = { startActivity(Intent(this, WhatsNewActivity::class.java)) },
