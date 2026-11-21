@@ -132,11 +132,14 @@ impl App {
         if self.jobs.busy() {
             return;
         }
-        let start = self.index.map(|index| index as isize).unwrap_or(if step > 0 {
-            -1
-        } else {
-            self.queue.len() as isize
-        });
+        let start = self
+            .index
+            .map(|index| index as isize)
+            .unwrap_or(if step > 0 {
+                -1
+            } else {
+                self.queue.len() as isize
+            });
         let mut next = start + step;
         while next >= 0 && (next as usize) < self.queue.len() {
             if self.queue[next as usize]["available"] == true {
@@ -215,7 +218,12 @@ impl App {
                 }
             }
         }
-        if self.waiting_end && self.player.as_ref().is_some_and(|player| player.sink.empty()) {
+        if self.waiting_end
+            && self
+                .player
+                .as_ref()
+                .is_some_and(|player| player.sink.empty())
+        {
             self.waiting_end = false;
             self.status = "Трек завершён".into();
             if self.repeat {
