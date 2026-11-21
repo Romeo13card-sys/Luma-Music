@@ -1681,65 +1681,87 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
     }
 
     private fun showAbout(version: String) {
-        val hero = panel(body)
-        hero.addView(text("Luma Music", 32f, white, true))
-        hero.addView(text("Музыка в вашем ритме", 16f, muted))
-        hero.addView(text(getString(R.string.author_credit), 18f, mint, true))
-        fun group(label: String) = panel(body).also { it.addView(text(label,21f,white,true)) }
-        fun info(parent: LinearLayout, label: String, value: String) {
-            parent.addView(text(label,12f,muted))
-            parent.addView(text(value,16f,white,raw=true))
+        val mode = preferences.getString("theme_mode", "system").orEmpty()
+        val selectedTheme = when (mode) {
+            "light" -> "Светлая"
+            "dark" -> "Тёмная"
+            "oled" -> "OLED · Чёрная"
+            else -> "Как в системе"
         }
-        val app=group("Приложение")
-        info(app,"Версия",version)
-        app.addView(action("Что нового") {startActivity(Intent(this,WhatsNewActivity::class.java))})
-        val channel=NativeCore.call("version_channel",JSONObject().put("version",version).toString()) as String
-        info(app,"Выпуск",t(if(channel=="stable") "Стабильный" else "Предварительный"))
-        info(app,"Сборка",BuildConfig.SOURCE_COMMIT.take(8))
-        info(app,"Пакет",packageName)
-        val appearance=group("Оформление")
-        val mode=preferences.getString("theme_mode","system").orEmpty()
-        val selected=when(mode) {"light"->"Светлая";"dark"->"Тёмная";"oled"->"OLED · Чёрная";else->"Как в системе"}
-        val effective=if(palette.oled) "OLED" else if(palette.light) "Светлая" else "Тёмная"
-        info(appearance,"Выбранная тема",t(selected))
-        info(appearance,"Активная тема",t(effective))
-        info(appearance,"Язык приложения",L10n.name(this))
-        if(L10n.preview(this)) appearance.addView(text("Предварительный перевод. Часть пояснений показана на английском.",13f,muted))
-        val device=group("Устройство")
-        val memory=android.app.ActivityManager.MemoryInfo()
+        val effectiveTheme = if (palette.oled) "OLED" else if (palette.light) "Светлая" else "Тёмная"
+        val memory = android.app.ActivityManager.MemoryInfo()
         getSystemService(android.app.ActivityManager::class.java).getMemoryInfo(memory)
-        info(device,"Модель",Build.MANUFACTURER+" "+Build.MODEL)
-        info(device,"Система","Android "+Build.VERSION.RELEASE+" · API "+Build.VERSION.SDK_INT)
-        info(device,"Архитектуры",Build.SUPPORTED_ABIS.joinToString())
-        info(device,"Оперативная память",String.format(java.util.Locale.ROOT,"%.1f GiB",memory.totalMem/1073741824.0))
-        info(device,"Профиль интерфейса",t(if(renderPolicy.economy) "Экономичный" else "Обычный"))
-        val links=group("Связь и поддержка")
-        settingRow(links,"Страница релизов","GitHub Releases") {openAuthorLink("https://github.com/Romeo13card-sys/Luma-Music/releases")}
-        settingRow(links,"Сообщить об ошибке","GitHub Issues") {openAuthorLink("https://github.com/Romeo13card-sys/Luma-Music/issues")}
-        settingRow(links,"Исходный код","GPL-3.0 · Rust / Kotlin") {openAuthorLink("https://github.com/Romeo13card-sys/Luma-Music")}
-        settingRow(links,"Telegram · Romeo13card","t.me/romeo_13card") {openAuthorLink("https://t.me/romeo_13card")}
-        settingRow(links,"Поддержать автора","dalink.to/romeo_13card_fan") {openAuthorLink("https://dalink.to/romeo_13card_fan")}
-        settingRow(links,"Поддерживаемые платформы","Android · Windows · Linux · macOS") {openAuthorLink("https://github.com/Romeo13card-sys/Luma-Music/blob/main/docs/PLATFORMS.md")}
-        links.addView(action("Скопировать сведения для поддержки") {
-            val data=JSONObject().put("version",version).put("build",BuildConfig.SOURCE_COMMIT)
-                .put("android",Build.VERSION.RELEASE).put("api",Build.VERSION.SDK_INT)
-                .put("device",Build.MANUFACTURER+" "+Build.MODEL).put("abis",Build.SUPPORTED_ABIS.joinToString())
-                .put("theme",mode).put("language",L10n.code(this)).put("economy",renderPolicy.economy)
-                .put("channel",channel).put("quality_wifi",preferences.getInt("quality_wifi",320))
-                .put("quality_mobile",preferences.getInt("quality_mobile",128))
-                .put("metered",getSystemService(android.net.ConnectivityManager::class.java).isActiveNetworkMetered)
-            val report=NativeCore.call("support_report",data.toString()) as String
-            getSystemService(android.content.ClipboardManager::class.java)
-                .setPrimaryClip(ClipData.newPlainText("Luma Music",report))
-            status.text="Сведения скопированы. Токенов и адресов аудио в них нет."
-        })
-        val legal=group("Лицензии и авторство")
-        legal.addView(text("YAYMA — DarkPlayOff · YaMusic — Vyfor\nLuma — Romeo13card\nGPL-3.0",14f,muted,raw=true))
-        legal.addView(action("Открыть лицензию") {
-            val license=assets.open("licenses/GPL-3.0.txt").bufferedReader().use {it.readText()}
-            val scroll=ScrollView(this).apply {addView(text(license,13f,white,raw=true));setPadding(dp(16),dp(8),dp(16),dp(8))}
-            LumaDialog(this).setTitle("GPL-3.0 · YAYMA / Luma").setView(scroll).setPositiveButton("Закрыть",null).show()
-        })
+        val channel = NativeCore.call(
+            "version_channel",
+            JSONObject().put("version", version).toString(),
+        ) as String
+
+        AboutScreen(
+            target = body,
+            text = ::text,
+            panel = ::panel,
+            action = ::action,
+            settingRow = ::settingRow,
+        ).render(
+            data = AboutScreen.Data(
+                version = version,
+                channel = t(if (channel == "stable") "Стабильный" else "Предварительный"),
+                build = BuildConfig.SOURCE_COMMIT.take(8),
+                packageName = packageName,
+                selectedTheme = t(selectedTheme),
+                activeTheme = t(effectiveTheme),
+                language = L10n.name(this),
+                translationPreview = L10n.preview(this),
+                model = Build.MANUFACTURER + " " + Build.MODEL,
+                androidVersion = Build.VERSION.RELEASE,
+                apiLevel = Build.VERSION.SDK_INT,
+                abis = Build.SUPPORTED_ABIS.joinToString(),
+                memory = String.format(java.util.Locale.ROOT, "%.1f GiB", memory.totalMem / 1073741824.0),
+                renderProfile = t(if (renderPolicy.economy) "Экономичный" else "Обычный"),
+                authorCredit = getString(R.string.author_credit),
+                textColor = white,
+                mutedColor = muted,
+                accentColor = mint,
+            ),
+            actions = AboutScreen.Actions(
+                openWhatsNew = { startActivity(Intent(this, WhatsNewActivity::class.java)) },
+                openUrl = ::openAuthorLink,
+                copySupportInfo = {
+                    val reportData = JSONObject()
+                        .put("version", version)
+                        .put("build", BuildConfig.SOURCE_COMMIT)
+                        .put("android", Build.VERSION.RELEASE)
+                        .put("api", Build.VERSION.SDK_INT)
+                        .put("device", Build.MANUFACTURER + " " + Build.MODEL)
+                        .put("abis", Build.SUPPORTED_ABIS.joinToString())
+                        .put("theme", mode)
+                        .put("language", L10n.code(this))
+                        .put("economy", renderPolicy.economy)
+                        .put("channel", channel)
+                        .put("quality_wifi", preferences.getInt("quality_wifi", 320))
+                        .put("quality_mobile", preferences.getInt("quality_mobile", 128))
+                        .put(
+                            "metered",
+                            getSystemService(android.net.ConnectivityManager::class.java).isActiveNetworkMetered,
+                        )
+                    val report = NativeCore.call("support_report", reportData.toString()) as String
+                    getSystemService(android.content.ClipboardManager::class.java)
+                        .setPrimaryClip(ClipData.newPlainText("Luma Music", report))
+                    status.text = "Сведения скопированы. Токенов и адресов аудио в них нет."
+                },
+                openLicense = {
+                    val license = assets.open("licenses/GPL-3.0.txt").bufferedReader().use { it.readText() }
+                    val scroll = ScrollView(this).apply {
+                        addView(text(license, 13f, white, false, true))
+                        setPadding(dp(16), dp(8), dp(16), dp(8))
+                    }
+                    LumaDialog(this).setTitle("GPL-3.0 · YAYMA / Luma")
+                        .setView(scroll)
+                        .setPositiveButton("Закрыть", null)
+                        .show()
+                },
+            ),
+        )
     }
 
     private fun openAuthorLink(url: String) {
