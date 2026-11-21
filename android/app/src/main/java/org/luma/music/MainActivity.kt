@@ -929,46 +929,30 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
     }
 
     private fun renderTracks(target: LinearLayout, songs: List<Song>) {
-        if (songs.isEmpty()) {
-            target.addView(text("Здесь пока тихо. Попробуйте другой запрос.", 16f, muted))
-            return
-        }
-        val host = column()
-        target.addView(host)
-        fun showPage(start: Int) {
-            host.removeAllViews()
-            trackMarkers.clear()
-            songs.drop(start).take(renderPolicy.pageSize).forEachIndexed { offset, song ->
-                val i = start + offset
-                val item=SongRow(this).apply {bind(song)}
-                trackMarkers.add(Triple(songs,i,item.marker))
-                item.setOnClickListener {if(song.available){PlaybackService.select(this,songs,i);refreshPlayer()}else notice("Трек недоступен")}
-                item.more.setOnClickListener {TrackSheet.show(this,song){heartTrackId="";refreshPlayer()}}
-                item.setOnLongClickListener {TrackSheet.show(this,song){heartTrackId="";refreshPlayer()};true}
-                host.addView(item, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
-            }
-            val navigation = row()
-            if (start > 0)
-                navigation.addView(
-                    action("‹ Назад") { showPage(maxOf(0, start - renderPolicy.pageSize)) },
-                    LinearLayout.LayoutParams(0, -2, 1f),
-                )
-            if (start + renderPolicy.pageSize < songs.size)
-                navigation.addView(
-                    action("Ещё ›") { showPage(start + renderPolicy.pageSize) },
-                    LinearLayout.LayoutParams(0, -2, 1f),
-                )
-            host.addView(
-                text(
-                    t("%1\$d–%2\$d из %3\$d",start+1,minOf(start+renderPolicy.pageSize,songs.size),songs.size),
-                    12f,
-                    muted,
-                )
-            )
-            host.addView(navigation)
-        }
-        val first=if(songs === PlaybackService.queue && PlaybackService.index>=0) (PlaybackService.index/renderPolicy.pageSize)*renderPolicy.pageSize else 0
-        showPage(first)
+        TrackListRenderer(
+            context = this,
+            text = ::text,
+            column = ::column,
+            row = ::row,
+            action = ::action,
+            dp = ::dp,
+            pageSize = renderPolicy.pageSize,
+            trackMarkers = trackMarkers,
+            initialIndex = if (songs === PlaybackService.queue) PlaybackService.index else 0,
+            mutedColor = muted,
+            onSelect = { queue, index ->
+                PlaybackService.select(this, queue, index)
+                refreshPlayer()
+            },
+            onUnavailable = { notice("Трек недоступен") },
+            onTrackMenu = { song ->
+                TrackSheet.show(this, song) {
+                    heartTrackId = ""
+                    refreshPlayer()
+                }
+            },
+            formatRange = { first, last, total -> t("%1\$d–%2\$d из %3\$d", first, last, total) },
+        ).render(target, songs)
     }
 
     private fun fullPlayer() {
