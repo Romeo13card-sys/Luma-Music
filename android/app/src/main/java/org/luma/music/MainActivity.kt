@@ -253,6 +253,9 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
             dp = ::dp,
             surface = { radius -> surface(radius) },
             translate = { value -> t(value) },
+            primaryColor = white,
+            mutedColor = muted,
+            accentColor = mint,
         ).render(
             LoginScreen.Actions(
                 openYandexLogin = {
