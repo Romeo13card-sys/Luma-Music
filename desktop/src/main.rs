@@ -8,13 +8,14 @@ fn app_version() -> &'static str {
     }
 }
 mod engine;
+mod app;
+use app::{App, Screen};
 use eframe::egui;
-use engine::Jobs;
-use serde_json::{json, Value};
-use std::{sync::mpsc, time::Duration};
+use serde_json::json;
+use std::time::Duration;
 mod player;
 mod screens;
-use player::{prepare_audio, Player, Reply};
+use player::Reply;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Screen {
