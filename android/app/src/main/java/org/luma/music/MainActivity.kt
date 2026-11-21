@@ -1009,6 +1009,7 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
                     )
                 }
                 AudioQualitySettingsSection(
+                    target = body,
                     group = { title -> group(title) },
                     text = ::text,
                     settingRow = ::settingRow,
