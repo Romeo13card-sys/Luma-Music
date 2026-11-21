@@ -500,7 +500,8 @@ mod tests {
     }
     #[test]
     fn partial_download_identity_must_match_every_asset_field() {
-        let expected = json!({"tag":"v2.0.0","assetId":42,"name":"Luma.apk","size":100,"sha256":"abc"});
+        let expected =
+            json!({"tag":"v2.0.0","assetId":42,"name":"Luma.apk","size":100,"sha256":"abc"});
         assert!(same_asset_identity(Some(&expected), &expected));
         for changed in [
             json!({"tag":"v2.0.1","assetId":42,"name":"Luma.apk","size":100,"sha256":"abc"}),
