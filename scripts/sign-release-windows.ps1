@@ -36,7 +36,7 @@ if ($outDir.StartsWith($input, [StringComparison]::OrdinalIgnoreCase)) {
     throw "Output directory must not be inside the unsigned input directory."
 }
 New-Item -ItemType Directory -Force -Path $keyDir | Out-Null
-$identity = "$($env:USERDOMAIN)\\$($env:USERNAME)"
+$identity = "$($env:USERDOMAIN)\$($env:USERNAME)"
 & icacls.exe $keyDir /inheritance:r /grant:r "${identity}:(OI)(CI)F" | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Unable to restrict signing-key directory permissions." }
 $keyStore = Join-Path $keyDir "luma-family.p12"
