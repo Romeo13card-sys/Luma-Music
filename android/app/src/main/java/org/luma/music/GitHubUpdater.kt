@@ -40,7 +40,13 @@ class GitHubUpdater(private val context: Context) {
     fun download(release: Release, progress: (Int) -> Unit): File {
         val size = release.asset.getLong("size")
         val partial = File(context.filesDir, "updates/update.part")
-        val savedBytes = if (partial.isFile) partial.length().coerceIn(0, size) else 0L
+        val folder = File(context.filesDir, "updates")
+        val savedMetadata = runCatching { JSONObject(File(folder, "update.json").readText()) }.getOrNull()
+        val sameAsset = savedMetadata?.optString("tag") == release.tag &&
+            savedMetadata.optLong("assetId", -1L) == release.asset.optLong("id", -2L) &&
+            savedMetadata.optString("name") == release.asset.optString("name") &&
+            savedMetadata.optLong("size", -1L) == size
+        val savedBytes = if (sameAsset && partial.isFile) partial.length().coerceIn(0, size) else 0L
         val remainingBytes = (size - savedBytes).coerceAtLeast(0)
         require(
             size in 1..UpdatePolicy.MAX_APK &&
