@@ -1724,13 +1724,13 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
 
     override fun onResume() {
         super.onResume()
-        if (preferences.getBoolean("auto_update_check", true)) checkUpdates(false)
-        pendingUpdate?.let { file ->
-            if (packageManager.canRequestPackageInstalls()) {
-                pendingUpdate = null
-                installUpdate(file)
-            }
+        val file = pendingUpdate
+        if (file != null && packageManager.canRequestPackageInstalls()) {
+            pendingUpdate = null
+            installUpdate(file)
+            return
         }
+        if (preferences.getBoolean("auto_update_check", true)) checkUpdates(false)
     }
 
     private fun navigateBack() {
