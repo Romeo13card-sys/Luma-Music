@@ -683,20 +683,19 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
         }
     }
 
-    private fun collectionCards(target:LinearLayout) {
-        fun card(parent:LinearLayout,label:String,description:String,icon:Int,click:()->Unit){
-            val c=column().apply {minimumHeight=dp(116);setPadding(dp(14),dp(12),dp(14),dp(12));background=surface(dp(18).toFloat());isFocusable=true;setOnClickListener {click()}}
-            c.addView(MusicUi.icon(this,icon,label,mint){click()},LinearLayout.LayoutParams(dp(40),dp(36)))
-            c.addView(text(label,17f,white,true).apply {maxLines=2})
-            c.addView(text(description,12f,muted).apply {maxLines=2;setPadding(0,0,0,0)})
-            parent.addView(c,LinearLayout.LayoutParams(0,-2,1f).apply {setMargins(dp(3),dp(4),dp(3),dp(4))})
-        }
-        val first=row();target.addView(first)
-        card(first,"Избранное","Любимые треки",R.drawable.luma_heart){showCollection("likes")}
-        card(first,"Не нравится","Ваши отметки",R.drawable.luma_dislike){showCollection("dislikes")}
-        val second=row();target.addView(second)
-        card(second,"Загрузки","Слушайте без сети",R.drawable.luma_download){startActivity(Intent(this,OfflineActivity::class.java))}
-        card(second,"Spotify","Отдельный аккаунт",android.R.drawable.ic_media_play){startActivity(Intent(this,SpotifyActivity::class.java))}
+    private fun collectionCards(target: LinearLayout) {
+        CollectionCardsRenderer(
+            context = this,
+            text = ::text,
+            row = ::row,
+            column = ::column,
+            dp = ::dp,
+            surface = { radius -> surface(radius) },
+            accentColor = mint,
+            openCollection = { kind -> showCollection(kind) },
+            openOffline = { startActivity(Intent(this, OfflineActivity::class.java)) },
+            openSpotify = { startActivity(Intent(this, SpotifyActivity::class.java)) },
+        ).render(target)
     }
 
     private fun search() {
