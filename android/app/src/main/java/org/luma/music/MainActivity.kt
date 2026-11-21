@@ -825,225 +825,73 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
 
         backdrop()
         playerScreen = true
-
-        val header = row().apply {
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(4), 0, dp(10))
-        }
-        header.addView(
-            MusicUi.icon(this, R.drawable.luma_down, "Свернуть плеер", muted) {
-                shell(page)
-            },
-            LinearLayout.LayoutParams(dp(48), dp(48)),
-        )
-        val heading = column()
-        heading.addView(text("LUMA PLAYER", 10f, mint, true, raw = true))
-        heading.addView(text("Сейчас играет", 14f, white, true, raw = true))
-        header.addView(heading, LinearLayout.LayoutParams(0, -2, 1f))
-        header.addView(
-            MusicUi.icon(this, R.drawable.luma_queue, "Открыть очередь", muted) {
-                startActivity(Intent(this, QueueActivity::class.java))
-            },
-            LinearLayout.LayoutParams(dp(48), dp(48)),
-        )
-        root.addView(header)
-
-        val scroll = ScrollView(this).apply {
-            clipToPadding = false
-            setPadding(0, 0, 0, dp(8))
-        }
-        body = column().apply {
-            setPadding(dp(8), dp(4), dp(8), dp(24))
-            clipChildren = false
-        }
-        scroll.addView(body)
-        root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
-
-        val artworkCard = panel(body).apply {
-            gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(16), dp(16), dp(16), dp(16))
-        }
-        val cover = AlbumArt(this).apply {
-            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
-            contentDescription = t("Обложка текущего трека")
-        }
-        playerCover = cover
-        cover.onImage = { image ->
-            if (playerCover === cover) applyCoverTone(image)
-        }
-        swipeTracks(cover) { currentTrackSheet() }
-        val side = minOf(
-            resources.configuration.screenWidthDp - 64,
-            360,
-            maxOf(160, resources.configuration.screenHeightDp - 360),
-        )
-        artworkCard.addView(
-            cover,
-            LinearLayout.LayoutParams(dp(side), dp(side)),
-        )
-
-        val infoCard = panel(body)
-        infoCard.addView(text("NOW PLAYING", 10f, mint, true, raw = true))
-        val info = row().apply {
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        val labels = column()
-        playerTitle = text("", 27f, white, true, raw = true).apply {
-            maxLines = 2
-            ellipsize = android.text.TextUtils.TruncateAt.END
-        }
-        playerSubtitle = text("", 14f, muted, raw = true).apply {
-            maxLines = 2
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            setPadding(0, dp(3), 0, 0)
-        }
-        labels.addView(playerTitle)
-        labels.addView(playerSubtitle)
-        info.addView(labels, LinearLayout.LayoutParams(0, -2, 1f))
-        heartButton = MusicUi.icon(
-            this,
-            R.drawable.luma_heart_outline,
-            "Добавить в избранное",
-            muted,
-        ) { likeCurrent() }
-        info.addView(heartButton, LinearLayout.LayoutParams(dp(48), dp(48)))
-        infoCard.addView(info)
-        status = text("", 12f, muted).apply {
-            setPadding(0, dp(4), 0, 0)
-            accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
-        }
-        infoCard.addView(status)
-
-        val progressCard = panel(body)
-        val seekBar = SeekBar(this).apply {
-            progressTintList = android.content.res.ColorStateList.valueOf(mint)
-            thumbTintList = android.content.res.ColorStateList.valueOf(mint)
-            setPadding(dp(2), dp(6), dp(2), dp(6))
-            setOnSeekBarChangeListener(
-                object : SeekBar.OnSeekBarChangeListener {
-                    override fun onStartTrackingTouch(view: SeekBar) {
-                        dragging = true
-                    }
-
-                    override fun onStopTrackingTouch(view: SeekBar) {
-                        PlaybackService.instance?.seek(view.progress)
-                        dragging = false
-                    }
-
-                    override fun onProgressChanged(view: SeekBar, progress: Int, user: Boolean) {}
+        val views = FullPlayerScreen(
+            context = this,
+            root = root,
+            text = ::text,
+            row = ::row,
+            column = ::column,
+            panel = ::panel,
+            action = ::action,
+            dp = ::dp,
+            textColor = white,
+            mutedColor = muted,
+            accentColor = mint,
+            translate = { value -> t(value) },
+            swipeTracks = { view, onClick -> swipeTracks(view, onClick) },
+            actions = FullPlayerScreen.Actions(
+                collapse = { shell(page) },
+                openQueue = { startActivity(Intent(this, QueueActivity::class.java)) },
+                openCurrentTrack = ::currentTrackSheet,
+                likeCurrent = ::likeCurrent,
+                seekStarted = { dragging = true },
+                seekStopped = { progress ->
+                    PlaybackService.instance?.seek(progress)
+                    dragging = false
                 },
-            )
-        }
-        seek = seekBar
-        progressCard.addView(seekBar)
-        val timing = row().apply {
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        time = text("0:00 / 0:00", 12f, muted, raw = true).apply {
-            gravity = Gravity.CENTER
-            setPadding(0, 0, 0, 0)
-        }
-        timing.addView(time, LinearLayout.LayoutParams(0, -2, 1f))
-        timing.addView(
-            action("−10 с") { jump(-10_000) },
-            LinearLayout.LayoutParams(dp(68), dp(40)),
-        )
-        timing.addView(View(this), LinearLayout.LayoutParams(dp(6), 1))
-        timing.addView(
-            action("+10 с") { jump(10_000) },
-            LinearLayout.LayoutParams(dp(68), dp(40)),
-        )
-        progressCard.addView(timing)
+                jump = ::jump,
+                toggleShuffle = {
+                    PlaybackService.shuffle = !PlaybackService.shuffle
+                    preferences.edit().putBoolean("shuffle", PlaybackService.shuffle).apply()
+                    refreshPlayer()
+                },
+                previous = { PlaybackService.command(this, "previous") },
+                togglePlayback = {
+                    PlaybackService.command(this, "toggle")
+                    refreshPlayer()
+                },
+                next = { PlaybackService.command(this, "next") },
+                toggleRepeat = {
+                    PlaybackService.repeat = !PlaybackService.repeat
+                    preferences.edit().putBoolean("repeat", PlaybackService.repeat).apply()
+                    refreshPlayer()
+                },
+                showLyrics = ::showLyrics,
+                downloadCurrent = {
+                    PlaybackService.queue.getOrNull(PlaybackService.index)?.let { song ->
+                        runCatching { OfflineDownloads.enqueue(this, song) }
+                            .onSuccess { notice("Загрузка добавлена в очередь") }
+                            .onFailure { notice(it.message ?: "Не удалось скачать трек") }
+                    }
+                },
+                openSleepTimer = { settings("player") },
+                onCoverImage = ::applyCoverTone,
+            ),
+        ).render()
 
-        val transportCard = panel(body)
-        val controls = row().apply {
-            gravity = Gravity.CENTER
-        }
-        shuffleButton = MusicUi.icon(
-            this,
-            R.drawable.luma_shuffle,
-            "Перемешивание",
-            muted,
-        ) {
-            PlaybackService.shuffle = !PlaybackService.shuffle
-            preferences.edit().putBoolean("shuffle", PlaybackService.shuffle).apply()
-            refreshPlayer()
-        }
-        controls.addView(shuffleButton, LinearLayout.LayoutParams(0, dp(56), 1f))
-        controls.addView(
-            MusicUi.icon(this, R.drawable.luma_previous, "Предыдущий трек", white) {
-                PlaybackService.command(this, "previous")
-            },
-            LinearLayout.LayoutParams(0, dp(56), 1f),
-        )
-        playButton = MusicUi.icon(
-            this,
-            R.drawable.luma_play,
-            "Воспроизвести",
-            Color.BLACK,
-        ) {
-            PlaybackService.command(this, "toggle")
-            refreshPlayer()
-        }.apply {
-            iconSize = dp(30)
-            cornerRadius = dp(36)
-            backgroundTintList = android.content.res.ColorStateList.valueOf(mint)
-        }
-        controls.addView(playButton, LinearLayout.LayoutParams(dp(72), dp(72)))
-        controls.addView(
-            MusicUi.icon(this, R.drawable.luma_next, "Следующий трек", white) {
-                PlaybackService.command(this, "next")
-            },
-            LinearLayout.LayoutParams(0, dp(56), 1f),
-        )
-        repeatButton = MusicUi.icon(
-            this,
-            R.drawable.luma_repeat,
-            "Повтор трека",
-            muted,
-        ) {
-            PlaybackService.repeat = !PlaybackService.repeat
-            preferences.edit().putBoolean("repeat", PlaybackService.repeat).apply()
-            refreshPlayer()
-        }
-        controls.addView(repeatButton, LinearLayout.LayoutParams(0, dp(56), 1f))
-        transportCard.addView(controls)
-
-        val toolsCard = panel(body)
-        toolsCard.addView(text("БЫСТРЫЕ ДЕЙСТВИЯ", 10f, mint, true, raw = true))
-        val tools = row()
-        tools.addView(
-            MusicUi.icon(this, R.drawable.luma_lyrics, "Текст песни", muted) {
-                showLyrics()
-            },
-            LinearLayout.LayoutParams(0, dp(52), 1f),
-        )
-        tools.addView(
-            MusicUi.icon(this, R.drawable.luma_queue, "Очередь", muted) {
-                startActivity(Intent(this, QueueActivity::class.java))
-            },
-            LinearLayout.LayoutParams(0, dp(52), 1f),
-        )
-        tools.addView(
-            MusicUi.icon(this, R.drawable.luma_download, "Скачать для офлайн", muted) {
-                PlaybackService.queue.getOrNull(PlaybackService.index)?.let { song ->
-                    runCatching { OfflineDownloads.enqueue(this, song) }
-                        .onSuccess { notice("Загрузка добавлена в очередь") }
-                        .onFailure { notice(it.message ?: "Не удалось скачать трек") }
-                }
-            },
-            LinearLayout.LayoutParams(0, dp(52), 1f),
-        )
-        tools.addView(
-            MusicUi.icon(this, R.drawable.luma_clock, "Таймер сна", muted) {
-                settings("player")
-            },
-            LinearLayout.LayoutParams(0, dp(52), 1f),
-        )
-        toolsCard.addView(tools)
-
+        body = views.body
+        playerCover = views.cover
+        playerTitle = views.title
+        playerSubtitle = views.subtitle
+        heartButton = views.heart
+        status = views.status
+        seek = views.seek
+        time = views.time
+        shuffleButton = views.shuffle
+        playButton = views.play
+        repeatButton = views.repeat
         refreshPlayer()
-        applyCoverTone(cover.image)
+        applyCoverTone(views.cover.image)
     }
 
     private fun currentTrackSheet(){
