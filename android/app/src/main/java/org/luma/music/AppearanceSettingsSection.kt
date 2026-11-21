@@ -14,7 +14,6 @@ internal class AppearanceSettingsSection(
         val languageName: String,
         val fontSizeSummary: String,
         val performanceSummary: String,
-        val economy: Boolean,
         val mutedColor: Int,
     )
 
