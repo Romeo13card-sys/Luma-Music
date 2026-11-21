@@ -28,7 +28,10 @@ internal class AboutScreen(
         val abis: String,
         val memory: String,
         val renderProfile: String,
-        val themeMode: String,
+        val authorCredit: String,
+        val textColor: Int,
+        val mutedColor: Int,
+        val accentColor: Int,
     )
 
     data class Actions(
@@ -40,16 +43,16 @@ internal class AboutScreen(
 
     fun render(data: Data, actions: Actions) {
         val hero = panel(target)
-        hero.addView(text("Luma Music", 32f, AppThemes.active.text, true, false))
-        hero.addView(text("Музыка в вашем ритме", 16f, AppThemes.active.muted, false, false))
-        hero.addView(text("Автор", 18f, AppThemes.active.accent, true, false))
+        hero.addView(text("Luma Music", 32f, data.textColor, true, false))
+        hero.addView(text("Музыка в вашем ритме", 16f, data.mutedColor, false, false))
+        hero.addView(text(data.authorCredit, 18f, data.accentColor, true, false))
 
         fun group(label: String) =
-            panel(target).also { it.addView(text(label, 21f, AppThemes.active.text, true, false)) }
+            panel(target).also { it.addView(text(label, 21f, data.textColor, true, false)) }
 
         fun info(parent: LinearLayout, label: String, value: String) {
-            parent.addView(text(label, 12f, AppThemes.active.muted, false, false))
-            parent.addView(text(value, 16f, AppThemes.active.text, false, true))
+            parent.addView(text(label, 12f, data.mutedColor, false, false))
+            parent.addView(text(value, 16f, data.textColor, false, true))
         }
 
         val app = group("Приложение")
