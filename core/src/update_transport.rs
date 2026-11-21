@@ -187,6 +187,28 @@ fn content_range_matches(raw: &str, start: u64, size: u64) -> bool {
     )
 }
 
+/// Validate a server response before opening the partial file for append.
+/// Returns the byte offset that must be used for the output file.
+fn validated_response_offset(
+    status: reqwest::StatusCode,
+    content_range: Option<&str>,
+    offset: u64,
+    size: u64,
+) -> Result<u64> {
+    if status == reqwest::StatusCode::PARTIAL_CONTENT {
+        if content_range.is_some_and(|value| content_range_matches(value, offset, size)) {
+            Ok(offset)
+        } else {
+            Err("GitHub вернул некорректный диапазон APK. Частичная загрузка сохранена.".into())
+        }
+    } else if status == reqwest::StatusCode::OK {
+        // A server or mirror may ignore Range; restart instead of appending a full body.
+        Ok(0)
+    } else {
+        Err(format!("GitHub вернул HTTP {} при загрузке APK", status.as_u16()))
+    }
+}
+
 fn hash_file(path: &Path) -> Result<(u64, String)> {
     let mut file = fs::File::open(path).map_err(|_| "Не удалось прочитать сохранённый APK")?;
     let mut hash = Sha256::new();
@@ -310,27 +332,15 @@ pub fn download(argument: &Value, mut progress: impl FnMut(i32) -> bool) -> Resu
     let mut response = request
         .send()
         .map_err(|_| "Не удалось подключиться к GitHub. Частичная загрузка сохранена.")?;
-    let status = response.status();
-    if status == reqwest::StatusCode::PARTIAL_CONTENT {
-        let valid_range = response
+    offset = validated_response_offset(
+        response.status(),
+        response
             .headers()
             .get(reqwest::header::CONTENT_RANGE)
-            .and_then(|value| value.to_str().ok())
-            .is_some_and(|value| content_range_matches(value, offset, size));
-        if !valid_range {
-            return Err(
-                "GitHub вернул некорректный диапазон APK. Частичная загрузка сохранена.".into(),
-            );
-        }
-    } else if status == reqwest::StatusCode::OK {
-        // Some mirrors ignore Range. Safely restart instead of appending a full response.
-        offset = 0;
-    } else {
-        return Err(format!(
-            "GitHub вернул HTTP {} при загрузке APK",
-            status.as_u16()
-        ));
-    }
+            .and_then(|value| value.to_str().ok()),
+        offset,
+        size,
+    )?;
 
     let mut options = fs::OpenOptions::new();
     options.create(true).write(true);
@@ -502,6 +512,36 @@ mod tests {
         assert!(!content_range_matches("bytes 100-200/200", 100, 200));
         assert!(!content_range_matches("bytes 100-199/201", 100, 200));
         assert!(!content_range_matches("items 100-199/200", 100, 200));
+    }
+
+    #[test]
+    fn response_status_controls_resume_or_safe_restart() {
+        use reqwest::StatusCode;
+        assert_eq!(
+            validated_response_offset(StatusCode::PARTIAL_CONTENT, Some("bytes 100-199/200"), 100, 200).unwrap(),
+            100
+        );
+        assert_eq!(
+            validated_response_offset(StatusCode::OK, None, 100, 200).unwrap(),
+            0
+        );
+        assert!(validated_response_offset(StatusCode::PARTIAL_CONTENT, Some("bytes 99-199/200"), 100, 200).is_err());
+        assert!(validated_response_offset(StatusCode::PARTIAL_CONTENT, None, 100, 200).is_err());
+        assert!(validated_response_offset(StatusCode::RANGE_NOT_SATISFIABLE, None, 100, 200).is_err());
+    }
+
+    #[test]
+    fn rejects_zero_and_inconsistent_content_ranges() {
+        for value in [
+            "bytes 100-99/200",
+            "bytes 100-199/*",
+            "bytes 100-199/0",
+            "bytes +100-199/200",
+            "bytes 100-199/200 extra",
+            "bytes 100-199",
+        ] {
+            assert!(!content_range_matches(value, 100, 200), "{value}");
+        }
     }
 
     #[test]
