@@ -1,4 +1,4 @@
-use super::{App, Screen};
+use crate::app::{App, Screen};
 use crate::player::draw_tracks;
 use eframe::egui;
 
