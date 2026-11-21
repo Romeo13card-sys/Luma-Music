@@ -1215,32 +1215,56 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
                 storage.addView(action("Офлайн-загрузки"){settings("downloads")})
             }
             "updates" -> {
-                val update=group("Luma $current")
-                val preview=preferences.getBoolean("test_updates",false)
-                settingRow(update,"Канал обновлений",if(preview) "Предварительные · включая RC" else "Только стабильные выпуски") {
-                    LumaDialog(this).setTitle("Канал обновлений")
-                        .setSingleChoiceItems(arrayOf("Только стабильные","Предварительные и стабильные"),if(preview) 1 else 0) {dialog,index ->
-                            preferences.edit().putBoolean("test_updates",index==1).apply();dialog.dismiss();settings("updates")
-                        }.setNegativeButton("Отмена",null).show()
-                }
-                settingSwitch(update,"Проверять при запуске","Не чаще раза в сутки. Скачивание и установка требуют вашего действия.","auto_update_check",true)
-                val last=preferences.getLong("last_update_check",0)
-                update.addView(text(if(last<=0) "Проверка ещё не запускалась" else t("Последняя попытка: %1\$s",java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT,java.text.DateFormat.SHORT).format(java.util.Date(last))),13f,muted))
-                update.addView(action("Проверить обновления", true) { checkUpdates() })
-                GitHubUpdater(this).partialDownloadInfo()?.let { partial ->
-                    update.addView(text("Сохранена незавершённая загрузка: $partial. Продолжение возможно для того же выпуска и файла GitHub; другой APK будет загружен отдельно.", 13f, muted))
-                }
-                if (GitHubUpdater(this).hasSavedUpdate()) {
-                    update.addView(action("Установить сохранённое обновление", true) {
-                        installUpdate(java.io.File(filesDir, "updates/update.apk"))
-                    })
-                    update.addView(text("APK сохранён на устройстве. Перед установкой повторно проверяются SHA-256, версия и подпись.", 13f, muted))
-                }
-                gap(update,8)
-                update.addView(action("Установить APK из файла") {
-                    startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).setType("application/vnd.android.package-archive").addCategory(Intent.CATEGORY_OPENABLE),11)
-                })
-                update.addView(text("Перед установкой проверяются версия и подпись. Источник: GitHub Releases Luma-Music.",13f,muted))
+                val updater = GitHubUpdater(this)
+                val last = preferences.getLong("last_update_check", 0)
+                UpdateSettingsSection(
+                    context = this,
+                    group = { title -> group(title) },
+                    settingRow = ::settingRow,
+                    settingSwitch = { parent, title, summary, key, default ->
+                        settingSwitch(parent, title, summary, key, default)
+                    },
+                    text = ::text,
+                    action = ::action,
+                    gap = ::gap,
+                ).render(
+                    data = UpdateSettingsSection.Data(
+                        version = current,
+                        preview = preferences.getBoolean("test_updates", false),
+                        lastAttempt = if (last <= 0) {
+                            "Проверка ещё не запускалась"
+                        } else {
+                            t(
+                                "Последняя попытка: %1\$s",
+                                java.text.DateFormat.getDateTimeInstance(
+                                    java.text.DateFormat.SHORT,
+                                    java.text.DateFormat.SHORT,
+                                ).format(java.util.Date(last)),
+                            )
+                        },
+                        partialDownloadInfo = updater.partialDownloadInfo(),
+                        hasSavedUpdate = updater.hasSavedUpdate(),
+                        mutedColor = muted,
+                    ),
+                    actions = UpdateSettingsSection.Actions(
+                        changeChannel = { preview ->
+                            preferences.edit().putBoolean("test_updates", preview).apply()
+                            settings("updates")
+                        },
+                        checkUpdates = { checkUpdates() },
+                        installSaved = {
+                            installUpdate(java.io.File(filesDir, "updates/update.apk"))
+                        },
+                        installFromFile = {
+                            startActivityForResult(
+                                Intent(Intent.ACTION_OPEN_DOCUMENT)
+                                    .setType("application/vnd.android.package-archive")
+                                    .addCategory(Intent.CATEGORY_OPENABLE),
+                                11,
+                            )
+                        },
+                    ),
+                )
             }
             "account" -> {
                 val spotify=group("Spotify")
