@@ -1303,7 +1303,7 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
             }
             "storage" -> {
                 val storage=group("Место на устройстве")
-                val files=java.io.File(cacheDir,"updates").listFiles()?.filter {it.isFile && it.name in setOf("update.apk","update.part")}.orEmpty()
+                val files=java.io.File(filesDir,"updates").listFiles()?.filter {it.isFile && it.name in setOf("update.apk","update.part","update.json","update.json.tmp")}.orEmpty()
                 val bytes=files.sumOf {it.length()}
                 storage.addView(text(t("Скачанные обновления: %1\$s МиБ",String.format(java.util.Locale.ROOT,"%.1f",bytes/1048576.0)),16f,white))
                 storage.addView(text(t("Свободно: %1\$s ГиБ",String.format(java.util.Locale.ROOT,"%.1f",android.os.StatFs(filesDir.path).availableBytes/1073741824.0)),14f,muted))
@@ -1319,7 +1319,7 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
                         .setPositiveButton("Удалить") { _,_ ->
                             val version=generation
                             executor.execute {
-                                val deleted=java.io.File(cacheDir,"updates").listFiles()?.filter {it.isFile && it.name in setOf("update.apk","update.part")}
+                                val deleted=java.io.File(filesDir,"updates").listFiles()?.filter {it.isFile && it.name in setOf("update.apk","update.part","update.json","update.json.tmp")}
                                     ?.map {it.delete()}?.all {it} ?: true
                                 runOnUiThread {
                                     if(!destroyed && version==generation) {pendingUpdate=null;settings("storage");status.text=if(deleted) "Файлы удалены" else "Не все файлы удалось удалить"}
@@ -1342,6 +1342,10 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
                 val last=preferences.getLong("last_update_check",0)
                 update.addView(text(if(last<=0) "Проверка ещё не запускалась" else t("Последняя попытка: %1\$s",java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT,java.text.DateFormat.SHORT).format(java.util.Date(last))),13f,muted))
                 update.addView(action("Проверить обновления",true) {checkUpdates()})
+                GitHubUpdater(this).savedUpdate()?.let { saved ->
+                    update.addView(action("Установить сохранённое обновление",true) { installUpdate(saved) })
+                    update.addView(text("APK сохранён на устройстве и прошёл проверку подписи. Его можно установить после перезапуска приложения.",13f,muted))
+                }
                 gap(update,8)
                 update.addView(action("Установить APK из файла") {
                     startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).setType("application/vnd.android.package-archive").addCategory(Intent.CATEGORY_OPENABLE),11)
@@ -1527,7 +1531,12 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
 
     private fun installUpdate(file: java.io.File) {
         try {
-            GitHubUpdater(this).validate(file)
+            val updater = GitHubUpdater(this)
+            val githubMetadata = java.io.File(filesDir, "updates/update.json")
+            if (file.canonicalFile == java.io.File(filesDir, "updates/update.apk").canonicalFile && githubMetadata.isFile) {
+                require(updater.savedUpdate() != null) { "Сохранённый APK не прошёл повторную проверку SHA-256 или подписи" }
+            }
+            updater.validate(file)
             if (!packageManager.canRequestPackageInstalls()) {
                 pendingUpdate = file
                 LumaDialog(this)
@@ -1626,7 +1635,9 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
                 status.text = "Проверка APK…"
                 executor.execute {
                     try {
-                        val folder = java.io.File(cacheDir, "updates").apply { mkdirs() }
+                        val folder = java.io.File(filesDir, "updates").apply { mkdirs() }
+                        // A manually selected APK is not a GitHub download; discard stale resume metadata.
+                        listOf("update.json", "update.json.tmp", "update.part").forEach { java.io.File(folder, it).delete() }
                         val file = java.io.File(folder, "update.apk")
                         contentResolver.openInputStream(uri)?.use { input ->
                             file.outputStream().use { output ->

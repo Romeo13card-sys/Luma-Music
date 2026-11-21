@@ -7,12 +7,7 @@ import android.view.View
 
 /** Opaque surfaces: no blur, transparency, sheen or continuous animation. */
 fun surface(radius: Float = 20f, accent: Boolean = false): GradientDrawable =
-    GradientDrawable().apply {
-        shape = GradientDrawable.RECTANGLE
-        cornerRadius = radius
-        setColor(if (accent) 0xFFFFE04A.toInt() else if (AppThemes.active.light) 0xFFF0F0F0.toInt() else if (AppThemes.active.oled) 0xFF101010.toInt() else 0xFF202020.toInt())
-
-    }
+    LumaDesign.card(radius, accent)
 
 /** A single small bitmap, weak asynchronous delivery and a static fallback when artwork is absent. */
 class AlbumArt(context: Context) : View(context),CoverImages.Target {

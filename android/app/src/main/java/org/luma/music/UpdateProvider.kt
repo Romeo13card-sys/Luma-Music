@@ -15,7 +15,9 @@ class UpdateProvider : ContentProvider() {
 
     private fun file(uri: Uri): File {
         require(uri.path == "/update.apk" && uri.query == null) { "Unknown update file" }
-        return File(requireNotNull(context).cacheDir, "updates/update.apk")
+        return File(requireNotNull(context).filesDir, "updates/update.apk").also { file ->
+            require(file.isFile && file.length() in 1..UpdatePolicy.MAX_APK) { "Verified update is unavailable" }
+        }
     }
 
     override fun getType(uri: Uri): String {

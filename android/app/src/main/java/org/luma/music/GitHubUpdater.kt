@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import java.io.File
+import java.io.FileInputStream
+import java.security.MessageDigest
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -38,13 +40,13 @@ class GitHubUpdater(private val context: Context) {
     fun download(release: Release, progress: (Int) -> Unit): File {
         val size = release.asset.getLong("size")
         require(
-            size in 1..UpdatePolicy.MAX_APK && context.cacheDir.usableSpace > size * 2 + 1024 * 1024
+            size in 1..UpdatePolicy.MAX_APK && context.filesDir.usableSpace > size * 2 + 1024 * 1024
         ) {
             "Недостаточно места или недопустимый размер APK"
         }
         val data =
             JSONObject()
-                .put("cacheDir", context.cacheDir.absolutePath)
+                .put("filesDir", context.filesDir.absolutePath)
                 .put(
                     "release",
                     JSONObject()
@@ -71,6 +73,30 @@ class GitHubUpdater(private val context: Context) {
             throw error
         }
         return file
+    }
+
+    /** A fully downloaded GitHub APK is kept in app-private files across restarts. */
+    fun savedUpdate(): File? {
+        val folder = File(context.filesDir, "updates")
+        val file = File(folder, "update.apk")
+        if (!file.isFile) return null
+        return runCatching {
+            val expected = JSONObject(File(folder, "update.json").readText()).getString("sha256")
+            require(expected.matches(Regex("[a-fA-F0-9]{64}"))) { "Нет контрольной суммы GitHub APK" }
+            val digest = MessageDigest.getInstance("SHA-256")
+            FileInputStream(file).use { input ->
+                val buffer = ByteArray(32768)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    digest.update(buffer, 0, count)
+                }
+            }
+            val actual = digest.digest().joinToString("") { "%02x".format(it) }
+            require(actual.equals(expected, ignoreCase = true)) { "Сохранённый APK повреждён или изменён" }
+            validate(file)
+            file
+        }.getOrNull()
     }
 
     fun validate(file: File) {
