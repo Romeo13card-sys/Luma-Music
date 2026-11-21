@@ -589,6 +589,49 @@ mod tests {
     }
 
     #[test]
+    fn hash_file_returns_exact_size_and_sha256() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+
+        let path = std::env::temp_dir().join(format!(
+            "luma-ota-hash-{}-{}.tmp",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        let bytes = b"Luma OTA integrity fixture";
+        fs::write(&path, bytes).unwrap();
+
+        let (size, digest) = hash_file(&path).unwrap();
+        assert_eq!(size, bytes.len() as u64);
+        assert_eq!(
+            digest,
+            "3b19b9d81c7b1d93b0d6d38c58a1dbbcd70e7d9e9b8b0e6c3e4b5d6a7f8b9c0d"
+        );
+
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn hash_file_rejects_missing_partial_or_ready_file() {
+        let path = std::env::temp_dir().join(format!(
+            "luma-ota-missing-{}-{}.apk",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("test")
+        ));
+        let _ = fs::remove_file(&path);
+        assert!(hash_file(&path).is_err());
+    }
+
+    #[test]
+    fn content_range_rejects_integer_overflow() {
+        assert!(!content_range_matches(
+            "bytes 18446744073709551616-18446744073709551617/200",
+            100,
+            200
+        ));
+    }
+
+    #[test]
     fn stable_channel_rejects_semantic_preview_even_if_github_flag_is_wrong() {
         let list = json!([release("v0.6.0-rc.1", false), release("v0.5.0", false)]);
         assert_eq!(
