@@ -1475,9 +1475,11 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
                 val last=preferences.getLong("last_update_check",0)
                 update.addView(text(if(last<=0) "Проверка ещё не запускалась" else t("Последняя попытка: %1\$s",java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT,java.text.DateFormat.SHORT).format(java.util.Date(last))),13f,muted))
                 update.addView(action("Проверить обновления",true) {checkUpdates()})
-                GitHubUpdater(this).savedUpdate()?.let { saved ->
-                    update.addView(action("Установить сохранённое обновление",true) { installUpdate(saved) })
-                    update.addView(text("APK сохранён на устройстве и прошёл проверку подписи. Его можно установить после перезапуска приложения.",13f,muted))
+                if (GitHubUpdater(this).hasSavedUpdate()) {
+                    update.addView(action("Установить сохранённое обновление", true) {
+                        installUpdate(java.io.File(filesDir, "updates/update.apk"))
+                    })
+                    update.addView(text("APK сохранён на устройстве. Перед установкой повторно проверяются SHA-256, версия и подпись.", 13f, muted))
                 }
                 gap(update,8)
                 update.addView(action("Установить APK из файла") {
@@ -1663,41 +1665,60 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
     }
 
     private fun installUpdate(file: java.io.File) {
-        try {
-            val updater = GitHubUpdater(this)
-            val githubMetadata = java.io.File(filesDir, "updates/update.json")
-            if (file.canonicalFile == java.io.File(filesDir, "updates/update.apk").canonicalFile && githubMetadata.isFile) {
-                require(updater.savedUpdate() != null) { "Сохранённый APK не прошёл повторную проверку SHA-256 или подписи" }
-            }
-            updater.validate(file)
-            if (!packageManager.canRequestPackageInstalls()) {
-                pendingUpdate = file
-                LumaDialog(this)
-                    .setTitle("Разрешение установки")
-                    .setMessage(
-                        "Разрешите Luma Music установку обновлений в системных настройках, затем вернитесь в приложение."
-                    )
-                    .setNegativeButton("Отмена") { _, _ -> pendingUpdate = null }
-                    .setPositiveButton("Открыть") { _, _ ->
-                        startActivity(
-                            Intent(
-                                android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                                android.net.Uri.parse("package:$packageName"),
-                            )
-                        )
+        if (checkingUpdates) return
+        checkingUpdates = true
+        status.text = "Проверяем APK перед установкой…"
+        val activityGeneration = generation
+        executor.execute {
+            val verification = runCatching {
+                val updater = GitHubUpdater(this)
+                val metadata = java.io.File(filesDir, "updates/update.json")
+                val persistent = java.io.File(filesDir, "updates/update.apk")
+                if (file.canonicalFile == persistent.canonicalFile && metadata.isFile) {
+                    require(updater.savedUpdate() != null) {
+                        "Сохранённый APK не прошёл повторную проверку SHA-256 или подписи"
                     }
-                    .show()
-                return
+                }
+                updater.validate(file)
             }
-            val uri = android.net.Uri.parse("content://$packageName.updates/update.apk")
-            val intent =
-                Intent(Intent.ACTION_VIEW)
-                    .setDataAndType(uri, "application/vnd.android.package-archive")
-                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    .apply { clipData = ClipData.newRawUri("Luma update", uri) }
-            startActivity(intent)
-        } catch (e: Exception) {
-            status.text = e.message ?: "Установка недоступна"
+            runOnUiThread {
+                checkingUpdates = false
+                if (destroyed || activityGeneration != generation) return@runOnUiThread
+                verification.onFailure { error ->
+                    status.text = error.message ?: "Проверка APK не пройдена"
+                }.onSuccess {
+                    if (!packageManager.canRequestPackageInstalls()) {
+                        pendingUpdate = file
+                        LumaDialog(this)
+                            .setTitle("Разрешение установки")
+                            .setMessage(
+                                "Разрешите Luma Music установку обновлений в системных настройках, затем вернитесь в приложение."
+                            )
+                            .setNegativeButton("Отмена") { _, _ -> pendingUpdate = null }
+                            .setPositiveButton("Открыть") { _, _ ->
+                                startActivity(
+                                    Intent(
+                                        android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                        android.net.Uri.parse("package:$packageName"),
+                                    )
+                                )
+                            }
+                            .show()
+                        return@onSuccess
+                    }
+                    try {
+                        val uri = android.net.Uri.parse("content://$packageName.updates/update.apk")
+                        val intent =
+                            Intent(Intent.ACTION_VIEW)
+                                .setDataAndType(uri, "application/vnd.android.package-archive")
+                                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                .apply { clipData = ClipData.newRawUri("Luma update", uri) }
+                        startActivity(intent)
+                    } catch (error: Exception) {
+                        status.text = error.message ?: "Установка недоступна"
+                    }
+                }
+            }
         }
     }
 
