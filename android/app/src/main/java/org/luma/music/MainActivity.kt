@@ -1281,32 +1281,74 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
                 )
             }
             "storage" -> {
-                val storage=group("Место на устройстве")
-                val files=java.io.File(filesDir,"updates").listFiles()?.filter {it.isFile && it.name in setOf("update.apk","update.part","update.json","update.json.tmp")}.orEmpty()
-                val bytes=files.sumOf {it.length()}
-                storage.addView(text(t("Скачанные обновления: %1\$s МиБ",String.format(java.util.Locale.ROOT,"%.1f",bytes/1048576.0)),16f,white))
-                storage.addView(text(t("Свободно: %1\$s ГиБ",String.format(java.util.Locale.ROOT,"%.1f",android.os.StatFs(filesDir.path).availableBytes/1073741824.0)),14f,muted))
-                settingRow(storage,"Очистить кэш обложек","До 24 МиБ на диске. Скачанная музыка и аккаунты сохранятся.") {
-                    val version=generation
-                    executor.execute {
-                        val ok=runCatching {CoverImages.clearDisk(applicationContext)}.isSuccess
-                        runOnUiThread {if(!destroyed && generation==version)status.text=t(if(ok)"Кэш обложек очищен" else "Не удалось очистить кэш обложек")}
-                    }
-                }
-                settingRow(storage,"Удалить файлы обновлений","Скачанные APK и незавершённая загрузка. Аккаунт и очередь сохранятся.") {
-                    LumaDialog(this).setTitle("Удалить скачанные обновления?").setNegativeButton("Отмена",null)
-                        .setPositiveButton("Удалить") { _,_ ->
-                            val version=generation
+                val updateFiles = java.io.File(filesDir, "updates").listFiles()
+                    ?.filter { it.isFile && it.name in setOf("update.apk", "update.part", "update.json", "update.json.tmp") }
+                    .orEmpty()
+                val bytes = updateFiles.sumOf { it.length() }
+                StorageSettingsScreen(
+                    group = { title -> group(title) },
+                    text = ::text,
+                    settingRow = ::settingRow,
+                    action = ::action,
+                ).render(
+                    data = StorageSettingsScreen.Data(
+                        downloadedUpdates = t(
+                            "Скачанные обновления: %1\$s МиБ",
+                            String.format(java.util.Locale.ROOT, "%.1f", bytes / 1048576.0),
+                        ),
+                        freeSpace = t(
+                            "Свободно: %1\$s ГиБ",
+                            String.format(
+                                java.util.Locale.ROOT,
+                                "%.1f",
+                                android.os.StatFs(filesDir.path).availableBytes / 1073741824.0,
+                            ),
+                        ),
+                        primaryColor = white,
+                        mutedColor = muted,
+                    ),
+                    actions = StorageSettingsScreen.Actions(
+                        clearArtworkCache = {
+                            val version = generation
                             executor.execute {
-                                val deleted=java.io.File(filesDir,"updates").listFiles()?.filter {it.isFile && it.name in setOf("update.apk","update.part","update.json","update.json.tmp")}
-                                    ?.map {it.delete()}?.all {it} ?: true
+                                val ok = runCatching { CoverImages.clearDisk(applicationContext) }.isSuccess
                                 runOnUiThread {
-                                    if(!destroyed && version==generation) {pendingUpdate=null;settings("storage");status.text=if(deleted) "Файлы удалены" else "Не все файлы удалось удалить"}
+                                    if (!destroyed && generation == version) {
+                                        status.text = t(if (ok) "Кэш обложек очищен" else "Не удалось очистить кэш обложек")
+                                    }
                                 }
                             }
-                        }.show()
-                }
-                storage.addView(action("Офлайн-загрузки"){settings("downloads")})
+                        },
+                        deleteUpdateFiles = {
+                            LumaDialog(this).setTitle("Удалить скачанные обновления?")
+                                .setNegativeButton("Отмена", null)
+                                .setPositiveButton("Удалить") { _, _ ->
+                                    val version = generation
+                                    executor.execute {
+                                        val deleted = java.io.File(filesDir, "updates").listFiles()
+                                            ?.filter {
+                                                it.isFile && it.name in setOf(
+                                                    "update.apk",
+                                                    "update.part",
+                                                    "update.json",
+                                                    "update.json.tmp",
+                                                )
+                                            }
+                                            ?.map { it.delete() }?.all { it } ?: true
+                                        runOnUiThread {
+                                            if (!destroyed && version == generation) {
+                                                pendingUpdate = null
+                                                settings("storage")
+                                                status.text = if (deleted) "Файлы удалены" else "Не все файлы удалось удалить"
+                                            }
+                                        }
+                                    }
+                                }
+                                .show()
+                        },
+                        openOfflineDownloads = { settings("downloads") },
+                    ),
+                )
             }
             "updates" -> {
                 val updater = GitHubUpdater(this)
