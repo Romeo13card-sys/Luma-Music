@@ -1065,27 +1065,44 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
         when (section) {
             "network","lyrics" -> schemaControls.render(section)
             "data" -> {
-                schemaControls.render(section)
-                body.addView(action("История прослушивания"){startActivity(Intent(this,HistoryActivity::class.java))})
-                body.addView(action("Закладки в песнях"){startActivity(Intent(this,HistoryActivity::class.java).putExtra("bookmarks",true))})
-                body.addView(action("Резервная копия"){startActivity(Intent(this,BackupActivity::class.java))})
+                DataSettingsSection(
+                    target = body,
+                    action = ::action,
+                    renderControls = { schemaControls.render(section) },
+                    openHistory = { startActivity(Intent(this, HistoryActivity::class.java)) },
+                    openBookmarks = {
+                        startActivity(Intent(this, HistoryActivity::class.java).putExtra("bookmarks", true))
+                    },
+                    openBackup = { startActivity(Intent(this, BackupActivity::class.java)) },
+                ).render()
             }
             "audio" -> {
-                schemaControls.render(section)
-                val audio=group("Эквалайзер")
-                settingRow(audio,"Системный эквалайзер","Настройки звука Android для текущего аудиосеанса"){
-                    val session=PlaybackService.instance?.audioSessionId() ?: 0
-                    if(session==0){status.text="Сначала запустите трек";return@settingRow}
-                    val intent=Intent(android.media.audiofx.AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL)
-                        .putExtra(android.media.audiofx.AudioEffect.EXTRA_AUDIO_SESSION,session)
-                        .putExtra(android.media.audiofx.AudioEffect.EXTRA_PACKAGE_NAME,packageName)
-                        .putExtra(android.media.audiofx.AudioEffect.EXTRA_CONTENT_TYPE,android.media.audiofx.AudioEffect.CONTENT_TYPE_MUSIC)
-                    runCatching {startActivity(intent)}.onFailure {status.text="На устройстве нет системного эквалайзера"}
-                }
+                AudioSettingsSection(
+                    group = { title -> group(title) },
+                    settingRow = ::settingRow,
+                    renderControls = { schemaControls.render(section) },
+                    openSystemEqualizer = {
+                        val session = PlaybackService.instance?.audioSessionId() ?: 0
+                        if (session == 0) {
+                            status.text = "Сначала запустите трек"
+                        } else {
+                            val intent = Intent(android.media.audiofx.AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL)
+                                .putExtra(android.media.audiofx.AudioEffect.EXTRA_AUDIO_SESSION, session)
+                                .putExtra(android.media.audiofx.AudioEffect.EXTRA_PACKAGE_NAME, packageName)
+                                .putExtra(android.media.audiofx.AudioEffect.EXTRA_CONTENT_TYPE, android.media.audiofx.AudioEffect.CONTENT_TYPE_MUSIC)
+                            runCatching { startActivity(intent) }
+                                .onFailure { status.text = "На устройстве нет системного эквалайзера" }
+                        }
+                    },
+                ).render()
             }
             "downloads" -> {
-                schemaControls.render(section)
-                body.addView(action("Открыть загрузки",true){startActivity(Intent(this,OfflineActivity::class.java))})
+                DownloadsSettingsSection(
+                    target = body,
+                    action = ::action,
+                    renderControls = { schemaControls.render(section) },
+                    openDownloads = { startActivity(Intent(this, OfflineActivity::class.java)) },
+                ).render()
             }
             "wave" -> {
                 val choices = NativeCore.call("wave_stations", "{}") as JSONArray
