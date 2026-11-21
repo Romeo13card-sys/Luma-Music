@@ -29,7 +29,7 @@ internal object LumaScreenComponents {
             setTextColor(color)
             letterSpacing = if (bold && size >= 24f) -0.025f else if (size <= 12f) 0.035f else 0f
             val density = resources.displayMetrics.density
-            setLineSpacing(density, 1f)
+            setLineSpacing(density.toInt().toFloat(), 1f)
             val verticalPadding = (density * if (size >= 28f) 3 else 5).toInt()
             setPadding(0, verticalPadding, 0, verticalPadding)
             if (bold) typeface = LumaDesign.typeface("sans-serif-medium")
@@ -56,7 +56,7 @@ internal object LumaScreenComponents {
             val horizontal = (20 * density).toInt()
             val vertical = (18 * density).toInt()
             setPadding(horizontal, vertical, horizontal, vertical)
-            background = surface(LumaDesign.CARD_RADIUS_DP * density)
+            background = surface((LumaDesign.CARD_RADIUS_DP * density).toInt().toFloat())
         }
         val bottomMargin = ((LumaDesign.ROW_GAP_DP + 4) * density).toInt()
         target.addView(
