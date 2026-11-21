@@ -281,6 +281,25 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
         status = views.status
     }
 
+    private fun browserLogin() {
+        YandexOAuthFlow(this, { message -> status.text = message }, ::completeOAuthLogin)
+            .browserLogin()
+    }
+
+    private fun configureOAuth() {
+        YandexOAuthFlow(this, { message -> status.text = message }, ::completeOAuthLogin)
+            .configureOAuth()
+    }
+
+    private fun handleOAuth(incoming: Intent?) {
+        val uri = incoming?.data ?: return
+        if (uri.scheme != "yamusicrust" || uri.host != "oauth") return
+        // Do not leave credentials attached to the Activity intent after callback handling.
+        intent = Intent(this, MainActivity::class.java)
+        YandexOAuthFlow(this, { message -> status.text = message }, ::completeOAuthLogin)
+            .handleCallback(incoming)
+    }
+
     private fun submitLoginToken(candidate: String, input: EditText, submit: LumaButton) {
         if (!submit.isEnabled) return
         if (candidate.isEmpty()) {
