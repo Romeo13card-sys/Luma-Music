@@ -22,7 +22,7 @@ object LumaDesign {
     fun typeface(weight: String): Typeface =
         Typeface.create(weight, Typeface.NORMAL)
 
-    fun card(context: Context, radiusDp: Int = CARD_RADIUS_DP, accent: Boolean = false): GradientDrawable {
+    fun card(radius: Float = CARD_RADIUS_DP.toFloat(), accent: Boolean = false): GradientDrawable {
         val palette = AppThemes.active
         val fill = if (accent) palette.accent else when {
             palette.light -> 0xFFFFFFFF.toInt()
@@ -37,9 +37,9 @@ object LumaDesign {
         }
         return GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
-            cornerRadius = dp(context, radiusDp).toFloat()
+            cornerRadius = radius
             setColor(fill)
-            setStroke(maxOf(1, dp(context, 1)), outline)
+            setStroke(1f, outline)
         }
     }
 
