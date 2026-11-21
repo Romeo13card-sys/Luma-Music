@@ -364,7 +364,7 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
             column = ::column,
             gap = ::gap,
             dp = ::dp,
-            surface = { radius -> surface(radius) },
+            surface = { radius, accent -> surface(radius, accent) },
             translate = { value -> t(value) },
             swipeTracks = { view, onClick -> swipeTracks(view, onClick) },
         ).render(
