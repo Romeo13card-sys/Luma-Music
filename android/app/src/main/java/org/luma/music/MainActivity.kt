@@ -373,63 +373,11 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
     }
 
     private fun browserLogin() {
-        val prefs = getSharedPreferences("oauth", MODE_PRIVATE)
-        val client =
-            prefs.getString("client", null).orEmpty().ifBlank { BuildConfig.YANDEX_CLIENT_ID }
-        if (client.isNotBlank()) {
-            launchOAuth(client)
-            return
-        }
-        configureOAuth()
+        YandexOAuthFlow(this, { message -> status.text = message }, ::completeOAuthLogin).browserLogin()
     }
 
     private fun configureOAuth() {
-        val prefs = getSharedPreferences("oauth", MODE_PRIVATE)
-        val input =
-            EditText(this).apply {
-                hint = t("Client ID OAuth-приложения")
-                setSingleLine()
-                setText(prefs.getString("client", ""))
-            }
-        LumaDialog(this)
-            .setTitle("Вход через Яндекс")
-            .setMessage(
-                "Введите Client ID вашего OAuth-приложения с доступом к Яндекс Музыке. В нём должен быть зарегистрирован Redirect URI: yamusicrust://oauth. Client ID не является паролем."
-            )
-            .setView(input)
-            .setNegativeButton("Отмена", null)
-            .setPositiveButton("Открыть браузер") { _, _ ->
-                val client = input.text.toString().trim()
-                if (!client.matches(Regex("[A-Za-z0-9_-]{8,128}"))) {
-                    status.text = "Некорректный Client ID"
-                    return@setPositiveButton
-                }
-                prefs.edit().putString("client", client).apply()
-                launchOAuth(client)
-            }
-            .show()
-    }
-
-    private fun launchOAuth(client: String) {
-        val state = java.util.UUID.randomUUID().toString()
-        getSharedPreferences("oauth", MODE_PRIVATE)
-            .edit()
-            .putString("state", state)
-            .putLong("created", System.currentTimeMillis())
-            .apply()
-        val uri =
-            android.net.Uri.parse("https://oauth.yandex.ru/authorize")
-                .buildUpon()
-                .appendQueryParameter("response_type", "token")
-                .appendQueryParameter("client_id", client)
-                .appendQueryParameter("redirect_uri", "yamusicrust://oauth")
-                .appendQueryParameter("state", state)
-                .build()
-        try {
-            startActivity(Intent(Intent.ACTION_VIEW, uri))
-        } catch (_: Exception) {
-            status.text = "Не найден браузер"
-        }
+        YandexOAuthFlow(this, { message -> status.text = message }, ::completeOAuthLogin).configureOAuth()
     }
 
     private fun handleOAuth(incoming: Intent?) {
@@ -437,25 +385,11 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
         if (uri.scheme != "yamusicrust" || uri.host != "oauth") return
         // Do not leave credentials attached to the activity intent.
         intent = Intent(this, MainActivity::class.java)
-        val prefs = getSharedPreferences("oauth", MODE_PRIVATE)
-        val params =
-            android.net.Uri.parse(
-                "https://callback.invalid/?" + (uri.fragment ?: uri.query.orEmpty())
-            )
-        val expected = prefs.getString("state", null)
-        val age = System.currentTimeMillis() - prefs.getLong("created", 0)
-        prefs.edit().remove("state").remove("created").apply()
-        if (
-            expected == null || params.getQueryParameter("state") != expected || age !in 0..600000
-        ) {
-            status.text = "Вход отклонён: неверный или просроченный ответ. Начните вход заново."
-            return
-        }
-        val credential = params.getQueryParameter("access_token")
-        if (credential.isNullOrBlank()) {
-            status.text = "Яндекс не предоставил токен. Проверьте права OAuth-приложения."
-            return
-        }
+        YandexOAuthFlow(this, { message -> status.text = message }, ::completeOAuthLogin)
+            .handleCallback(incoming)
+    }
+
+    private fun completeOAuthLogin(credential: String) {
         token = credential
         generation++
         request("account") {
