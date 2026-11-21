@@ -134,8 +134,11 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
             text = value
             textSize = size * preferences.getInt("font_size", 100) / 100f
             setTextColor(color)
-            setPadding(0, dp(6), 0, dp(6))
-            if (bold) typeface = Typeface.create("sans-serif", Typeface.BOLD)
+            letterSpacing = if (bold && size >= 24f) -0.025f else if (size <= 12f) 0.035f else 0f
+            setLineSpacing(dp(1).toFloat(), 1f)
+            setPadding(0, dp(if (size >= 28f) 3 else 5), 0, dp(if (size >= 28f) 3 else 5))
+            if (bold) typeface = LumaDesign.typeface("sans-serif-medium")
+            includeFontPadding = false
         }
 
     private fun column() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -153,28 +156,34 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
     private fun action(label: String, accent: Boolean = false, click: () -> Unit) =
         LumaButton(this).apply {
             text = t(label)
-            textSize = 15f * preferences.getInt("font_size",100)/100f
+            textSize = 14f * preferences.getInt("font_size", 100) / 100f
             isAllCaps = false
-            minHeight = dp(48)
-            cornerRadius = dp(24)
-            setTextColor(if(accent) {
-                if(com.google.android.material.color.MaterialColors.isColorLight(mint)) Color.BLACK else Color.WHITE
-            } else white)
-            backgroundTintList = android.content.res.ColorStateList.valueOf(if(accent) mint else
-                com.google.android.material.color.MaterialColors.getColor(this,com.google.android.material.R.attr.colorSurfaceContainer,0xFF303030.toInt()))
-            setPadding(dp(16),dp(8),dp(16),dp(8))
-            contentDescription=t(label)
+            minHeight = dp(LumaDesign.TOUCH_TARGET_DP)
+            insetTop = 0
+            insetBottom = 0
+            cornerRadius = dp(if (accent) LumaDesign.CONTROL_RADIUS_DP else 16)
+            setTextColor(LumaDesign.contentColor(accent))
+            backgroundTintList = android.content.res.ColorStateList.valueOf(
+                if (accent) mint else if (palette.light) 0xFFE9EDF3.toInt()
+                else if (palette.oled) 0xFF12151B.toInt() else 0xFF202630.toInt()
+            )
+            strokeWidth = dp(1)
+            strokeColor = android.content.res.ColorStateList.valueOf(
+                if (accent) mint else if (palette.light) 0xFFDDE2EA.toInt() else 0xFF303846.toInt()
+            )
+            setPadding(dp(16), dp(9), dp(16), dp(9))
+            contentDescription = t(label)
             setOnClickListener {
-                if(preferences.getBoolean("haptics",true))performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                if (preferences.getBoolean("haptics", true)) performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
                 click()
             }
         }
 
     private fun panel(target: LinearLayout): LinearLayout =
         column().apply {
-            setPadding(dp(18), dp(14), dp(18), dp(14))
-            background = surface(dp(18).toFloat())
-            target.addView(this, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(12) })
+            setPadding(dp(20), dp(18), dp(20), dp(18))
+            background = surface(dp(LumaDesign.CARD_RADIUS_DP).toFloat())
+            target.addView(this, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(LumaDesign.ROW_GAP_DP + 4) })
         }
 
     private fun backdrop() {
@@ -491,95 +500,219 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
     private fun shell(target: String, loadContent: Boolean = true) {
         page = target
         backdrop()
-        window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        val header = row()
-        header.addView(
-            text(getString(R.string.app_name), 18f, white, true),
-            LinearLayout.LayoutParams(0, -2, 1f),
+
+        val header = row().apply {
+            setPadding(0, dp(8), 0, dp(14))
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val identity = row().apply { gravity = Gravity.CENTER_VERTICAL }
+        identity.addView(
+            text("L", 26f, mint, true, raw = true).apply {
+                gravity = Gravity.CENTER
+                background = surface(dp(14).toFloat(), true)
+                setPadding(dp(10), dp(6), dp(10), dp(6))
+            },
+            LinearLayout.LayoutParams(dp(44), dp(44)).apply { rightMargin = dp(12) },
         )
-        header.addView(action("Настройки") { settings() })
+        val brand = column()
+        brand.addView(text("LUMA MUSIC", 15f, white, true, raw = true))
+        brand.addView(text("ВАША МУЗЫКА · ВАШ РИТМ", 9f, muted, true, raw = true))
+        identity.addView(brand)
+        header.addView(identity, LinearLayout.LayoutParams(0, -2, 1f))
+        header.addView(
+            MusicUi.icon(this, android.R.drawable.ic_menu_manage, "Настройки", muted) { settings() },
+            LinearLayout.LayoutParams(dp(48), dp(48)),
+        )
         root.addView(header)
-        status = text(if (demo) "ДЕМОРЕЖИМ · БЕЗ ПОДКЛЮЧЕНИЯ К ЯНДЕКСУ" else "", 11f, mint)
+
+        status = text(
+            if (demo) "ДЕМО · ЛОКАЛЬНЫЙ РЕЖИМ" else "",
+            10f,
+            mint,
+            true,
+            raw = true,
+        ).apply {
+            visibility = if (demo) View.VISIBLE else View.GONE
+            background = surface(dp(14).toFloat())
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+        }
         root.addView(status)
-        val scroll = ScrollView(this).apply { isFillViewport = false }
+
+        val scroll = ScrollView(this).apply {
+            isFillViewport = false
+            clipToPadding = false
+            setPadding(0, dp(10), 0, dp(10))
+        }
         body = column()
+        body.clipChildren = false
         scroll.addView(body)
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
-        val miniPanel=column().apply {background=surface(dp(16).toFloat());setPadding(dp(8),dp(4),dp(4),dp(4))}
-        val miniBar=row()
-        miniCover=AlbumArt(this).apply {prominent=true;swipeTracks(this){fullPlayer()}}
-        miniBar.addView(miniCover,LinearLayout.LayoutParams(dp(44),dp(44)).apply {rightMargin=dp(10)})
-        val miniLabels=column().apply {isFocusable=true;swipeTracks(this){fullPlayer()}}
-        mini=text(t("Выберите трек"),14f,white,true,raw=true).apply {maxLines=1;ellipsize=android.text.TextUtils.TruncateAt.END;setPadding(0,0,0,0)}
-        miniArtist=text(t("Открыть плеер"),12f,muted,raw=true).apply {maxLines=1;ellipsize=android.text.TextUtils.TruncateAt.END;setPadding(0,dp(2),0,0)}
-        miniLabels.addView(mini);miniLabels.addView(miniArtist)
-        miniBar.addView(miniLabels,LinearLayout.LayoutParams(0,-2,1f))
-        miniToggle=MusicUi.icon(this,R.drawable.luma_play,"Воспроизвести",mint){PlaybackService.command(this,"toggle");refreshPlayer()}
-        miniBar.addView(miniToggle,LinearLayout.LayoutParams(dp(48),dp(48)))
-        miniBar.addView(MusicUi.icon(this,R.drawable.luma_next,"Следующий трек",muted){PlaybackService.command(this,"next")},LinearLayout.LayoutParams(dp(44),dp(48)))
-        miniPanel.addView(miniBar)
-        miniProgress=ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal).apply {
-            isIndeterminate=false;progressTintList=android.content.res.ColorStateList.valueOf(mint)
+
+        val miniPanel = column().apply {
+            background = surface(dp(22).toFloat())
+            setPadding(dp(10), dp(8), dp(8), dp(8))
         }
-        miniPanel.addView(miniProgress,LinearLayout.LayoutParams(-1,dp(2)).apply {leftMargin=dp(4);rightMargin=dp(8)})
+        val miniBar = row()
+        miniCover = AlbumArt(this).apply {
+            prominent = true
+            swipeTracks(this) { fullPlayer() }
+        }
+        miniBar.addView(
+            miniCover,
+            LinearLayout.LayoutParams(dp(48), dp(48)).apply { rightMargin = dp(12) },
+        )
+        val miniLabels = column().apply {
+            isFocusable = true
+            swipeTracks(this) { fullPlayer() }
+        }
+        mini = text(t("Выберите трек"), 14f, white, true, raw = true).apply {
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(0, 0, 0, 0)
+        }
+        miniArtist = text(t("Открыть плеер"), 11f, muted, raw = true).apply {
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(0, dp(3), 0, 0)
+        }
+        miniLabels.addView(mini)
+        miniLabels.addView(miniArtist)
+        miniBar.addView(miniLabels, LinearLayout.LayoutParams(0, -2, 1f))
+        miniToggle = MusicUi.icon(this, R.drawable.luma_play, "Воспроизвести", mint) {
+            PlaybackService.command(this, "toggle")
+            refreshPlayer()
+        }
+        miniBar.addView(miniToggle, LinearLayout.LayoutParams(dp(48), dp(48)))
+        miniBar.addView(
+            MusicUi.icon(this, R.drawable.luma_next, "Следующий трек", muted) {
+                PlaybackService.command(this, "next")
+            },
+            LinearLayout.LayoutParams(dp(44), dp(48)),
+        )
+        miniPanel.addView(miniBar)
+        miniProgress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+            isIndeterminate = false
+            progressTintList = android.content.res.ColorStateList.valueOf(mint)
+        }
+        miniPanel.addView(
+            miniProgress,
+            LinearLayout.LayoutParams(-1, dp(2)).apply {
+                leftMargin = dp(4)
+                rightMargin = dp(8)
+                topMargin = dp(5)
+            },
+        )
         root.addView(miniPanel)
         gap(root, 8)
-        val nav = com.google.android.material.bottomnavigation.BottomNavigationView(this)
-        val destinations=listOf("Главная","Поиск","Медиатека")
-        val icons=listOf(R.drawable.luma_wave,android.R.drawable.ic_menu_search,android.R.drawable.ic_menu_agenda)
-        val labels=listOf("Волна","Поиск","Коллекция")
-        destinations.forEachIndexed {i,_ -> nav.menu.add(0,i+1,i,t(labels[i])).setIcon(icons[i])}
-        nav.selectedItemId=destinations.indexOf(page).coerceAtLeast(0)+1
-        nav.setOnItemSelectedListener {item->
-            val destination=destinations[item.itemId-1]
-            if(destination!=page)shell(destination)
+
+        val nav = com.google.android.material.bottomnavigation.BottomNavigationView(this).apply {
+            labelVisibilityMode = com.google.android.material.bottomnavigation.LabelVisibilityMode.LABEL_VISIBILITY_LABELED
+            setBackgroundColor(palette.background)
+        }
+        val destinations = listOf("Главная", "Поиск", "Медиатека", "Настройки")
+        val icons = listOf(
+            R.drawable.luma_wave,
+            android.R.drawable.ic_menu_search,
+            android.R.drawable.ic_menu_agenda,
+            android.R.drawable.ic_menu_manage,
+        )
+        val labels = listOf("Волна", "Поиск", "Коллекция", "Настройки")
+        destinations.forEachIndexed { index, _ ->
+            nav.menu.add(0, index + 1, index, t(labels[index])).setIcon(icons[index])
+        }
+        nav.selectedItemId = destinations.indexOf(page).coerceAtLeast(0) + 1
+        nav.setOnItemSelectedListener { item ->
+            val destination = destinations[item.itemId - 1]
+            when (destination) {
+                "Настройки" -> settings()
+                else -> if (destination != page) shell(destination)
+            }
             true
         }
         root.addView(nav)
-        if (loadContent)
+
+        if (loadContent) {
             when (target) {
                 "Поиск" -> search()
                 "Медиатека" -> library()
                 else -> home()
             }
+        }
         refreshPlayer()
     }
 
     private fun home() {
-        gap(body,12)
-        body.addView(text("Ваша музыка",30f,white,true))
-        body.addView(text("Для каждого настроения",14f,muted))
-        gap(body,12)
-        val wave=panel(body).apply {
-            background=android.graphics.drawable.GradientDrawable(
-                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
-                intArrayOf(androidx.core.graphics.ColorUtils.blendARGB(palette.background,mint,.14f),palette.background)
-            ).apply {cornerRadius=dp(24).toFloat()}
+        gap(body, 8)
+        body.addView(text("ВАША МУЗЫКАЛЬНАЯ СРЕДА", 10f, mint, true))
+        body.addView(text(if (demo) "Знакомство с Luma" else "Что послушаем сегодня?", 29f, white, true))
+        body.addView(text("Откройте подборку, вернитесь к любимому или найдите что-то новое.", 14f, muted))
+        gap(body, 14)
+
+        val wave = panel(body).apply {
+            background = surface(dp(24).toFloat())
+            setPadding(dp(20), dp(20), dp(20), dp(18))
         }
-        wave.addView(MusicUi.icon(this,R.drawable.luma_wave,"Моя волна",mint){startWave()},LinearLayout.LayoutParams(dp(56),dp(56)))
-        wave.addView(text(if(demo)"Попробуйте Luma" else "Моя волна",30f,white,true))
-        val stations=NativeCore.call("wave_stations","{}") as JSONArray
-        val chosen=preferences.getString("wave_station","user:onyourwave")
-        val station=(0 until stations.length()).map {stations.getJSONObject(it)}.firstOrNull {it.getString("id")==chosen}
-        wave.addView(text(if(demo)"Локальный звук, без аккаунта и сети." else t(station?.getString("title") ?: "Моя волна"),14f,muted))
-        val controls=row()
-        controls.addView(action(if(demo)"Слушать демо" else "Слушать",true){if(demo)playDemo() else startWave()},LinearLayout.LayoutParams(0,-2,1f))
-        controls.addView(MusicUi.icon(this,android.R.drawable.ic_menu_manage,"Настроить Мою волну",mint){WaveSheet.show(this){startWave()}},LinearLayout.LayoutParams(dp(56),dp(56)))
+        wave.addView(
+            row().apply {
+                gravity = Gravity.CENTER_VERTICAL
+                addView(
+                    MusicUi.icon(this@MainActivity, R.drawable.luma_wave, "Моя волна", mint) { startWave() },
+                    LinearLayout.LayoutParams(dp(48), dp(48)).apply { rightMargin = dp(12) },
+                )
+                addView(text("ПОД ВАШЕ НАСТРОЕНИЕ", 10f, mint, true, raw = true))
+            },
+        )
+        wave.addView(text(if (demo) "Попробуйте Luma" else "Моя волна", 30f, white, true))
+        val stations = NativeCore.call("wave_stations", "{}") as JSONArray
+        val chosen = preferences.getString("wave_station", "user:onyourwave")
+        val station = (0 until stations.length()).map { stations.getJSONObject(it) }
+            .firstOrNull { it.getString("id") == chosen }
+        wave.addView(
+            text(
+                if (demo) "Локальный режим: можно послушать тестовый звук без аккаунта."
+                else t(station?.getString("title") ?: "Музыка, подобранная для вас"),
+                13f,
+                muted,
+            ),
+        )
+        gap(wave, 8)
+        val controls = row()
+        controls.addView(
+            action(if (demo) "Слушать демо" else "Слушать волну", true) {
+                if (demo) playDemo() else startWave()
+            },
+            LinearLayout.LayoutParams(0, -2, 1f),
+        )
+        controls.addView(
+            MusicUi.icon(this, android.R.drawable.ic_menu_manage, "Настроить Мою волну", muted) {
+                WaveSheet.show(this) { startWave() }
+            },
+            LinearLayout.LayoutParams(dp(52), dp(52)),
+        )
         wave.addView(controls)
-        gap(body,12)
-        PlaybackService.queue.getOrNull(PlaybackService.index)?.let {song->
-            body.addView(text("Продолжить слушать",20f,white,true))
-            val current=SongRow(this).apply {
-                bind(song,true);setOnClickListener {fullPlayer()}
-                more.setOnClickListener {TrackSheet.show(this@MainActivity,song){heartTrackId="";refreshPlayer()}}
+
+        PlaybackService.queue.getOrNull(PlaybackService.index)?.let { song ->
+            gap(body, 8)
+            body.addView(text("ПРОДОЛЖИТЬ", 10f, mint, true))
+            val current = SongRow(this).apply {
+                bind(song, true)
+                setOnClickListener { fullPlayer() }
+                more.setOnClickListener {
+                    TrackSheet.show(this@MainActivity, song) {
+                        heartTrackId = ""
+                        refreshPlayer()
+                    }
+                }
             }
             body.addView(current)
         }
-        gap(body,16)
-        body.addView(text("Быстрый доступ",20f,white,true))
+
+        gap(body, LumaDesign.SECTION_GAP_DP)
+        body.addView(text("БЫСТРЫЙ ДОСТУП", 10f, mint, true))
+        body.addView(text("Ваша коллекция", 22f, white, true))
         collectionCards(body)
-        gap(body,8)
-        body.addView(action("Музыка с устройства"){openFile()})
+        gap(body, 4)
+        body.addView(action("Музыка с устройства") { openFile() })
     }
 
     private fun startWave(){
@@ -1342,9 +1475,11 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
                 val last=preferences.getLong("last_update_check",0)
                 update.addView(text(if(last<=0) "Проверка ещё не запускалась" else t("Последняя попытка: %1\$s",java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT,java.text.DateFormat.SHORT).format(java.util.Date(last))),13f,muted))
                 update.addView(action("Проверить обновления",true) {checkUpdates()})
-                GitHubUpdater(this).savedUpdate()?.let { saved ->
-                    update.addView(action("Установить сохранённое обновление",true) { installUpdate(saved) })
-                    update.addView(text("APK сохранён на устройстве и прошёл проверку подписи. Его можно установить после перезапуска приложения.",13f,muted))
+                if (GitHubUpdater(this).hasSavedUpdate()) {
+                    update.addView(action("Установить сохранённое обновление", true) {
+                        installUpdate(java.io.File(filesDir, "updates/update.apk"))
+                    })
+                    update.addView(text("APK сохранён на устройстве. Перед установкой повторно проверяются SHA-256, версия и подпись.", 13f, muted))
                 }
                 gap(update,8)
                 update.addView(action("Установить APK из файла") {
@@ -1530,53 +1665,72 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
     }
 
     private fun installUpdate(file: java.io.File) {
-        try {
-            val updater = GitHubUpdater(this)
-            val githubMetadata = java.io.File(filesDir, "updates/update.json")
-            if (file.canonicalFile == java.io.File(filesDir, "updates/update.apk").canonicalFile && githubMetadata.isFile) {
-                require(updater.savedUpdate() != null) { "Сохранённый APK не прошёл повторную проверку SHA-256 или подписи" }
-            }
-            updater.validate(file)
-            if (!packageManager.canRequestPackageInstalls()) {
-                pendingUpdate = file
-                LumaDialog(this)
-                    .setTitle("Разрешение установки")
-                    .setMessage(
-                        "Разрешите Luma Music установку обновлений в системных настройках, затем вернитесь в приложение."
-                    )
-                    .setNegativeButton("Отмена") { _, _ -> pendingUpdate = null }
-                    .setPositiveButton("Открыть") { _, _ ->
-                        startActivity(
-                            Intent(
-                                android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                                android.net.Uri.parse("package:$packageName"),
-                            )
-                        )
+        if (checkingUpdates) return
+        checkingUpdates = true
+        status.text = "Проверяем APK перед установкой…"
+        val activityGeneration = generation
+        executor.execute {
+            val verification = runCatching {
+                val updater = GitHubUpdater(this)
+                val metadata = java.io.File(filesDir, "updates/update.json")
+                val persistent = java.io.File(filesDir, "updates/update.apk")
+                if (file.canonicalFile == persistent.canonicalFile && metadata.isFile) {
+                    require(updater.savedUpdate() != null) {
+                        "Сохранённый APK не прошёл повторную проверку SHA-256 или подписи"
                     }
-                    .show()
-                return
+                }
+                updater.validate(file)
             }
-            val uri = android.net.Uri.parse("content://$packageName.updates/update.apk")
-            val intent =
-                Intent(Intent.ACTION_VIEW)
-                    .setDataAndType(uri, "application/vnd.android.package-archive")
-                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    .apply { clipData = ClipData.newRawUri("Luma update", uri) }
-            startActivity(intent)
-        } catch (e: Exception) {
-            status.text = e.message ?: "Установка недоступна"
+            runOnUiThread {
+                checkingUpdates = false
+                if (destroyed || activityGeneration != generation) return@runOnUiThread
+                verification.onFailure { error ->
+                    status.text = error.message ?: "Проверка APK не пройдена"
+                }.onSuccess {
+                    if (!packageManager.canRequestPackageInstalls()) {
+                        pendingUpdate = file
+                        LumaDialog(this)
+                            .setTitle("Разрешение установки")
+                            .setMessage(
+                                "Разрешите Luma Music установку обновлений в системных настройках, затем вернитесь в приложение."
+                            )
+                            .setNegativeButton("Отмена") { _, _ -> pendingUpdate = null }
+                            .setPositiveButton("Открыть") { _, _ ->
+                                startActivity(
+                                    Intent(
+                                        android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                        android.net.Uri.parse("package:$packageName"),
+                                    )
+                                )
+                            }
+                            .show()
+                        return@onSuccess
+                    }
+                    try {
+                        val uri = android.net.Uri.parse("content://$packageName.updates/update.apk")
+                        val intent =
+                            Intent(Intent.ACTION_VIEW)
+                                .setDataAndType(uri, "application/vnd.android.package-archive")
+                                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                .apply { clipData = ClipData.newRawUri("Luma update", uri) }
+                        startActivity(intent)
+                    } catch (error: Exception) {
+                        status.text = error.message ?: "Установка недоступна"
+                    }
+                }
+            }
         }
     }
 
     override fun onResume() {
         super.onResume()
-        if (preferences.getBoolean("auto_update_check", true)) checkUpdates(false)
-        pendingUpdate?.let { file ->
-            if (packageManager.canRequestPackageInstalls()) {
-                pendingUpdate = null
-                installUpdate(file)
-            }
+        val file = pendingUpdate
+        if (file != null && packageManager.canRequestPackageInstalls()) {
+            pendingUpdate = null
+            installUpdate(file)
+            return
         }
+        if (preferences.getBoolean("auto_update_check", true)) checkUpdates(false)
     }
 
     private fun navigateBack() {

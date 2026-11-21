@@ -39,7 +39,7 @@ object LumaDesign {
             shape = GradientDrawable.RECTANGLE
             cornerRadius = radius
             setColor(fill)
-            setStroke(1f, outline)
+            setStroke(1, outline)
         }
     }
 

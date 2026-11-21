@@ -10,18 +10,28 @@ import androidx.core.content.ContextCompat
 object MusicUi {
     fun dp(c:Context,n:Int)=(n*c.resources.displayMetrics.density).toInt()
     fun text(c:Context,value:String,size:Float=16f,bold:Boolean=false,raw:Boolean=false)=LumaTextView(c).apply {
-        localize=!raw;text=value;textSize=size*SettingsStore.get(c).getInt("font_size",100)/100f;setTextColor(AppThemes.active.text)
-        if(bold)typeface=android.graphics.Typeface.create("sans-serif",android.graphics.Typeface.BOLD)
+        localize=!raw;text=value;textSize=size*SettingsStore.get(c).getInt("font_size",100)/100f
+        setTextColor(AppThemes.active.text)
+        letterSpacing=if(bold && size>=24f)-0.025f else if(size<=12f)0.035f else 0f
+        setLineSpacing(dp(c,1).toFloat(),1f)
+        includeFontPadding=false
+        if(bold)typeface=LumaDesign.typeface("sans-serif-medium")
     }
     fun button(c:Context,label:String,click:()->Unit)=LumaButton(c).apply {
-        text=L10n.text(c,label);textSize=14f*SettingsStore.get(c).getInt("font_size",100)/100f;isAllCaps=false;minHeight=dp(c,48);cornerRadius=dp(c,20)
+        text=L10n.text(c,label);textSize=14f*SettingsStore.get(c).getInt("font_size",100)/100f
+        isAllCaps=false;minHeight=dp(c,LumaDesign.TOUCH_TARGET_DP)
+        insetTop=0;insetBottom=0;cornerRadius=dp(c,LumaDesign.CONTROL_RADIUS_DP)
+        setTextColor(LumaDesign.contentColor(false))
+        backgroundTintList=ColorStateList.valueOf(if(AppThemes.active.light)0xFFE9EDF3.toInt() else if(AppThemes.active.oled)0xFF12151B.toInt() else 0xFF202630.toInt())
+        strokeWidth=dp(c,1)
+        strokeColor=ColorStateList.valueOf(if(AppThemes.active.light)0xFFDDE2EA.toInt() else 0xFF303846.toInt())
         setOnClickListener {click()}
     }
     fun icon(c:Context,res:Int,label:String,color:Int=AppThemes.active.text,click:()->Unit)=LumaButton(c).apply {
         text="";icon=ContextCompat.getDrawable(c,res);iconSize=dp(c,24);iconPadding=0;iconGravity=com.google.android.material.button.MaterialButton.ICON_GRAVITY_TEXT_START
         iconTint=ColorStateList.valueOf(color);backgroundTintList=ColorStateList.valueOf(Color.TRANSPARENT)
         insetTop=0;insetBottom=0;minWidth=dp(c,48);minimumWidth=dp(c,48);minHeight=dp(c,48)
-        setPadding(0,0,0,0);cornerRadius=dp(c,28);elevation=0f
+        setPadding(0,0,0,0);cornerRadius=dp(c,LumaDesign.CONTROL_RADIUS_DP);elevation=0f
         contentDescription=L10n.text(c,label);setOnClickListener {click()}
     }
     fun insets(root:View,padding:Int=16){
@@ -42,7 +52,7 @@ class SongRow(c:Context):LinearLayout(c) {
     val more=MusicUi.icon(c,R.drawable.luma_more,"Действия с треком"){}.apply {isFocusable=false;isFocusableInTouchMode=false}
     init {
         orientation=HORIZONTAL;gravity=Gravity.CENTER_VERTICAL
-        val p=MusicUi.dp(c,10);setPadding(p,p,p,p);background=surface(MusicUi.dp(c,16).toFloat())
+        val p=MusicUi.dp(c,12);setPadding(p,p,p,p);background=surface(MusicUi.dp(c,20).toFloat())
         val tile=FrameLayout(c);tile.addView(art,FrameLayout.LayoutParams(-1,-1))
         marker.background=surface(MusicUi.dp(c,12).toFloat(),true)
         tile.addView(marker,FrameLayout.LayoutParams(MusicUi.dp(c,22),MusicUi.dp(c,22),Gravity.END or Gravity.BOTTOM))

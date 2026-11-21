@@ -13,6 +13,7 @@ open class MaterialActivity:AppCompatActivity() {
         val prefs=SettingsStore.get(this)
         val night=resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK==Configuration.UI_MODE_NIGHT_YES
         val palette=AppThemes.resolve(prefs.getString("theme_mode","system").orEmpty(),night)
+        AppThemes.active = palette
         setTheme(if(palette.light) R.style.Theme_Luma_Light else R.style.Theme_Luma_Dark)
         super.onCreate(state)
         DynamicColors.applyToActivityIfAvailable(this)
