@@ -242,134 +242,70 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
     private fun login() {
         backdrop()
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        val scroll = ScrollView(this).apply { isFillViewport = true }
-        root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
-        body = column()
-        scroll.addView(body)
-        gap(body, 24)
-        body.addView(text(getString(R.string.app_name), 18f, mint, true))
-        body.addView(text("Ваша музыка.\nВаш момент.", 36f, white, true))
-        body.addView(
-            text("Войдите в Яндекс Музыку, чтобы открыть свою коллекцию и Мою волну.", 15f, muted)
-        )
-        gap(body, 18)
-        status = text("", 13f, muted)
-        status.accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
-        body.addView(status)
-        body.addView(action("Открыть окно входа Яндекса", true) {
-            startActivityForResult(Intent(this, YandexLoginActivity::class.java), 12)
-        })
-        gap(body, 8)
-        body.addView(action("Spotify") {startActivity(Intent(this,SpotifyActivity::class.java))})
-        body.addView(action("Загрузки") {startActivity(Intent(this,OfflineActivity::class.java))})
-        body.addView(action("Браузер · свой OAuth-клиент") { browserLogin() })
-        body.addView(
-            text(
-                "Вход как в YAYMA: защищённая страница Яндекса в отдельном окне. Пароль обрабатывает Яндекс.",
-                13f,
-                muted,
-            )
-        )
-        val alternative = action("Другой способ: OAuth-токен") {}
-        body.addView(alternative)
-        val card = panel(body)
-        card.visibility = View.GONE
-        alternative.setOnClickListener {
-            card.visibility = if (card.visibility == View.GONE) View.VISIBLE else View.GONE
-        }
-        card.addView(text("Вход в аккаунт", 24f, white, true))
-        card.addView(text("Личный OAuth-токен", 13f, mint, true))
-        val input =
-            EditText(this).apply {
-                filters = arrayOf(android.text.InputFilter.LengthFilter(4096))
-                hint = t("Вставьте токен")
-                setTextColor(white)
-                setHintTextColor(muted)
-                setSingleLine()
-                background = surface(dp(16).toFloat())
-                setPadding(dp(14), dp(14), dp(14), dp(14))
-                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-                importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
-                imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE
-            }
-        card.addView(input)
-        val show =
-            CheckBox(this).apply {
-                text = t("Показать токен")
-                setTextColor(muted)
-                setOnCheckedChangeListener { _, checked ->
-                    val cursor = input.selectionStart
-                    input.transformationMethod =
-                        if (checked) null
-                        else android.text.method.PasswordTransformationMethod.getInstance()
-                    input.setSelection(cursor.coerceAtLeast(0).coerceAtMost(input.length()))
-                }
-            }
-        card.addView(show)
-        val tokenNotice =
-            text(
-                "Токен шифруется на устройстве через Android Keystore. Пароль Яндекса не нужен.",
-                13f,
-                muted,
-            )
-        card.addView(tokenNotice)
-        lateinit var submit: TextView
-        fun connect() {
-            if (!submit.isEnabled) return
-            val candidate = input.text.toString().trim()
-            if (candidate.isEmpty()) {
-                status.text = "Сначала вставьте OAuth-токен"
-                input.requestFocus()
-                return
-            }
-            (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
-                .hideSoftInputFromWindow(input.windowToken, 0)
-            submit.isEnabled = false
-            submit.alpha = .55f
-            submit.text = "Проверяем аккаунт…"
-            token = candidate
-            generation++
-            request(
-                "account",
-                finished = {
-                    submit.isEnabled = true
-                    submit.alpha = 1f
-                    submit.text = "Войти"
+        val views = LoginScreen(
+            context = this,
+            root = root,
+            text = ::text,
+            column = ::column,
+            gap = ::gap,
+            action = ::action,
+            panel = ::panel,
+            dp = ::dp,
+            surface = { radius -> surface(radius) },
+            translate = { value -> t(value) },
+            primaryColor = white,
+            mutedColor = muted,
+            accentColor = mint,
+        ).render(
+            LoginScreen.Actions(
+                openYandexLogin = {
+                    startActivityForResult(Intent(this, YandexLoginActivity::class.java), 12)
                 },
-            ) {
-                try {
-                    TokenStore(this).save(token)
-                    input.text.clear()
-                    demo = false
+                openSpotify = { startActivity(Intent(this, SpotifyActivity::class.java)) },
+                openDownloads = { startActivity(Intent(this, OfflineActivity::class.java)) },
+                browserLogin = ::browserLogin,
+                submitToken = ::submitLoginToken,
+                tryDemo = {
+                    demo = true
                     shell("Главная")
-                } catch (_: Exception) {
-                    status.text = "Не удалось защитить токен. Попробуйте ещё раз."
-                }
-            }
-        }
-        submit = action("Войти", true) { connect() }
-        card.addView(submit)
-        input.setOnEditorActionListener { _, id, _ ->
-            if (id == android.view.inputmethod.EditorInfo.IME_ACTION_DONE) {
-                connect()
-                true
-            } else false
-        }
+                },
+            ),
+        )
+        body = views.body
+        status = views.status
+    }
 
-        gap(body)
-        body.addView(
-            action("Попробовать без аккаунта") {
-                demo = true
+    private fun submitLoginToken(candidate: String, input: EditText, submit: LumaButton) {
+        if (!submit.isEnabled) return
+        if (candidate.isEmpty()) {
+            status.text = "Сначала вставьте OAuth-токен"
+            input.requestFocus()
+            return
+        }
+        (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
+            .hideSoftInputFromWindow(input.windowToken, 0)
+        submit.isEnabled = false
+        submit.alpha = .55f
+        submit.text = "Проверяем аккаунт…"
+        token = candidate
+        generation++
+        request(
+            "account",
+            finished = {
+                submit.isEnabled = true
+                submit.alpha = 1f
+                submit.text = "Войти"
+            },
+        ) {
+            try {
+                TokenStore(this).save(token)
+                input.text.clear()
+                demo = false
                 shell("Главная")
+            } catch (_: Exception) {
+                status.text = "Не удалось защитить токен. Попробуйте ещё раз."
             }
-        )
-        body.addView(
-            text(
-                "Неофициальный клиент. Для каталога и прослушивания нужна подписка Яндекс Музыки.",
-                12f,
-                muted,
-            )
-        )
+        }
     }
 
     private fun browserLogin() {
