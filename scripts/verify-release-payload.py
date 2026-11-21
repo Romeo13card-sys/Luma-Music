@@ -40,7 +40,8 @@ def verify(root: Path):
         if not 0 < apk.stat().st_size <= 100*1024*1024 or hashlib.sha256(apk.read_bytes()).hexdigest() != sums[apk.name]:
             raise ValueError('APK size/hash invalid')
         report = subprocess.check_output([str(tools/'apksigner'), 'verify', '--print-certs', str(apk)], text=True)
-        if re.findall(r'Signer #\d+ certificate SHA-256 digest: (\S+)', report) != [expected]:
+        fingerprints = [value.replace(':', '').lower() for value in re.findall(r'Signer #\d+ certificate SHA-256 digest: ([0-9A-Fa-f:]+)', report)]
+        if fingerprints != [expected]:
             raise ValueError('APK signer mismatch')
         metadata = subprocess.check_output([str(tools/'aapt'), 'dump', 'badging', str(apk)], text=True)
         if not preview and ('application-debuggable' in metadata or 'application-testOnly' in metadata):
