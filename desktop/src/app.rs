@@ -538,7 +538,9 @@ fn write_updater_script(extension: &str, contents: &str) -> Result<PathBuf, Stri
 }
 
 fn download_latest_desktop_release() -> Result<String, String> {
+    let legacy_windows = cfg!(all(target_os = "windows", target_vendor = "win7"));
     let platform = match std::env::consts::OS {
+        "windows" if legacy_windows => "Windows-7-8-8.1",
         "windows" => "Windows-10-11",
         "macos" => "macOS",
         "linux" => "Linux",
@@ -546,6 +548,7 @@ fn download_latest_desktop_release() -> Result<String, String> {
     };
     let arch = match (std::env::consts::OS, std::env::consts::ARCH) {
         ("windows", "x86_64") => "x64",
+        ("windows", "x86") => "x86",
         ("linux", "x86_64") => "x64",
         ("macos", "x86_64") => "x64",
         ("macos", "aarch64") => "arm64",
@@ -589,8 +592,11 @@ fn download_latest_desktop_release() -> Result<String, String> {
     if compare_release_versions(release_tag, crate::app_version()) != Some(std::cmp::Ordering::Greater) {
         return Err("Для этой версии нет более нового стабильного релиза".into());
     }
-    let filename = format!("Luma-Music-{version}-{platform}-{arch}{}.zip",
-        if platform.starts_with("Windows") { "-Portable" } else { "" });
+    let filename = format!(
+        "Luma-Music-{version}-{platform}-{arch}{}{}.zip",
+        if platform.starts_with("Windows") { "-Portable" } else { "" },
+        if legacy_windows { "-experimental" } else { "" },
+    );
     let checksum_name = format!("{filename}.sha256");
     let assets = release["assets"].as_array().ok_or("В релизе отсутствуют файлы")?;
     let asset_url = |name: &str| -> Result<String, String> {
