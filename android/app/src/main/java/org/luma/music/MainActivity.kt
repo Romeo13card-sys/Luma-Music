@@ -738,7 +738,7 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
             view.setTextColor(Color.BLACK)
         }
         playerTitle?.text=song?.title ?: t("Выберите трек");playerSubtitle?.text=song?.artist.orEmpty()
-        if(playerScreen)status.text=if(PlaybackService.message in listOf("Сейчас играет","Пауза","Воспроизведение остановлено"))"" else t(PlaybackService.message)
+        if(playerScreen)status.text=if(PlaybackService.message in setOf("Сейчас играет","Пауза","Воспроизведение остановлено","Загружаем трек…","Продолжаем Мою волну…"))"" else t(PlaybackService.message)
         val accent=playerAccent ?: mint
         shuffleButton?.iconTint=android.content.res.ColorStateList.valueOf(if(PlaybackService.shuffle)accent else muted)
         repeatButton?.iconTint=android.content.res.ColorStateList.valueOf(if(PlaybackService.repeat)accent else muted)
