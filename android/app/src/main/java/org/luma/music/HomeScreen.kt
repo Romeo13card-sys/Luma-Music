@@ -60,55 +60,70 @@ internal class HomeScreen(
         )
         gap(target, 14)
 
+        val heroText = LumaDesign.contentColor(true)
+        val heroMuted = if (AppThemes.active.light) 0xFF51472B.toInt() else 0xFF403719.toInt()
         val wave = panel(target).apply {
-            background = surface(dp(24).toFloat())
+            background = surface(dp(26).toFloat())
+            // The hero uses the Luma accent as its own canvas, not another generic card.
+            background = LumaDesign.card(dp(26).toFloat(), accent = true)
             setPadding(dp(20), dp(20), dp(20), dp(18))
         }
         wave.addView(
             row().apply {
                 gravity = Gravity.CENTER_VERTICAL
                 addView(
-                    MusicUi.icon(context, R.drawable.luma_wave, "Моя волна", data.accentColor) {
+                    MusicUi.icon(context, R.drawable.luma_wave, "Моя волна", heroText) {
                         actions.startWave()
                     },
-                    LinearLayout.LayoutParams(dp(48), dp(48)).apply { rightMargin = dp(12) },
+                    LinearLayout.LayoutParams(dp(42), dp(42)).apply { rightMargin = dp(10) },
                 )
-                addView(text("ПОД ВАШЕ НАСТРОЕНИЕ", 10f, data.accentColor, true, true))
+                addView(text("LUMA FLOW  /  PERSONAL RADIO", 10f, heroText, true, true))
             },
         )
+        gap(wave, 8)
         wave.addView(
             text(
-                if (data.demo) "Попробуйте Luma" else "Моя волна",
-                30f,
-                data.textColor,
+                if (data.demo) "Почувствуйте Luma" else "Твоя музыка.\nТвой ритм.",
+                31f,
+                heroText,
                 true,
                 false,
             ),
         )
-        wave.addView(text(data.stationDescription, 13f, data.mutedColor, false, false))
-        gap(wave, 8)
+        gap(wave, 3)
+        wave.addView(
+            text(
+                if (data.demo) "Попробуйте плеер и познакомьтесь с приложением." else data.stationDescription,
+                13f,
+                heroMuted,
+                false,
+                false,
+            ),
+        )
+        gap(wave, 14)
 
         val controls = row()
         controls.addView(
             action(
-                if (data.demo) "Слушать демо" else "Слушать волну",
-                true,
+                if (data.demo) "Слушать демо" else "Включить волну",
+                false,
             ) {
                 if (data.demo) actions.playDemo() else actions.startWave()
             },
             LinearLayout.LayoutParams(0, -2, 1f),
         )
         controls.addView(
-            MusicUi.icon(context, android.R.drawable.ic_menu_manage, "Настроить Мою волну", data.mutedColor) {
+            MusicUi.icon(context, android.R.drawable.ic_menu_manage, "Настроить Мою волну", heroText) {
                 actions.configureWave()
             },
-            LinearLayout.LayoutParams(dp(52), dp(52)),
+            LinearLayout.LayoutParams(dp(48), dp(48)),
         )
         wave.addView(controls)
 
+
         data.currentSong?.let { song ->
             gap(target, 8)
-            target.addView(text("ПРОДОЛЖИТЬ", 10f, data.accentColor, true, false))
+            target.addView(text("СЕЙЧАС ИГРАЕТ", 10f, data.accentColor, true, false))
             val current = SongRow(context).apply {
                 bind(song, true)
                 setOnClickListener { actions.openPlayer() }
@@ -118,7 +133,7 @@ internal class HomeScreen(
         }
 
         gap(target, LumaDesign.SECTION_GAP_DP)
-        target.addView(text("БЫСТРЫЙ ДОСТУП", 10f, data.accentColor, true, false))
+        target.addView(text("ВАША МУЗЫКА", 10f, data.accentColor, true, false))
         target.addView(text("Ваша коллекция", 22f, data.textColor, true, false))
         collectionCards(target)
         gap(target, 4)
