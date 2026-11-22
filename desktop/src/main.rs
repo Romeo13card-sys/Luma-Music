@@ -1,5 +1,5 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
-fn app_version() -> &'static str {
+pub(crate) fn app_version() -> &'static str {
     let v = env!("CARGO_PKG_VERSION");
     if v.contains('-') {
         v
