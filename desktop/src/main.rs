@@ -347,6 +347,7 @@ impl eframe::App for App {
                                 .get_pos()
                                 .as_secs_f64()
                                 .min(duration.as_secs_f64());
+                            let original_seconds = seconds;
                             let elapsed = seconds as u64;
                             let total = duration.as_secs();
                             ui.horizontal(|ui| {
@@ -374,7 +375,7 @@ impl eframe::App for App {
                                     .weak(),
                                 );
                             });
-                            if seconds != player.sink.get_pos().as_secs_f64() {
+                            if seconds != original_seconds {
                                 seek_to = Some(seconds);
                             }
                         }
