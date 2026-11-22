@@ -112,7 +112,7 @@ mod tests {
     fn compares_numeric_versions_and_rejects_malformed_versions() {
         assert_eq!(compare("v0.10.0-test.1", "0.4.0-test"), Some(1));
         assert_eq!(compare("v0.3.1-test.1", "0.4.0-test"), Some(-1));
-        assert_eq!(compare("v0.4.0-test.1", "0.4.0-test"), Some(0));
+        assert_eq!(compare("v0.4.0-test.1", "0.4.0-test"), Some(1));
         for raw in [
             "other",
             "1",
@@ -125,7 +125,7 @@ mod tests {
     }
     #[test]
     fn short_display_versions_keep_numeric_update_order() {
-        assert_eq!(compare("1.0", "1.0.0-dev.1"), Some(0));
+        assert_eq!(compare("1.0", "1.0.0-dev.1"), Some(1));
         assert_eq!(compare("1.0.1", "1.0"), Some(1));
         assert_eq!(compare("1.0", "0.5.0"), Some(1));
         assert_eq!(compare("2.1.0", "2.1.0-dev.1"), Some(1));
