@@ -43,6 +43,7 @@ pub(crate) struct App {
     pub(crate) update_busy: bool,
     pub(crate) download_busy: bool,
     pub(crate) download_status: String,
+    pub(crate) update_archive: Option<PathBuf>,
 }
 
 fn compare_release_versions(candidate: &str, installed: &str) -> Option<std::cmp::Ordering> {
@@ -109,6 +110,7 @@ impl App {
             update_busy: false,
             download_busy: false,
             download_status: String::new(),
+            update_archive: None,
         }
     }
 
@@ -213,6 +215,101 @@ impl App {
             let _ = tx.send(Reply::Download(result));
             ctx.request_repaint();
         });
+    }
+
+    pub(crate) fn install_update(&mut self) -> Result<(), String> {
+        let archive = self.update_archive.as_ref().ok_or("Сначала скачайте и проверьте обновление")?;
+        if !archive.is_file() { return Err("Проверенный архив больше не найден".into()); }
+        let executable = std::env::current_exe().map_err(|_| "Не удалось определить путь приложения")?;
+        let install_dir = executable.parent().ok_or("Не удалось определить каталог приложения")?;
+        let pid = std::process::id();
+        let temp = std::env::temp_dir();
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            let script = r#"
+param([string]$Archive, [int]$ProcessId, [string]$Executable, [string]$InstallDir)
+$ErrorActionPreference = 'Stop'
+while (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 500 }
+$Stage = Join-Path $env:TEMP ('luma-update-' + [guid]::NewGuid().ToString('N'))
+try {
+    Expand-Archive -LiteralPath $Archive -DestinationPath $Stage -Force
+    Get-ChildItem -LiteralPath $Stage -Force | ForEach-Object {
+        Copy-Item -LiteralPath $_.FullName -Destination $InstallDir -Recurse -Force
+    }
+    Remove-Item -LiteralPath $Stage -Recurse -Force
+    Start-Process -FilePath $Executable -WorkingDirectory $InstallDir
+} catch {
+    Add-Content -LiteralPath (Join-Path $env:TEMP 'luma-update-error.log') -Value $_
+    exit 1
+} finally {
+    Remove-Item -LiteralPath $Archive -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue
+}
+"#;
+            let script_path = write_updater_script("ps1", script)?;
+            std::process::Command::new("powershell.exe")
+                .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"])
+                .arg(&script_path).arg("-Archive").arg(archive)
+                .arg("-ProcessId").arg(pid.to_string())
+                .arg("-Executable").arg(&executable)
+                .arg("-InstallDir").arg(install_dir)
+                .creation_flags(0x08000000)
+                .spawn().map_err(|_| "Не удалось запустить установщик обновления")?;
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let script = r#"#!/bin/sh
+archive="$1"; pid="$2"; executable="$3"; install_dir="$4"; stage="$5"
+while kill -0 "$pid" 2>/dev/null; do sleep 0.5; done
+mkdir -p "$stage" || exit 1
+unzip -q "$archive" -d "$stage" || exit 2
+cp -a "$stage/." "$install_dir/" || exit 3
+rm -rf "$stage"
+rm -f "$archive"
+cd "$install_dir" || exit 4
+"$executable" >/dev/null 2>&1 &
+rm -f "$0"
+"#;
+            let stage = temp.join(format!("luma-update-{pid}"));
+            let script_path = write_updater_script("sh", script)?;
+            std::process::Command::new("sh").arg(&script_path)
+                .arg(archive).arg(pid.to_string()).arg(&executable).arg(install_dir).arg(stage)
+                .stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null())
+                .spawn().map_err(|_| "Не удалось запустить установщик обновления")?;
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let app_bundle = executable.parent().and_then(Path::parent).and_then(Path::parent)
+                .filter(|path| path.extension().is_some_and(|ext| ext == "app"))
+                .ok_or("Приложение запущено не из стандартного .app bundle")?;
+            let script = r#"#!/bin/sh
+archive="$1"; pid="$2"; app="$3"; stage="$4"
+while kill -0 "$pid" 2>/dev/null; do sleep 0.5; done
+mkdir -p "$stage" || exit 1
+ditto -x -k "$archive" "$stage" || exit 2
+new_app="$stage/Luma Music.app"
+backup="\${app}.luma-backup"
+rm -rf "$backup"
+mv "$app" "$backup" || exit 3
+if ! ditto --rsrc --extattr "$new_app" "$app"; then
+    mv "$backup" "$app"
+    exit 4
+fi
+rm -rf "$backup" "$stage" "$archive"
+open -a "$app"
+rm -f "$0"
+"#;
+            let stage = temp.join(format!("luma-update-{pid}"));
+            let script_path = write_updater_script("sh", script)?;
+            std::process::Command::new("sh").arg(&script_path)
+                .arg(archive).arg(pid.to_string()).arg(app_bundle).arg(stage)
+                .stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null())
+                .spawn().map_err(|_| "Не удалось запустить установщик обновления")?;
+        }
+        #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+        return Err("Автоматическая установка не поддерживается на этой ОС".into());
+        Ok(())
     }
 
     pub(crate) fn play(&mut self, index: usize) {
@@ -335,10 +432,16 @@ impl App {
                 }
                 Reply::Download(result) => {
                     self.download_busy = false;
-                    self.download_status = match result {
-                        Ok(path) => format!("Проверено и сохранено: {path}"),
-                        Err(error) => format!("Ошибка загрузки: {error}"),
-                    };
+                    match result {
+                        Ok(path) => {
+                            self.update_archive = Some(PathBuf::from(&path));
+                            self.download_status = format!("Архив проверен SHA-256 и сохранён: {path}");
+                        }
+                        Err(error) => {
+                            self.update_archive = None;
+                            self.download_status = format!("Ошибка загрузки: {error}");
+                        }
+                    }
                 }
                 Reply::Audio(id, result) => {
                     if !self.jobs.matches(id) {
@@ -393,6 +496,15 @@ impl App {
     }
 }
 
+
+fn write_updater_script(extension: &str, contents: &str) -> Result<PathBuf, String> {
+    let mut file = tempfile::Builder::new().prefix("luma-updater-").suffix(&format!(".{extension}"))
+        .tempfile().map_err(|_| "Не удалось создать скрипт установщика")?;
+    file.write_all(contents.as_bytes()).map_err(|_| "Не удалось записать скрипт установщика")?;
+    file.as_file().sync_all().map_err(|_| "Не удалось сохранить скрипт установщика")?;
+    let (_, path) = file.keep().map_err(|_| "Не удалось подготовить скрипт установщика")?;
+    Ok(path)
+}
 
 fn download_latest_desktop_release() -> Result<String, String> {
     let platform = match std::env::consts::OS {
