@@ -222,6 +222,14 @@ impl App {
         if !archive.is_file() { return Err("Проверенный архив больше не найден".into()); }
         let executable = std::env::current_exe().map_err(|_| "Не удалось определить путь приложения")?;
         let install_dir = executable.parent().ok_or("Не удалось определить каталог приложения")?;
+        #[cfg(target_os = "macos")]
+        let install_target = executable.parent().and_then(Path::parent).and_then(Path::parent)
+            .filter(|path| path.extension().is_some_and(|ext| ext == "app"))
+            .ok_or("Приложение запущено не из стандартного .app bundle")?;
+        #[cfg(not(target_os = "macos"))]
+        let install_target = install_dir;
+        let _write_probe = tempfile::NamedTempFile::new_in(install_target)
+            .map_err(|_| "Нет прав на запись в каталог приложения. Распакуйте portable-версию в пользовательскую папку")?;
         let pid = std::process::id();
         let temp = std::env::temp_dir();
         #[cfg(target_os = "windows")]
@@ -280,9 +288,7 @@ rm -f "$0"
         }
         #[cfg(target_os = "macos")]
         {
-            let app_bundle = executable.parent().and_then(Path::parent).and_then(Path::parent)
-                .filter(|path| path.extension().is_some_and(|ext| ext == "app"))
-                .ok_or("Приложение запущено не из стандартного .app bundle")?;
+            let app_bundle = install_target;
             let script = r#"#!/bin/sh
 archive="$1"; pid="$2"; app="$3"; stage="$4"
 while kill -0 "$pid" 2>/dev/null; do sleep 0.5; done
@@ -513,15 +519,16 @@ fn download_latest_desktop_release() -> Result<String, String> {
         "linux" => "Linux",
         _ => return Err("Эта платформа пока не поддерживается".into()),
     };
-    let arch = match std::env::consts::ARCH {
-        "x86_64" => "x64",
-        "aarch64" => "arm64",
-        "x86" => "x86",
+    let arch = match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("windows", "x86_64") => "x64",
+        ("linux", "x86_64") => "x64",
+        ("macos", "x86_64") => "x64",
+        ("macos", "aarch64") => "arm64",
+        ("windows", _) => return Err("Для этой архитектуры Windows нет опубликованного архива".into()),
+        ("linux", _) => return Err("Опубликована только Linux-сборка x64".into()),
+        ("macos", _) => return Err("Эта архитектура macOS пока не поддерживается".into()),
         _ => return Err("Эта архитектура пока не поддерживается".into()),
     };
-    if platform == "Windows-10-11" && arch != "x64" {
-        return Err("Для этой архитектуры Windows нет опубликованного архива".into());
-    }
     let client = reqwest::blocking::Client::builder()
         .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(180))
