@@ -83,8 +83,9 @@ impl eframe::App for App {
                             }),
                     );
                     ui.separator();
+                    let search_width = ui.available_width().min(390.0);
                     let search = ui.add_sized(
-                        [ui.available_width().min(390.0), 34.0],
+                        [search_width, 34.0],
                         egui::TextEdit::singleline(&mut self.query)
                             .hint_text("Найти трек, альбом или исполнителя…"),
                     );
