@@ -51,8 +51,10 @@ impl App {
                                     );
                                     ui.add_space(5.0);
                                     ui.label(
-                                        egui::RichText::new("Персональные рекомендации и любимые треки — в одном пространстве.")
-                                            .color(egui::Color32::from_rgb(69, 57, 27)),
+                                        egui::RichText::new(
+                                            "Персональные рекомендации и любимые треки — в одном пространстве.",
+                                        )
+                                        .color(egui::Color32::from_rgb(69, 57, 27)),
                                     );
                                     ui.add_space(14.0);
                                     if ui
@@ -89,8 +91,10 @@ impl App {
                                                 .add_sized(
                                                     [150.0, 48.0],
                                                     egui::Button::new(
-                                                        egui::RichText::new(format!("{symbol}   {label}"))
-                                                            .strong(),
+                                                        egui::RichText::new(format!(
+                                                            "{symbol}   {label}"
+                                                        ))
+                                                        .strong(),
                                                     ),
                                                 )
                                                 .clicked()
@@ -108,7 +112,11 @@ impl App {
                             });
                             if !self.tracks.is_empty() {
                                 ui.add_space(20.0);
-                                ui.heading(egui::RichText::new("Недавно открыто").size(21.0).strong());
+                                ui.heading(
+                                    egui::RichText::new("Недавно открыто")
+                                        .size(21.0)
+                                        .strong(),
+                                );
                                 let current = self
                                     .queue
                                     .get(self.index.unwrap_or(usize::MAX))
