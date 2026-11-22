@@ -21,46 +21,50 @@ impl App {
                     ui.add_space(12.0);
                     match self.screen {
                         Screen::Home => {
+                            let ink = egui::Color32::from_rgb(24, 27, 32);
+                            let accent = egui::Color32::from_rgb(255, 216, 77);
                             ui.label(
-                                egui::RichText::new("ВАША МУЗЫКАЛЬНАЯ СРЕДА")
+                                egui::RichText::new("LUMA FLOW  /  YOUR PERSONAL SOUND")
                                     .small()
                                     .strong()
                                     .color(egui::Color32::from_rgb(255, 190, 45)),
                             );
-                            ui.add_space(4.0);
-                            ui.heading(
-                                egui::RichText::new("Что послушаем сегодня?")
-                                    .size(30.0)
-                                    .strong(),
-                            );
-                            ui.label(
-                                "Подборки, любимые треки и музыка, которую хочется открыть заново.",
-                            );
-                            ui.add_space(18.0);
+                            ui.add_space(6.0);
                             egui::Frame::group(ui.style())
-                                .fill(ui.visuals().window_fill)
-                                .stroke(egui::Stroke::new(
-                                    1.0,
-                                    ui.visuals().widgets.noninteractive.bg_stroke.color,
-                                ))
-                                .inner_margin(egui::Margin::same(20.0))
+                                .fill(accent)
+                                .stroke(egui::Stroke::new(1.0, accent))
+                                .inner_margin(egui::Margin::same(26.0))
                                 .show(ui, |ui| {
+                                    ui.set_min_height(190.0);
                                     ui.label(
-                                        egui::RichText::new("LUMA · PERSONAL RADIO")
+                                        egui::RichText::new("ТВОЯ МУЗЫКА")
                                             .small()
                                             .strong()
-                                            .color(egui::Color32::from_rgb(255, 190, 45)),
+                                            .color(ink),
                                     );
-                                    ui.add_space(4.0);
+                                    ui.add_space(8.0);
                                     ui.heading(
-                                        egui::RichText::new("Моя волна").size(26.0).strong(),
+                                        egui::RichText::new("Твой ритм.\nТвоя волна.")
+                                            .size(38.0)
+                                            .strong()
+                                            .color(ink),
                                     );
-                                    ui.label("Персональная музыкальная подборка из Яндекс Музыки.");
-                                    ui.add_space(10.0);
+                                    ui.add_space(5.0);
+                                    ui.label(
+                                        egui::RichText::new("Персональные рекомендации и любимые треки — в одном пространстве.")
+                                            .color(egui::Color32::from_rgb(69, 57, 27)),
+                                    );
+                                    ui.add_space(14.0);
                                     if ui
                                         .add_enabled(
                                             self.connected && !self.jobs.busy(),
-                                            egui::Button::new("Слушать волну"),
+                                            egui::Button::new(
+                                                egui::RichText::new("▶   Включить Мою волну")
+                                                    .strong()
+                                                    .color(egui::Color32::WHITE),
+                                            )
+                                            .fill(ink)
+                                            .stroke(egui::Stroke::new(1.0, ink)),
                                         )
                                         .clicked()
                                     {
@@ -68,23 +72,43 @@ impl App {
                                         self.screen = Screen::Wave;
                                     }
                                 });
-                            ui.add_space(14.0);
-                            ui.heading("Быстрый доступ");
+                            ui.add_space(18.0);
+                            ui.heading(egui::RichText::new("Быстрый доступ").size(21.0).strong());
                             ui.horizontal_wrapped(|ui| {
-                                if ui.button("♡   Избранное").clicked() {
-                                    request = Some(("likes".into(), String::new()));
-                                    self.screen = Screen::Library;
-                                }
-                                if ui.button("⌕   Найти музыку").clicked() {
-                                    self.screen = Screen::Search;
-                                }
-                                if ui.button("≡   Очередь").clicked() {
-                                    self.screen = Screen::Queue;
+                                let shortcuts = [
+                                    ("♡", "Избранное", Screen::Library),
+                                    ("⌕", "Поиск", Screen::Search),
+                                    ("≡", "Очередь", Screen::Queue),
+                                ];
+                                for (symbol, label, destination) in shortcuts {
+                                    egui::Frame::group(ui.style())
+                                        .fill(ui.visuals().window_fill)
+                                        .inner_margin(egui::Margin::same(12.0))
+                                        .show(ui, |ui| {
+                                            if ui
+                                                .add_sized(
+                                                    [150.0, 48.0],
+                                                    egui::Button::new(
+                                                        egui::RichText::new(format!("{symbol}   {label}"))
+                                                            .strong(),
+                                                    ),
+                                                )
+                                                .clicked()
+                                            {
+                                                self.screen = destination;
+                                                if destination == Screen::Library
+                                                    && self.connected
+                                                    && !self.jobs.busy()
+                                                {
+                                                    request = Some(("likes".into(), String::new()));
+                                                }
+                                            }
+                                        });
                                 }
                             });
                             if !self.tracks.is_empty() {
-                                ui.add_space(18.0);
-                                ui.heading("Недавно открыто");
+                                ui.add_space(20.0);
+                                ui.heading(egui::RichText::new("Недавно открыто").size(21.0).strong());
                                 let current = self
                                     .queue
                                     .get(self.index.unwrap_or(usize::MAX))
