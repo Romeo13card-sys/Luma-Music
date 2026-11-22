@@ -6,6 +6,15 @@ import org.junit.Test
 
 class StreamUrlPreloaderTest {
     @Test
+    fun warmupKeysAreScopedByAccountAndQualityWithoutStoringTokens() {
+        val first = streamWarmupKey("123", 320, "account-a")
+        assertTrue(first == streamWarmupKey("123", 320, "account-a"))
+        assertFalse(first == streamWarmupKey("123", 128, "account-a"))
+        assertFalse(first == streamWarmupKey("123", 320, "account-b"))
+        assertFalse(first.contains("account-a"))
+    }
+
+    @Test
     fun acceptsOnlyNonEmptyAsciiDecimalTrackIds() {
         assertTrue(isAsciiNumericTrackId("0"))
         assertTrue(isAsciiNumericTrackId("1234567890"))
