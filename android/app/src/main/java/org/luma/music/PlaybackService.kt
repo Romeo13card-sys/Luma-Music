@@ -56,6 +56,8 @@ class PlaybackService : Service(),CoverImages.Target {
             if(position !in songs.indices)return
             val start=maxOf(0,position-20)
             queue=songs.drop(start).take(200);index=position-start;revision++
+            // Start resolving the selected track before the service's playback worker asks for it.
+            StreamUrlPreloader.preload(context, queue.drop(index).take(4))
             command(context,if(wave)"wave" else "play",index,seekMs)
         }
         fun editQueue(context:Context,action:String,song:Song?=null,at:Int=-1,to:Int=-1) {
@@ -424,6 +426,7 @@ class PlaybackService : Service(),CoverImages.Target {
     }
 
     private fun source(song:Song,credential:String):String = song.uri ?: OfflineDownloads.ready(this,song.id) ?: run {
+        StreamUrlPreloader.awaitIfPending(this,song,credential)
         val reply=JSONObject(Native.request(credential,"stream_quality",streamOptions(song)))
         check(reply.optBoolean("ok")){reply.optString("error","Ошибка сервиса")}
         reply.getString("data")
