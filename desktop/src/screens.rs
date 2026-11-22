@@ -433,7 +433,10 @@ impl App {
                                             "Для Windows 7/8/8.1 распакуйте проверенный ZIP вручную после закрытия приложения.",
                                         );
                                         #[cfg(not(all(target_os = "windows", target_vendor = "win7")))]
-                                        if ui.button("Установить обновление и перезапустить").clicked() {
+                                        if ui
+                                            .button("Установить обновление и перезапустить")
+                                            .clicked()
+                                        {
                                             install_update = true;
                                         }
                                     }
