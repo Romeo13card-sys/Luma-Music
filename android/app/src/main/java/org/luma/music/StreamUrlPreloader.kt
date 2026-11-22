@@ -42,9 +42,9 @@ internal object StreamUrlPreloader {
             .take(2)
             .forEach { song ->
                 val future = CompletableFuture<Unit>()
-                val existing = pending.putIfAbsent(song.id, future)
+                val existing = pending[song.id]
                 if (existing != null && !existing.isDone) return@forEach
-                if (existing != null) pending.remove(song.id, existing)
+                if (existing != null && !pending.remove(song.id, existing)) return@forEach
                 if (pending.putIfAbsent(song.id, future) != null) return@forEach
 
                 try {
