@@ -465,6 +465,8 @@ class PlaybackService : Service(),CoverImages.Target {
         val warm=runCatching {nextBuffer.take(bufferKey(song),credential)}.getOrNull()
         plannedNext=null
         if(warm!=null){note("warm");activate(warm,song,position,version,credential);return}
+        // Also cover next/previous, restored queues and wave transitions, not only row taps.
+        StreamUrlPreloader.preload(this, queue.drop(position).take(2))
         message="Загружаем трек…";publish()
         worker.execute {
             if(version!=generation)return@execute
