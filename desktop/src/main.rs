@@ -168,15 +168,15 @@ impl eframe::App for App {
                 ui.add_space(8.0);
 
                 ui.label(egui::RichText::new("МУЗЫКА").small().weak().strong());
-                if navigation_button(ui, self.screen == Screen.Home, "⌂   Главная").clicked()
+                if navigation_button(ui, self.screen == Screen::Home, "⌂   Главная").clicked()
                 {
                     self.screen = Screen::Home;
                 }
-                if navigation_button(ui, self.screen == Screen.Search, "⌕   Поиск").clicked()
+                if navigation_button(ui, self.screen == Screen::Search, "⌕   Поиск").clicked()
                 {
                     self.screen = Screen::Search;
                 }
-                if navigation_button(ui, self.screen == Screen.Library, "♡   Коллекция").clicked()
+                if navigation_button(ui, self.screen == Screen::Library, "♡   Коллекция").clicked()
                 {
                     self.screen = Screen::Library;
                     if self.connected && !self.jobs.busy() {
@@ -184,11 +184,11 @@ impl eframe::App for App {
                         request = Some(("likes".into(), String::new()));
                     }
                 }
-                if navigation_button(ui, self.screen == Screen.Wave, "✦   Моя волна").clicked()
+                if navigation_button(ui, self.screen == Screen::Wave, "✦   Моя волна").clicked()
                 {
                     self.screen = Screen::Wave;
                 }
-                if navigation_button(ui, self.screen == Screen.Queue, "≡   Очередь").clicked()
+                if navigation_button(ui, self.screen == Screen::Queue, "≡   Очередь").clicked()
                 {
                     self.screen = Screen::Queue;
                 }
