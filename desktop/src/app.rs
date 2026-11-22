@@ -230,6 +230,12 @@ impl App {
         });
     }
 
+    #[cfg(all(target_os = "windows", target_vendor = "win7"))]
+    pub(crate) fn install_update(&mut self) -> Result<(), String> {
+        Err("Автоустановка отключена для экспериментальных Windows 7/8/8.1: распакуйте проверенный ZIP вручную после закрытия приложения".into())
+    }
+
+    #[cfg(not(all(target_os = "windows", target_vendor = "win7")))]
     pub(crate) fn install_update(&mut self) -> Result<(), String> {
         let archive = self.update_archive.as_ref().ok_or("Сначала скачайте и проверьте обновление")?;
         if !archive.is_file() { return Err("Проверенный архив больше не найден".into()); }
