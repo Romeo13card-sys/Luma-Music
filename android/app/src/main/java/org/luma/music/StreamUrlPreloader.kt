@@ -94,7 +94,7 @@ internal object StreamUrlPreloader {
         if (token.isBlank() || song.uri != null) return
         val future = pending[song.id] ?: return
         try {
-            future.get(1500, TimeUnit.MILLISECONDS)
+            future.get(300, TimeUnit.MILLISECONDS)
         } catch (_: Exception) {
             // A speculative failure never blocks the normal playback fallback.
         } finally {
