@@ -20,6 +20,7 @@ internal class TrackListRenderer(
     private val initialIndex: Int,
     private val mutedColor: Int,
     private val onSelect: (List<Song>, Int) -> Unit,
+    private val onVisible: (List<Song>) -> Unit,
     private val onUnavailable: () -> Unit,
     private val onTrackMenu: (Song) -> Unit,
     private val formatRange: (Int, Int, Int) -> String,
@@ -35,6 +36,7 @@ internal class TrackListRenderer(
         fun showPage(start: Int) {
             host.removeAllViews()
             trackMarkers.clear()
+            onVisible(songs.drop(start).take(pageSize))
             songs.drop(start).take(pageSize).forEachIndexed { offset, song ->
                 val index = start + offset
                 val item = SongRow(context).apply { bind(song) }
