@@ -78,7 +78,11 @@ impl App {
                             let snapshot = [
                                 (
                                     "АККАУНТ",
-                                    if self.connected { "Подключён" } else { "Не подключён" },
+                                    if self.connected {
+                                        "Подключён".to_owned()
+                                    } else {
+                                        "Не подключён".to_owned()
+                                    },
                                     Screen::Settings,
                                 ),
                                 (
