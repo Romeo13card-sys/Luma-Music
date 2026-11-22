@@ -90,15 +90,4 @@ internal object StreamUrlPreloader {
         }
     }
 
-    fun awaitIfPending(song: Song, token: String) {
-        if (token.isBlank() || song.uri != null) return
-        val future = pending[song.id] ?: return
-        try {
-            future.get(300, TimeUnit.MILLISECONDS)
-        } catch (_: Exception) {
-            // A speculative failure never blocks the normal playback fallback.
-        } finally {
-            pending.remove(song.id, future)
-        }
-    }
 }
