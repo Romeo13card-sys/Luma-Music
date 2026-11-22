@@ -74,6 +74,63 @@ impl App {
                                         self.screen = Screen::Wave;
                                     }
                                 });
+                            ui.add_space(14.0);
+                            let snapshot = [
+                                (
+                                    "АККАУНТ",
+                                    if self.connected { "Подключён" } else { "Не подключён" },
+                                    Screen::Settings,
+                                ),
+                                (
+                                    "ОЧЕРЕДЬ",
+                                    if self.queue.is_empty() {
+                                        "Пока пуста".to_owned()
+                                    } else {
+                                        format!("{} треков", self.queue.len())
+                                    },
+                                    Screen::Queue,
+                                ),
+                                (
+                                    "КАТАЛОГ",
+                                    if self.tracks.is_empty() {
+                                        "Откройте поиск".to_owned()
+                                    } else {
+                                        format!("{} результатов", self.tracks.len())
+                                    },
+                                    Screen::Search,
+                                ),
+                            ];
+                            ui.horizontal_wrapped(|ui| {
+                                for (label, value, destination) in snapshot {
+                                    egui::Frame::group(ui.style())
+                                        .fill(ui.visuals().window_fill)
+                                        .stroke(egui::Stroke::new(
+                                            1.0,
+                                            ui.visuals().widgets.noninteractive.bg_stroke.color,
+                                        ))
+                                        .inner_margin(egui::Margin::same(12.0))
+                                        .show(ui, |ui| {
+                                            ui.set_min_width(148.0);
+                                            ui.label(
+                                                egui::RichText::new(label)
+                                                    .small()
+                                                    .strong()
+                                                    .color(egui::Color32::from_rgb(255, 190, 45)),
+                                            );
+                                            if ui
+                                                .add_sized(
+                                                    [148.0, 34.0],
+                                                    egui::Button::new(
+                                                        egui::RichText::new(value).strong(),
+                                                    ),
+                                                )
+                                                .clicked()
+                                            {
+                                                self.screen = destination;
+                                            }
+                                        });
+                                }
+                            });
                             ui.add_space(18.0);
                             ui.heading(egui::RichText::new("Быстрый доступ").size(21.0).strong());
                             ui.horizontal_wrapped(|ui| {
