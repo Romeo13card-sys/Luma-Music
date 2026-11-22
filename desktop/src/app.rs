@@ -437,7 +437,7 @@ fn download_latest_desktop_release() -> Result<String, String> {
     if !raw_version.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'.' || byte == b'-') {
         return Err("Некорректная версия релиза".into());
     }
-    let version = if !raw_version.contains('-') && raw_version.ends_with(".0") {
+    let version = if !raw_version.contains('-') && raw_version.matches('.').count() == 2 && raw_version.ends_with(".0") {
         &raw_version[..raw_version.len() - 2]
     } else {
         raw_version
