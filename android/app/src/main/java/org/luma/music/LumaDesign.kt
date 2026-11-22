@@ -5,7 +5,7 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 
 /**
- * Shared visual tokens for the Luma 2.0 native interface.
+ * Shared visual tokens for the native Luma interface.
  * Components stay opaque and cheap to draw on low-memory Android devices.
  */
 object LumaDesign {
@@ -46,6 +46,9 @@ object LumaDesign {
     fun trackCard(playing: Boolean, radius: Float = CARD_RADIUS_DP.toFloat()): GradientDrawable {
         val palette = AppThemes.active
         val fill = when {
+            playing && palette.light -> 0xFFFFF8E6.toInt()
+            playing && palette.oled -> 0xFF17130A.toInt()
+            playing -> 0xFF242016.toInt()
             palette.light -> 0xFFFFFFFF.toInt()
             palette.oled -> 0xFF090B0F.toInt()
             else -> 0xFF171C24.toInt()
