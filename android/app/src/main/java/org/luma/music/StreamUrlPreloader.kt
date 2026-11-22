@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import org.json.JSONObject
+import java.security.MessageDigest
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.RejectedExecutionException
@@ -39,10 +40,9 @@ internal object StreamUrlPreloader {
             .distinctBy { it.id }
             .take(2)
             .forEach { song ->
-                if (!pending.add(song.id)) return@forEach
-
                 try {
                     executor.execute {
+                        var pendingKey: String? = null
                         try {
                             val token = TokenStore(app).load().orEmpty()
                             if (token.isNotBlank()) {
@@ -52,12 +52,19 @@ internal object StreamUrlPreloader {
                                 val hasInternet = capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
                                 val metered = network.isActiveNetworkMetered
                                 val prefs = SettingsStore.get(app)
+                                val bitrate = quality(app, metered)
+                                val accountScope = MessageDigest.getInstance("SHA-256")
+                                    .digest(token.toByteArray(Charsets.UTF_8))
+                                    .joinToString("") { byte -> "%02x".format(byte) }
+                                val key = "${song.id}:$bitrate:$accountScope"
+                                if (!pending.add(key)) return@execute
+                                pendingKey = key
                                 if (hasInternet && !(prefs.getBoolean("unmetered_only", false) && metered) &&
                                     OfflineDownloads.ready(app, song.id) == null
                                 ) {
                                     val args = JSONObject()
                                         .put("id", song.id)
-                                        .put("quality", quality(app, metered))
+                                        .put("quality", bitrate)
                                     val reply = JSONObject(Native.request(token, "stream_quality", args.toString()))
                                     check(reply.optBoolean("ok")) {
                                         reply.optString("error", "Не удалось подготовить поток")
@@ -67,12 +74,10 @@ internal object StreamUrlPreloader {
                         } catch (_: Exception) {
                             // Speculative warmup failures never block normal playback.
                         } finally {
-                            pending.remove(song.id)
+                            pendingKey?.let(pending::remove)
                         }
                     }
-                } catch (_: RejectedExecutionException) {
-                    pending.remove(song.id)
-                }
+                } catch (_: RejectedExecutionException) { }
             }
     }
 }
