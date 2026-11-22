@@ -323,8 +323,9 @@ impl App {
                     self.update_busy = false;
                     match result {
                         Ok((status, url)) => {
+                            let has_update = status.starts_with("Доступна новая версия ");
                             self.update_status = status;
-                            self.update_url = Some(url);
+                            self.update_url = has_update.then_some(url);
                         }
                         Err(error) => {
                             self.update_status = error;
