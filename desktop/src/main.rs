@@ -73,14 +73,18 @@ impl eframe::App for App {
                 ui.add_space(5.0);
                 ui.horizontal(|ui| {
                     ui.label(
-                        egui::RichText::new(if self.connected { "● ONLINE" } else { "○ OFFLINE" })
-                            .small()
-                            .strong()
-                            .color(if self.connected {
-                                egui::Color32::from_rgb(255, 216, 77)
-                            } else {
-                                ui.visuals().weak_text_color()
-                            }),
+                        egui::RichText::new(if self.connected {
+                            "● ONLINE"
+                        } else {
+                            "○ OFFLINE"
+                        })
+                        .small()
+                        .strong()
+                        .color(if self.connected {
+                            egui::Color32::from_rgb(255, 216, 77)
+                        } else {
+                            ui.visuals().weak_text_color()
+                        }),
                     );
                     ui.separator();
                     let search_width = ui.available_width().min(390.0);
@@ -91,7 +95,11 @@ impl eframe::App for App {
                     );
                     let enter = search.lost_focus()
                         && ui.input(|input| input.key_pressed(egui::Key::Enter));
-                    if ui.add_sized([76.0, 34.0], egui::Button::new("Найти")).clicked() || enter {
+                    if ui
+                        .add_sized([76.0, 34.0], egui::Button::new("Найти"))
+                        .clicked()
+                        || enter
+                    {
                         if !self.query.trim().is_empty() && !self.jobs.busy() {
                             self.screen = Screen::Search;
                             request = Some(("search".into(), self.query.trim().to_owned()));
@@ -250,51 +258,61 @@ impl eframe::App for App {
                                     })
                                     .strong(),
                                 );
-                                if let Some(track) = self
-                                    .queue
-                                    .get(self.index.unwrap_or(usize::MAX))
+                                if let Some(track) =
+                                    self.queue.get(self.index.unwrap_or(usize::MAX))
                                 {
                                     ui.label(
-                                        egui::RichText::new(track["artists"].as_str().unwrap_or(""))
-                                            .small()
-                                            .weak(),
+                                        egui::RichText::new(
+                                            track["artists"].as_str().unwrap_or(""),
+                                        )
+                                        .small()
+                                        .weak(),
                                     );
                                 }
                             });
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                if ui.button("⏭").clicked() {
-                                    self.adjacent(1);
-                                }
-                                let playing = self.player.as_ref()
-                                    .is_some_and(|p| !p.sink.is_paused() && !p.sink.empty());
-                                if ui
-                                    .add(
-                                        egui::Button::new(
-                                            egui::RichText::new(if playing { "Ⅱ" } else { "▶" })
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    if ui.button("⏭").clicked() {
+                                        self.adjacent(1);
+                                    }
+                                    let playing = self
+                                        .player
+                                        .as_ref()
+                                        .is_some_and(|p| !p.sink.is_paused() && !p.sink.empty());
+                                    if ui
+                                        .add(
+                                            egui::Button::new(
+                                                egui::RichText::new(if playing {
+                                                    "Ⅱ"
+                                                } else {
+                                                    "▶"
+                                                })
                                                 .size(19.0)
                                                 .strong()
                                                 .color(egui::Color32::from_rgb(24, 27, 32)),
+                                            )
+                                            .fill(egui::Color32::from_rgb(255, 216, 77)),
                                         )
-                                        .fill(egui::Color32::from_rgb(255, 216, 77)),
-                                    )
-                                    .clicked()
-                                {
-                                    if let Some(player) = &self.player {
-                                        if player.sink.is_paused() {
-                                            player.sink.play();
-                                        } else {
-                                            player.sink.pause();
+                                        .clicked()
+                                    {
+                                        if let Some(player) = &self.player {
+                                            if player.sink.is_paused() {
+                                                player.sink.play();
+                                            } else {
+                                                player.sink.pause();
+                                            }
                                         }
                                     }
-                                }
-                                if ui.button("⏮").clicked() {
-                                    self.adjacent(-1);
-                                }
-                                if ui.button("■").clicked() {
-                                    self.jobs.cancel();
-                                    self.stop();
-                                }
-                            });
+                                    if ui.button("⏮").clicked() {
+                                        self.adjacent(-1);
+                                    }
+                                    if ui.button("■").clicked() {
+                                        self.jobs.cancel();
+                                        self.stop();
+                                    }
+                                },
+                            );
                         });
                         if let (Some(player), Some(duration)) =
                             (&self.player, self.duration.filter(|d| !d.is_zero()))
