@@ -32,8 +32,10 @@ internal class SearchScreen(
     private val notify: (String) -> Unit,
 ) {
     fun render() {
-        target.addView(text("Поиск", 30f, textColor, true, false))
-        target.addView(text("Весь каталог Яндекс Музыки", 13f, mutedColor, false, false))
+        target.addView(text("DISCOVER  /  LUMA CATALOG", 10f, AppThemes.active.accent, true, true))
+        target.addView(text("Найди свой звук", 31f, textColor, true, false))
+        target.addView(text("Треки, альбомы, исполнители и плейлисты в одном поиске.", 13f, mutedColor, false, false))
+        gap(target, 8)
         val box = EditText(context).apply {
             hint = translate("Трек, альбом, исполнитель или плейлист")
             setHintTextColor(mutedColor)
@@ -43,7 +45,12 @@ internal class SearchScreen(
             setPadding(dp(16), dp(12), dp(16), dp(12))
             imeOptions = EditorInfo.IME_ACTION_SEARCH
         }
-        target.addView(box)
+        val searchSurface = column().apply {
+            background = surface(dp(22).toFloat())
+            setPadding(dp(10), dp(10), dp(10), dp(10))
+        }
+        searchSurface.addView(box)
+        target.addView(searchSurface)
 
         val categories = listOf(
             "track" to "Треки",
@@ -153,7 +160,10 @@ internal class SearchScreen(
             }
         }
         gap(target, 8)
-        target.addView(action("Искать", true) { runCatalogSearch() })
+        target.addView(
+            action("Найти музыку", true) { runCatalogSearch() },
+            LinearLayout.LayoutParams(-1, -2),
+        )
         gap(target, 8)
         target.addView(pageStatus)
         target.addView(results)
