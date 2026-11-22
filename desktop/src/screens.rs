@@ -7,6 +7,7 @@ pub(crate) struct ScreenActions {
     pub(crate) selected_track: Option<usize>,
     pub(crate) play_queue: bool,
     pub(crate) check_updates: bool,
+    pub(crate) download_update: bool,
 }
 
 impl App {
@@ -15,6 +16,7 @@ impl App {
         let mut selected_track: Option<usize> = None;
         let mut play_queue = false;
         let mut check_updates = false;
+        let mut download_update = false;
 
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::vertical()
@@ -415,6 +417,14 @@ impl App {
                                     if let Some(url) = &self.update_url {
                                         ui.hyperlink_to("Открыть страницу релиза", url);
                                     }
+                                    if self.update_url.is_some() {
+                                        if ui.add_enabled(!self.download_busy, egui::Button::new("Скачать обновление и проверить SHA-256")).clicked() {
+                                            download_update = true;
+                                        }
+                                    }
+                                    if !self.download_status.is_empty() {
+                                        ui.label(egui::RichText::new(&self.download_status).small().weak());
+                                    }
                                     ui.label(
                                         egui::RichText::new(
                                             "Новые сборки для Windows, macOS и Linux публикуются вместе с релизом Luma Music.",
@@ -441,6 +451,7 @@ impl App {
             selected_track,
             play_queue,
             check_updates,
+            download_update,
         }
     }
 }
