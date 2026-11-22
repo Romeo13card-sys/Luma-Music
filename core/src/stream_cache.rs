@@ -93,6 +93,16 @@ pub fn resolve(
     quality: u64,
     fetch: impl FnOnce() -> Result<String>,
 ) -> Result<String> {
+    resolve_with_cache(&CACHE, token, id, quality, fetch)
+}
+
+fn resolve_with_cache(
+    store: &Mutex<Option<Cache>>,
+    token: &str,
+    id: &str,
+    quality: u64,
+    fetch: impl FnOnce() -> Result<String>,
+) -> Result<String> {
     if id.is_empty()
         || id.len() > 64
         || !id.bytes().all(|b| b.is_ascii_digit())
@@ -102,7 +112,7 @@ pub fn resolve(
     }
 
     let (key, flight, owner) = {
-        let mut guard = CACHE.lock().map_err(|_| "Кэш аудио занят")?;
+        let mut guard = store.lock().map_err(|_| "Кэш аудио занят")?;
         let cache = guard.get_or_insert_with(Cache::default);
         cache.select(token);
         if let Some(url) = cache.get(id, quality) {
@@ -132,7 +142,7 @@ pub fn resolve(
     });
 
     if let Ok(url) = &result {
-        if let Ok(mut guard) = CACHE.lock() {
+        if let Ok(mut guard) = store.lock() {
             if let Some(cache) = guard
                 .as_mut()
                 .filter(|cache| cache.scope == key.0 && cache.epoch == key.1)
@@ -143,7 +153,7 @@ pub fn resolve(
     }
 
     flight.finish(result.clone());
-    if let Ok(mut guard) = CACHE.lock() {
+    if let Ok(mut guard) = store.lock() {
         if let Some(cache) = guard.as_mut() {
             if cache
                 .inflight
@@ -188,13 +198,16 @@ mod tests {
     fn concurrent_requests_share_one_stream_resolution() {
         let calls = Arc::new(AtomicUsize::new(0));
         let barrier = Arc::new(std::sync::Barrier::new(8));
+        let cache = Arc::new(Mutex::new(None));
         let workers: Vec<_> = (0..8)
             .map(|_| {
                 let calls = Arc::clone(&calls);
                 let barrier = Arc::clone(&barrier);
+                let cache = Arc::clone(&cache);
                 thread::spawn(move || {
                     barrier.wait();
-                    resolve(
+                    resolve_with_cache(
+                        &cache,
                         "stream-cache-dedupe-test-account",
                         "9876543210123",
                         192,
