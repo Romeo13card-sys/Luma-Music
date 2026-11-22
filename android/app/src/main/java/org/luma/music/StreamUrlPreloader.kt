@@ -19,6 +19,9 @@ import java.util.concurrent.TimeUnit
  * coordinator only deduplicates in-flight warmups so a tap can reuse the
  * result instead of issuing a second download-info request.
  */
+internal fun isAsciiNumericTrackId(id: String): Boolean =
+    id.isNotEmpty() && id.all { digit -> digit in '0'..'9' }
+
 internal object StreamUrlPreloader {
     private val pending = ConcurrentHashMap<String, CompletableFuture<Unit>>()
     private val executor = ThreadPoolExecutor(
@@ -56,7 +59,7 @@ internal object StreamUrlPreloader {
         val selectedQuality = quality(app)
 
         songs.asSequence()
-            .filter { it.available && it.uri == null && it.id.isNotBlank() && it.id.all { digit -> digit in '0'..'9' } }
+            .filter { it.available && it.uri == null && isAsciiNumericTrackId(it.id) }
             .distinctBy { it.id }
             .take(2)
             .forEach { song ->
