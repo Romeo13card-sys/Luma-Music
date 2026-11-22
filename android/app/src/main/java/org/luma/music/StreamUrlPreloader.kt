@@ -74,8 +74,8 @@ internal object StreamUrlPreloader {
                         } catch (error: Exception) {
                             future.completeExceptionally(error)
                         } finally {
-                            // Keep a completed future briefly available to a tap that
-                            // raced the warmup; the Rust cache handles URL expiry.
+                            // Retain successful completion until the next preload attempt;
+                            // the Rust cache remains responsible for URL expiry.
                             if (future.isCompletedExceptionally) pending.remove(song.id, future)
                         }
                     }
@@ -89,5 +89,4 @@ internal object StreamUrlPreloader {
             pending.entries.firstOrNull { it.value.isDone }?.let { pending.remove(it.key, it.value) }
         }
     }
-
 }
