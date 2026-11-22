@@ -119,7 +119,19 @@ internal class SearchScreen(
                 } else {
                     "Страница ${requestPage + 1} · результатов: ${items.length()}"
                 }
-                renderResults(results, items, requestKind)
+                if (items.length() == 0) {
+                    results.addView(
+                        text(
+                            "Ничего не найдено. Попробуйте изменить запрос.",
+                            14f,
+                            mutedColor,
+                            false,
+                            false,
+                        ),
+                    )
+                } else {
+                    renderResults(results, items, requestKind)
+                }
                 updateNavigation()
             }
         }
