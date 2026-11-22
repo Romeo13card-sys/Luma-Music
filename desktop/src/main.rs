@@ -235,7 +235,7 @@ impl eframe::App for App {
         selected_track = screen_actions.selected_track;
         play_queue = screen_actions.play_queue;
         if screen_actions.check_updates {
-            self.check_updates();
+            self.check_updates(ctx.clone());
         }
 
         egui::TopBottomPanel::bottom("luma_player")
