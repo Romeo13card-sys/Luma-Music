@@ -396,7 +396,7 @@ for item in "$stage"/* "$stage"/.[!.]* "$stage"/..?*; do
         mv "$target" "$backup/$name" || { rollback; exit 3; }
         had_old=1
     fi
-    if ! printf '%s\\n' "$name" >> "$touched"; then
+    if ! printf '%s\n' "$name" >> "$touched"; then
         if [ "$had_old" -eq 1 ]; then mv "$backup/$name" "$target"; fi
         rollback
         exit 3
