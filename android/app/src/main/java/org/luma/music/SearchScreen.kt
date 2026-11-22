@@ -5,6 +5,7 @@ import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
+import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import org.json.JSONArray
 import org.json.JSONObject
@@ -59,7 +60,12 @@ internal class SearchScreen(
             "playlist" to "Плейлисты",
         )
         val categoryRow = row()
-        target.addView(categoryRow)
+        val categoryScroll = HorizontalScrollView(context).apply {
+            isHorizontalScrollBarEnabled = false
+            clipToPadding = false
+        }
+        categoryScroll.addView(categoryRow, HorizontalScrollView.LayoutParams(-2, -2))
+        target.addView(categoryScroll, LinearLayout.LayoutParams(-1, -2))
         val results = column()
         val pageStatus = text("", 12f, mutedColor, false, false)
         var selectedKind = "track"
@@ -146,8 +152,8 @@ internal class SearchScreen(
                         drawCategories()
                         runCatalogSearch()
                     },
-                    LinearLayout.LayoutParams(0, -2, 1f).apply {
-                        rightMargin = dp(4)
+                    LinearLayout.LayoutParams(-2, -2).apply {
+                        rightMargin = dp(6)
                         topMargin = dp(8)
                     },
                 )

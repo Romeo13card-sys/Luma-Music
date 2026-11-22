@@ -299,7 +299,7 @@ param([string]$Archive, [int]$ProcessId, [string]$Executable, [string]$InstallDi
 $ErrorActionPreference = 'Stop'
 while (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 500 }
 $Stage = Join-Path $env:TEMP ('luma-update-' + [guid]::NewGuid().ToString('N'))
-$Backup = Join-Path $env:TEMP ('luma-backup-' + [guid]::NewGuid().ToString('N'))
+$Backup = Join-Path $InstallDir ('.luma-update-backup-' + [guid]::NewGuid().ToString('N'))
 $Touched = New-Object System.Collections.Generic.List[string]
 $BackedUp = New-Object System.Collections.Generic.List[string]
 $RollbackFailed = $false
@@ -312,11 +312,11 @@ try {
     New-Item -ItemType Directory -Path $Backup -Force | Out-Null
     foreach ($Item in Get-ChildItem -LiteralPath $Stage -Force) {
         $Target = Join-Path $InstallDir $Item.Name
-        $Touched.Add($Target)
         if (Test-Path -LiteralPath $Target) {
             Move-Item -LiteralPath $Target -Destination (Join-Path $Backup $Item.Name)
             $BackedUp.Add($Target)
         }
+        $Touched.Add($Target)
         Copy-Item -LiteralPath $Item.FullName -Destination $Target -Recurse -Force
     }
     Remove-Item -LiteralPath $Stage,$Backup -Recurse -Force
@@ -373,8 +373,15 @@ try {
 archive="$1"; pid="$2"; executable="$3"; install_dir="$4"; stage="$5"
 exec >> "$HOME/luma-update.log" 2>&1
 while kill -0 "$pid" 2>/dev/null; do sleep 0.5; done
-backup="${stage}.backup"
-mkdir -p "$stage" "$backup" || exit 1
+backup="$install_dir/.luma-update-backup-$pid"
+touched="$backup.touched"
+if [ -e "$stage" ] || [ -L "$stage" ] || [ -e "$backup" ] || [ -L "$backup" ] || [ -e "$touched" ] || [ -L "$touched" ]; then
+    echo "A previous update staging or backup exists; refusing to overwrite"
+    exit 8
+fi
+mkdir -p "$stage" || exit 1
+if ! mkdir "$backup"; then rm -rf "$stage"; exit 1; fi
+if ! : > "$touched"; then rm -rf "$stage" "$backup"; exit 1; fi
 if command -v unzip >/dev/null 2>&1; then
     unzip -q "$archive" -d "$stage" || exit 2
 elif command -v python3 >/dev/null 2>&1; then
@@ -384,7 +391,6 @@ else
     exit 2
 fi
 "$stage/luma-desktop" --self-check >/dev/null || exit 5
-touched="$backup/touched"
 rollback() {
     while IFS= read -r name; do
         [ -n "$name" ] || continue
@@ -413,7 +419,7 @@ for item in "$stage"/* "$stage"/.[!.]* "$stage"/..?*; do
         exit 3
     fi
 done
-rm -rf "$stage" "$backup" "$archive"
+rm -rf "$stage" "$backup" "$touched" "$archive"
 cd "$install_dir" || exit 4
 "$executable" >/dev/null 2>&1 &
 rm -f "$0"
@@ -440,14 +446,17 @@ rm -f "$0"
 archive="$1"; pid="$2"; app="$3"; stage="$4"
 exec >> "$HOME/luma-update.log" 2>&1
 while kill -0 "$pid" 2>/dev/null; do sleep 0.5; done
+backup="$app.luma-backup"
+if [ -e "$stage" ] || [ -L "$stage" ] || [ -e "$backup" ] || [ -L "$backup" ]; then
+    echo "A previous update staging or backup exists; refusing to overwrite"
+    exit 8
+fi
 mkdir -p "$stage" || exit 1
 ditto -x -k "$archive" "$stage" || exit 2
 new_app="$stage/Luma Music.app"
 [ -x "$new_app/Contents/MacOS/LumaMusic" ] || exit 5
 "$new_app/Contents/MacOS/LumaMusic" --self-check >/dev/null || exit 6
 /usr/bin/codesign --verify --deep "$new_app" || exit 7
-backup="$app.luma-backup"
-rm -rf "$backup"
 mv "$app" "$backup" || exit 3
 if ! ditto --rsrc --extattr "$new_app" "$app"; then
     rm -rf "$app"
