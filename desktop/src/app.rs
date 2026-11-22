@@ -164,8 +164,13 @@ impl App {
                 if !response.status().is_success() {
                     return Err(format!("GitHub вернул HTTP {}", response.status().as_u16()));
                 }
-                let release: Value = response
-                    .json()
+                let body = response
+                    .text()
+                    .map_err(|_| "Не удалось прочитать ответ GitHub")?;
+                if body.len() > 1024 * 1024 {
+                    return Err("Ответ GitHub слишком большой".into());
+                }
+                let release: Value = serde_json::from_str(&body)
                     .map_err(|_| "GitHub вернул некорректные данные релиза")?;
                 let tag = release["tag_name"]
                     .as_str()
