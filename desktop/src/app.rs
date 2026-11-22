@@ -2,7 +2,9 @@ use crate::engine::Jobs;
 use crate::player::{prepare_audio, Player, Reply};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use std::{fs, io::{Read, Write}, path::{Path, PathBuf}, sync::mpsc, time::Duration};
+#[cfg(target_os = "macos")]
+use std::path::Path;
+use std::{fs, io::{Read, Write}, path::PathBuf, sync::mpsc, time::Duration};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Screen {
@@ -224,16 +226,18 @@ impl App {
         let archive = self.update_archive.as_ref().ok_or("Сначала скачайте и проверьте обновление")?;
         if !archive.is_file() { return Err("Проверенный архив больше не найден".into()); }
         let executable = std::env::current_exe().map_err(|_| "Не удалось определить путь приложения")?;
+        #[cfg(any(target_os = "windows", target_os = "linux"))]
         let install_dir = executable.parent().ok_or("Не удалось определить каталог приложения")?;
         #[cfg(target_os = "macos")]
         let install_target = executable.parent().and_then(Path::parent).and_then(Path::parent)
             .filter(|path| path.extension().is_some_and(|ext| ext == "app"))
             .ok_or("Приложение запущено не из стандартного .app bundle")?;
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(any(target_os = "windows", target_os = "linux"))]
         let install_target = install_dir;
         let _write_probe = tempfile::NamedTempFile::new_in(install_target)
             .map_err(|_| "Нет прав на запись в каталог приложения. Распакуйте portable-версию в пользовательскую папку")?;
         let pid = std::process::id();
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         let temp = std::env::temp_dir();
         #[cfg(target_os = "windows")]
         {
