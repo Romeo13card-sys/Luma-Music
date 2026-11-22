@@ -299,11 +299,12 @@ param([string]$Archive, [int]$ProcessId, [string]$Executable, [string]$InstallDi
 $ErrorActionPreference = 'Stop'
 while (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 500 }
 $Stage = Join-Path $env:TEMP ('luma-update-' + [guid]::NewGuid().ToString('N'))
-$Backup = Join-Path $InstallDir ('.luma-update-backup-' + [guid]::NewGuid().ToString('N'))
+$Backup = Join-Path $InstallDir '.luma-update-backup'
 $Touched = New-Object System.Collections.Generic.List[string]
 $BackedUp = New-Object System.Collections.Generic.List[string]
-$RollbackFailed = $false
+$RollbackFailed = Test-Path -LiteralPath $Backup
 try {
+    if ($RollbackFailed) { throw "A previous update backup exists at ${Backup}; restore it before retrying" }
     Expand-Archive -LiteralPath $Archive -DestinationPath $Stage -Force
     $Candidate = Join-Path $Stage 'luma-desktop.exe'
     if (-not (Test-Path -LiteralPath $Candidate)) { throw 'Archive does not contain luma-desktop.exe' }
@@ -373,7 +374,7 @@ try {
 archive="$1"; pid="$2"; executable="$3"; install_dir="$4"; stage="$5"
 exec >> "$HOME/luma-update.log" 2>&1
 while kill -0 "$pid" 2>/dev/null; do sleep 0.5; done
-backup="$install_dir/.luma-update-backup-$pid"
+backup="$install_dir/.luma-update-backup"
 touched="$backup.touched"
 if [ -e "$stage" ] || [ -L "$stage" ] || [ -e "$backup" ] || [ -L "$backup" ] || [ -e "$touched" ] || [ -L "$touched" ]; then
     echo "A previous update staging or backup exists; refusing to overwrite"
@@ -383,22 +384,35 @@ mkdir -p "$stage" || exit 1
 if ! mkdir "$backup"; then rm -rf "$stage"; exit 1; fi
 if ! : > "$touched"; then rm -rf "$stage" "$backup"; exit 1; fi
 if command -v unzip >/dev/null 2>&1; then
-    unzip -q "$archive" -d "$stage" || exit 2
+    unzip -q "$archive" -d "$stage" || { rm -rf "$stage" "$backup" "$touched"; exit 2; }
 elif command -v python3 >/dev/null 2>&1; then
-    python3 -m zipfile -e "$archive" "$stage" || exit 2
+    python3 -m zipfile -e "$archive" "$stage" || { rm -rf "$stage" "$backup" "$touched"; exit 2; }
 else
     echo "Neither unzip nor python3 is available"
+    rm -rf "$stage" "$backup" "$touched"
     exit 2
 fi
-"$stage/luma-desktop" --self-check >/dev/null || exit 5
+"$stage/luma-desktop" --self-check >/dev/null || { rm -rf "$stage" "$backup" "$touched"; exit 5; }
 rollback() {
+    failed=0
     while IFS= read -r name; do
         [ -n "$name" ] || continue
-        rm -rf "$install_dir/$name"
+        rm -rf "$install_dir/$name" || failed=1
         if [ -e "$backup/$name" ] || [ -L "$backup/$name" ]; then
-            mv "$backup/$name" "$install_dir/$name" || echo "Rollback failed for $name"
+            mv "$backup/$name" "$install_dir/$name" || { echo "Rollback failed for $name"; failed=1; }
         fi
     done < "$touched"
+    if [ "$failed" -eq 0 ]; then
+        if rmdir "$backup" 2>/dev/null; then
+            rm -f "$touched"
+        else
+            echo "Recovery backup preserved at $backup"
+            failed=1
+        fi
+    else
+        echo "Recovery backup preserved at $backup"
+    fi
+    return "$failed"
 }
 for item in "$stage"/* "$stage"/.[!.]* "$stage"/..?*; do
     [ -e "$item" ] || [ -L "$item" ] || continue
@@ -406,16 +420,18 @@ for item in "$stage"/* "$stage"/.[!.]* "$stage"/..?*; do
     target="$install_dir/$name"
     had_old=0
     if [ -e "$target" ] || [ -L "$target" ]; then
-        mv "$target" "$backup/$name" || { rollback; exit 3; }
+        mv "$target" "$backup/$name" || { rollback; rm -rf "$stage"; exit 3; }
         had_old=1
     fi
     if ! printf '%s\n' "$name" >> "$touched"; then
-        if [ "$had_old" -eq 1 ]; then mv "$backup/$name" "$target"; fi
+        if [ "$had_old" -eq 1 ]; then mv "$backup/$name" "$target" || echo "Rollback failed for $name"; fi
         rollback
+        rm -rf "$stage"
         exit 3
     fi
     if ! cp -a "$item" "$target"; then
         rollback
+        rm -rf "$stage"
         exit 3
     fi
 done

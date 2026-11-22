@@ -64,7 +64,7 @@ internal class SearchScreen(
             isHorizontalScrollBarEnabled = false
             clipToPadding = false
         }
-        categoryScroll.addView(categoryRow, HorizontalScrollView.LayoutParams(-2, -2))
+        categoryScroll.addView(categoryRow, android.widget.FrameLayout.LayoutParams(-2, -2))
         target.addView(categoryScroll, LinearLayout.LayoutParams(-1, -2))
         val results = column()
         val pageStatus = text("", 12f, mutedColor, false, false)
