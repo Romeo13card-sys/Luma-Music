@@ -93,7 +93,9 @@ internal class FullPlayerScreen(
 
         val artworkCard = panel(body).apply {
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(16), dp(16), dp(16), dp(16))
+            background = LumaDesign.heroCard(dp(26).toFloat())
+            setPadding(dp(18), dp(18), dp(18), dp(18))
+            elevation = dp(2).toFloat()
         }
         val cover = AlbumArt(context).apply {
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
