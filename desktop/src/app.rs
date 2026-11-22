@@ -37,6 +37,28 @@ pub(crate) struct App {
     pub(crate) waiting_end: bool,
     pub(crate) downloaded: u64,
     pub(crate) smoke_until: Option<std::time::Instant>,
+    pub(crate) update_status: String,
+    pub(crate) update_url: Option<String>,
+    pub(crate) update_busy: bool,
+}
+
+fn compare_release_versions(candidate: &str, installed: &str) -> Option<std::cmp::Ordering> {
+    fn parse(raw: &str) -> Option<([u64; 3], bool)> {
+        let raw = raw.strip_prefix('v').unwrap_or(raw);
+        let stable = !raw.contains('-');
+        let core = raw.split(['-', '+']).next()?;
+        let mut parts = core.split('.');
+        let major = parts.next()?.parse().ok()?;
+        let minor = parts.next()?.parse().ok()?;
+        let patch = parts.next()?.parse().ok()?;
+        if parts.next().is_some() {
+            return None;
+        }
+        Some(([major, minor, patch], stable))
+    }
+    let (candidate_version, candidate_stable) = parse(candidate)?;
+    let (installed_version, installed_stable) = parse(installed)?;
+    Some(candidate_version.cmp(&installed_version).then_with(|| candidate_stable.cmp(&installed_stable)))
 }
 
 fn next_available_track_id(queue: &[Value], index: usize) -> Option<&str> {
@@ -75,6 +97,9 @@ impl App {
             waiting_end: false,
             downloaded: 0,
             smoke_until: None,
+            update_status: "Проверка обновлений ещё не выполнялась".into(),
+            update_url: None,
+            update_busy: false,
         }
     }
 
@@ -109,6 +134,55 @@ impl App {
                 Ok(reply["data"].clone())
             })();
             let _ = tx.send(Reply::Data(ticket.id, operation, result));
+        });
+    }
+
+    pub(crate) fn check_updates(&mut self) {
+        if self.update_busy {
+            return;
+        }
+        self.update_busy = true;
+        self.update_status = "Проверяем GitHub Releases…".into();
+        self.update_url = None;
+        let tx = self.tx.clone();
+        let current = crate::app_version().to_owned();
+        std::thread::spawn(move || {
+            let result = (|| {
+                let client = reqwest::blocking::Client::builder()
+                    .connect_timeout(Duration::from_secs(8))
+                    .timeout(Duration::from_secs(15))
+                    .redirect(reqwest::redirect::Policy::none())
+                    .user_agent("Luma-Music-Desktop-Updater")
+                    .build()
+                    .map_err(|_| "Не удалось создать клиент обновлений")?;
+                let response = client
+                    .get("https://api.github.com/repos/Romeo13card-sys/Luma-Music/releases/latest")
+                    .header("Accept", "application/vnd.github+json")
+                    .header("X-GitHub-Api-Version", "2022-11-28")
+                    .send()
+                    .map_err(|_| "Не удалось подключиться к GitHub")?;
+                if !response.status().is_success() {
+                    return Err(format!("GitHub вернул HTTP {}", response.status().as_u16()));
+                }
+                let release: Value = response
+                    .json()
+                    .map_err(|_| "GitHub вернул некорректные данные релиза")?;
+                let tag = release["tag_name"]
+                    .as_str()
+                    .filter(|tag| !tag.is_empty())
+                    .ok_or("В релизе отсутствует версия")?;
+                let url = release["html_url"]
+                    .as_str()
+                    .filter(|url| url.starts_with("https://github.com/Romeo13card-sys/Luma-Music/releases/tag/"))
+                    .ok_or("Некорректная ссылка на релиз")?
+                    .to_owned();
+                match compare_release_versions(tag, &current) {
+                    Some(std::cmp::Ordering::Greater) => Ok((format!("Доступна новая версия {tag}"), url)),
+                    Some(_) => Ok((format!("Установлена актуальная версия ({current})"), url)),
+                    None => Err("Не удалось сравнить версии релиза".into()),
+                }
+            })();
+            let _ = tx.send(Reply::Update(result));
         });
     }
 
@@ -216,6 +290,19 @@ impl App {
                         Err(error) => self.status = error,
                     }
                 }
+                Reply::Update(result) => {
+                    self.update_busy = false;
+                    match result {
+                        Ok((status, url)) => {
+                            self.update_status = status;
+                            self.update_url = Some(url);
+                        }
+                        Err(error) => {
+                            self.update_status = error;
+                            self.update_url = None;
+                        }
+                    }
+                }
                 Reply::Audio(id, result) => {
                     if !self.jobs.matches(id) {
                         continue;
@@ -273,6 +360,14 @@ impl App {
 mod playback_prewarm_tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn release_comparison_handles_versions_and_stable_over_preview() {
+        assert_eq!(compare_release_versions("v2.1.0", "2.0.9"), Some(std::cmp::Ordering::Greater));
+        assert_eq!(compare_release_versions("v2.1.0", "2.1.0-rc.1"), Some(std::cmp::Ordering::Greater));
+        assert_eq!(compare_release_versions("v2.0.0", "2.1.0"), Some(std::cmp::Ordering::Less));
+        assert_eq!(compare_release_versions("bad", "2.0.0"), None);
+    }
 
     #[test]
     fn prewarm_selects_first_available_following_track_only() {
