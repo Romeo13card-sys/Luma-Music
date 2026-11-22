@@ -8,6 +8,7 @@ pub(crate) struct ScreenActions {
     pub(crate) play_queue: bool,
     pub(crate) check_updates: bool,
     pub(crate) download_update: bool,
+    pub(crate) install_update: bool,
 }
 
 impl App {
@@ -17,6 +18,7 @@ impl App {
         let mut play_queue = false;
         let mut check_updates = false;
         let mut download_update = false;
+        let mut install_update = false;
 
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::vertical()
@@ -425,6 +427,11 @@ impl App {
                                     if !self.download_status.is_empty() {
                                         ui.label(egui::RichText::new(&self.download_status).small().weak());
                                     }
+                                    if self.update_archive.is_some() {
+                                        if ui.button("Установить обновление и перезапустить").clicked() {
+                                            install_update = true;
+                                        }
+                                    }
                                     ui.label(
                                         egui::RichText::new(
                                             "Новые сборки для Windows, macOS и Linux публикуются вместе с релизом Luma Music.",
@@ -452,6 +459,7 @@ impl App {
             play_queue,
             check_updates,
             download_update,
+            install_update,
         }
     }
 }
