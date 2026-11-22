@@ -17,6 +17,24 @@ mod player;
 mod screens;
 use player::Reply;
 
+fn navigation_button(ui: &mut egui::Ui, selected: bool, label: &str) -> egui::Response {
+    let accent = egui::Color32::from_rgb(255, 216, 77);
+    let ink = egui::Color32::from_rgb(24, 27, 32);
+    let text_color = if selected { ink } else { ui.visuals().text_color() };
+    let fill = if selected { accent } else { egui::Color32::TRANSPARENT };
+    let stroke = if selected {
+        egui::Stroke::new(1.0, accent)
+    } else {
+        egui::Stroke::NONE
+    };
+    ui.add_sized(
+        [ui.available_width(), 40.0],
+        egui::Button::new(egui::RichText::new(label).color(text_color))
+            .fill(fill)
+            .stroke(stroke),
+    )
+}
+
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         if let Some(deadline) = self.smoke_until {
@@ -142,20 +160,17 @@ impl eframe::App for App {
                 ui.add_space(8.0);
 
                 ui.label(egui::RichText::new("МУЗЫКА").small().weak().strong());
-                if ui
-                    .selectable_label(self.screen == Screen::Home, "⌂   Главная")
+                if navigation_button(ui, self.screen == Screen::Home, "⌂   Главная")
                     .clicked()
                 {
                     self.screen = Screen::Home;
                 }
-                if ui
-                    .selectable_label(self.screen == Screen::Search, "⌕   Поиск")
+                if navigation_button(ui, self.screen == Screen::Search, "⌕   Поиск")
                     .clicked()
                 {
                     self.screen = Screen::Search;
                 }
-                if ui
-                    .selectable_label(self.screen == Screen::Library, "♡   Коллекция")
+                if navigation_button(ui, self.screen == Screen::Library, "♡   Коллекция")
                     .clicked()
                 {
                     self.screen = Screen::Library;
@@ -164,14 +179,12 @@ impl eframe::App for App {
                         request = Some(("likes".into(), String::new()));
                     }
                 }
-                if ui
-                    .selectable_label(self.screen == Screen::Wave, "✦   Моя волна")
+                if navigation_button(ui, self.screen == Screen::Wave, "✦   Моя волна")
                     .clicked()
                 {
                     self.screen = Screen::Wave;
                 }
-                if ui
-                    .selectable_label(self.screen == Screen::Queue, "≡   Очередь")
+                if navigation_button(ui, self.screen == Screen::Queue, "≡   Очередь")
                     .clicked()
                 {
                     self.screen = Screen::Queue;
@@ -214,8 +227,7 @@ impl eframe::App for App {
                 }
 
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
-                    if ui
-                        .selectable_label(self.screen == Screen::Settings, "⚙   Настройки")
+                    if navigation_button(ui, self.screen == Screen::Settings, "⚙   Настройки")
                         .clicked()
                     {
                         self.screen = Screen::Settings;
