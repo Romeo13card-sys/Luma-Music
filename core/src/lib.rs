@@ -1159,6 +1159,11 @@ mod audio_metadata_tests {
             malformed["error"],
             "Не удалось прочитать запрос качества звука"
         );
+
+        let legacy: Value =
+            serde_json::from_str(&dispatch("unit_token", "stream", "not-a-track-id")).unwrap();
+        assert_eq!(legacy["ok"], false);
+        assert_eq!(legacy["error"], "Некорректные параметры аудио");
     }
 }
 
