@@ -344,7 +344,7 @@ impl App {
                                             .color(egui::Color32::from_rgb(255, 190, 45)),
                                     );
                                     ui.add_space(6.0);
-                                    ui.label(format!("Установленная версия · {}", app_version()));
+                                    ui.label(format!("Установленная версия · {}", crate::app_version()));
                                     ui.label(
                                         egui::RichText::new(
                                             "Новые сборки для Windows, macOS и Linux публикуются вместе с релизом Luma Music.",
