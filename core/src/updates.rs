@@ -22,14 +22,8 @@ pub fn channel(version: &str) -> Result<Value, String> {
     ))
 }
 const MAX_APK: u64 = 100 * 1024 * 1024;
-fn version(raw: &str) -> Option<[u64; 3]> {
-    let raw = raw.strip_prefix('v').unwrap_or(raw);
-    let base = raw.split(['-', '+']).next()?;
-    let parsed = semantic_version(base).ok()?;
-    Some([parsed.major, parsed.minor, parsed.patch])
-}
 pub fn compare(candidate: &str, installed: &str) -> Option<i32> {
-    Some(match version(candidate)?.cmp(&version(installed)?) {
+    Some(match semantic_version(candidate).ok()?.cmp(&semantic_version(installed).ok()?) {
         std::cmp::Ordering::Less => -1,
         std::cmp::Ordering::Equal => 0,
         std::cmp::Ordering::Greater => 1,
@@ -134,6 +128,9 @@ mod tests {
         assert_eq!(compare("1.0", "1.0.0-dev.1"), Some(0));
         assert_eq!(compare("1.0.1", "1.0"), Some(1));
         assert_eq!(compare("1.0", "0.5.0"), Some(1));
+        assert_eq!(compare("2.1.0", "2.1.0-dev.1"), Some(1));
+        assert_eq!(compare("2.1.0-dev.2", "2.1.0-dev.1"), Some(1));
+        assert_eq!(compare("2.1.0-dev.1", "2.1.0"), Some(-1));
         assert!(semantic_version("1.0").unwrap() > semantic_version("1.0.0-dev.1").unwrap());
         for bad in ["1..0", "01.0", "1.0-dev.1", "1.0/0", "1.0 "] {
             assert!(semantic_version(bad).is_err());
