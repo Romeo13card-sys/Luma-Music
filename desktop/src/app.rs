@@ -1,7 +1,7 @@
 use crate::engine::Jobs;
 use crate::player::{prepare_audio, Player, Reply};
 use serde_json::Value;
-use std::{sync::mpsc, time::Duration};
+use std::{io::Read, sync::mpsc, time::Duration};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Screen {
@@ -164,8 +164,10 @@ impl App {
                 if !response.status().is_success() {
                     return Err(format!("GitHub вернул HTTP {}", response.status().as_u16()));
                 }
-                let body = response
-                    .text()
+                let mut body = String::new();
+                response
+                    .take(1024 * 1024 + 1)
+                    .read_to_string(&mut body)
                     .map_err(|_| "Не удалось прочитать ответ GitHub")?;
                 if body.len() > 1024 * 1024 {
                     return Err("Ответ GitHub слишком большой".into());
