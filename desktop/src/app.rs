@@ -242,6 +242,10 @@ while (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue) { Start-Sleep -
 $Stage = Join-Path $env:TEMP ('luma-update-' + [guid]::NewGuid().ToString('N'))
 try {
     Expand-Archive -LiteralPath $Archive -DestinationPath $Stage -Force
+    $Candidate = Join-Path $Stage 'luma-desktop.exe'
+    if (-not (Test-Path -LiteralPath $Candidate)) { throw 'Archive does not contain luma-desktop.exe' }
+    & $Candidate --self-check | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Updated executable failed --self-check' }
     Get-ChildItem -LiteralPath $Stage -Force | ForEach-Object {
         Copy-Item -LiteralPath $_.FullName -Destination $InstallDir -Recurse -Force
     }
@@ -280,6 +284,7 @@ else
     echo "Neither unzip nor python3 is available"
     exit 2
 fi
+"$stage/luma-desktop" --self-check >/dev/null || exit 5
 cp -a "$stage/." "$install_dir/" || exit 3
 rm -rf "$stage"
 rm -f "$archive"
@@ -304,10 +309,14 @@ while kill -0 "$pid" 2>/dev/null; do sleep 0.5; done
 mkdir -p "$stage" || exit 1
 ditto -x -k "$archive" "$stage" || exit 2
 new_app="$stage/Luma Music.app"
+[ -x "$new_app/Contents/MacOS/LumaMusic" ] || exit 5
+"$new_app/Contents/MacOS/LumaMusic" --self-check >/dev/null || exit 6
+/usr/bin/codesign --verify --deep "$new_app" || exit 7
 backup="$app.luma-backup"
 rm -rf "$backup"
 mv "$app" "$backup" || exit 3
 if ! ditto --rsrc --extattr "$new_app" "$app"; then
+    rm -rf "$app"
     mv "$backup" "$app"
     exit 4
 fi
