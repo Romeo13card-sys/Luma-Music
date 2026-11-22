@@ -67,25 +67,36 @@ impl eframe::App for App {
         let mut play_queue = false;
 
         egui::TopBottomPanel::top("luma_status")
-            .exact_height(42.0)
+            .exact_height(58.0)
             .show(ctx, |ui| {
+                ui.add_space(5.0);
                 ui.horizontal(|ui| {
                     ui.label(
-                        egui::RichText::new(if self.connected {
-                            "● ПОДКЛЮЧЕНО"
-                        } else {
-                            "○ НЕ ПОДКЛЮЧЕНО"
-                        })
-                        .small()
-                        .strong()
-                        .color(if self.connected {
-                            egui::Color32::from_rgb(255, 216, 77)
-                        } else {
-                            ui.visuals().weak_text_color()
-                        }),
+                        egui::RichText::new(if self.connected { "● ONLINE" } else { "○ OFFLINE" })
+                            .small()
+                            .strong()
+                            .color(if self.connected {
+                                egui::Color32::from_rgb(255, 216, 77)
+                            } else {
+                                ui.visuals().weak_text_color()
+                            }),
                     );
                     ui.separator();
-                    ui.label(&self.status);
+                    let search = ui.add_sized(
+                        [ui.available_width().min(390.0), 34.0],
+                        egui::TextEdit::singleline(&mut self.query)
+                            .hint_text("Найти трек, альбом или исполнителя…"),
+                    );
+                    let enter = search.lost_focus()
+                        && ui.input(|input| input.key_pressed(egui::Key::Enter));
+                    if ui.add_sized([76.0, 34.0], egui::Button::new("Найти")).clicked() || enter {
+                        if !self.query.trim().is_empty() && !self.jobs.busy() {
+                            self.screen = Screen::Search;
+                            request = Some(("search".into(), self.query.trim().to_owned()));
+                        }
+                    }
+                    ui.separator();
+                    ui.label(egui::RichText::new(&self.status).small().weak());
                     if self.jobs.busy() {
                         ui.spinner();
                         if self.downloaded > 0 {
@@ -101,7 +112,7 @@ impl eframe::App for App {
 
         egui::SidePanel::left("luma_navigation")
             .resizable(false)
-            .default_width(224.0)
+            .default_width(238.0)
             .show(ctx, |ui| {
                 ui.add_space(16.0);
                 ui.horizontal(|ui| {
@@ -112,8 +123,8 @@ impl eframe::App for App {
                             .color(egui::Color32::from_rgb(255, 216, 77)),
                     );
                     ui.vertical(|ui| {
-                        ui.heading("LUMA MUSIC");
-                        ui.label(egui::RichText::new("ВАША МУЗЫКА · ВАШ РИТМ").small().weak());
+                        ui.heading(egui::RichText::new("LUMA MUSIC").strong());
+                        ui.label(egui::RichText::new("YOUR SOUND. YOUR FLOW.").small().weak());
                     });
                 });
                 ui.add_space(12.0);
