@@ -409,8 +409,11 @@ fn download_latest_desktop_release() -> Result<String, String> {
     if platform == "Windows-10-11" && arch != "x64" {
         return Err("Для этой архитектуры Windows нет опубликованного архива".into());
     }
-    let version = crate::app_version();
-    let version = if version.matches('.').count() == 1 { format!("{version}.0") } else { version.to_owned() };
+    let release_tag = release["tag_name"].as_str().ok_or("В релизе отсутствует версия")?;
+    let version = release_tag.strip_prefix('v').unwrap_or(release_tag);
+    if compare_release_versions(release_tag, crate::app_version()) != Some(std::cmp::Ordering::Greater) {
+        return Err("Для этой версии нет более нового стабильного релиза".into());
+    }
     let filename = format!("Luma-Music-{version}-{platform}-{arch}{}.zip",
         if platform.starts_with("Windows") { "-Portable" } else { "" });
     let checksum_name = format!("{filename}.sha256");
