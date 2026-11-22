@@ -580,6 +580,7 @@ class MainActivity : MaterialActivity(),LibraryActions.Observer {
                 PlaybackService.select(this, queue, index)
                 refreshPlayer()
             },
+            onVisible = { visible -> StreamUrlPreloader.preload(this, visible) },
             onUnavailable = { notice("Трек недоступен") },
             onTrackMenu = { song ->
                 TrackSheet.show(this, song) {
