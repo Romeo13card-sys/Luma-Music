@@ -155,6 +155,8 @@ impl App {
         self.update_busy = true;
         self.update_status = "Проверяем GitHub Releases…".into();
         self.update_url = None;
+        self.update_archive = None;
+        self.download_status.clear();
         let tx = self.tx.clone();
         let current = crate::app_version().to_owned();
         std::thread::spawn(move || {
@@ -208,6 +210,7 @@ impl App {
     pub(crate) fn download_update(&mut self, ctx: eframe::egui::Context) {
         if self.download_busy { return; }
         self.download_busy = true;
+        self.update_archive = None;
         self.download_status = "Загрузка и проверка SHA-256…".into();
         let tx = self.tx.clone();
         std::thread::spawn(move || {
