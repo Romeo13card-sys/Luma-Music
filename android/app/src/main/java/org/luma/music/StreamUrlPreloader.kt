@@ -24,7 +24,7 @@ internal object StreamUrlPreloader {
     private val executor = ThreadPoolExecutor(
         2, 2, 30, TimeUnit.SECONDS,
         ArrayBlockingQueue(8),
-        ThreadPoolExecutor.DiscardOldestPolicy(),
+        ThreadPoolExecutor.AbortPolicy(),
     ).apply { allowCoreThreadTimeOut(true) }
 
     private fun quality(context: Context): Int {
@@ -62,6 +62,9 @@ internal object StreamUrlPreloader {
             .forEach { song ->
                 val cacheKey = key(token, song, selectedQuality)
                 val future = CompletableFuture<Unit>()
+                val existing = pending[cacheKey]
+                if (existing != null && !existing.isDone) return@forEach
+                if (existing != null) pending.remove(cacheKey, existing)
                 if (pending.putIfAbsent(cacheKey, future) != null) return@forEach
                 try {
                     executor.execute {
