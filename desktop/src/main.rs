@@ -240,6 +240,12 @@ impl eframe::App for App {
         if screen_actions.download_update {
             self.download_update(ctx.clone());
         }
+        if screen_actions.install_update {
+            match self.install_update() {
+                Ok(()) => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+                Err(error) => self.download_status = format!("Не удалось запустить установку: {error}"),
+            }
+        }
 
         egui::TopBottomPanel::bottom("luma_player")
             .resizable(false)
