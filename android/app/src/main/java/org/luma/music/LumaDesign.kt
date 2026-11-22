@@ -43,6 +43,20 @@ object LumaDesign {
         }
     }
 
+    fun heroCard(radius: Float = CARD_RADIUS_DP.toFloat()): GradientDrawable {
+        val palette = AppThemes.active
+        val start = if (palette.light) 0xFFFFE9A6.toInt() else 0xFFFFD84D.toInt()
+        val end = if (palette.light) 0xFFF3C65A.toInt() else 0xFFE7AE32.toInt()
+        return GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            intArrayOf(start, end),
+        ).apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = radius
+            setStroke(1, if (palette.light) 0xFFD9A93F.toInt() else 0xFFFFE58A.toInt())
+        }
+    }
+
     fun contentColor(accent: Boolean = false): Int {
         val palette = AppThemes.active
         return if (accent) {
