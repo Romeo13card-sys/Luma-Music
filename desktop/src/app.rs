@@ -302,6 +302,7 @@ $Stage = Join-Path $env:TEMP ('luma-update-' + [guid]::NewGuid().ToString('N'))
 $Backup = Join-Path $env:TEMP ('luma-backup-' + [guid]::NewGuid().ToString('N'))
 $Touched = New-Object System.Collections.Generic.List[string]
 $BackedUp = New-Object System.Collections.Generic.List[string]
+$RollbackFailed = $false
 try {
     Expand-Archive -LiteralPath $Archive -DestinationPath $Stage -Force
     $Candidate = Join-Path $Stage 'luma-desktop.exe'
@@ -327,13 +328,19 @@ try {
     foreach ($Target in $BackedUp) {
         $Saved = Join-Path $Backup (Split-Path -Leaf $Target)
         if (Test-Path -LiteralPath $Saved) {
-            Move-Item -LiteralPath $Saved -Destination $Target -Force
+            try {
+                Move-Item -LiteralPath $Saved -Destination $Target -Force
+            } catch {
+                $RollbackFailed = $true
+                Add-Content -LiteralPath (Join-Path $env:TEMP 'luma-update-error.log') -Value "Rollback backup preserved at $Backup: $_"
+            }
         }
     }
     Add-Content -LiteralPath (Join-Path $env:TEMP 'luma-update-error.log') -Value $_
     exit 1
 } finally {
-    Remove-Item -LiteralPath $Stage,$Backup -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $Stage -Recurse -Force -ErrorAction SilentlyContinue
+    if (-not $RollbackFailed) { Remove-Item -LiteralPath $Backup -Recurse -Force -ErrorAction SilentlyContinue }
     Remove-Item -LiteralPath $Archive -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue
 }
