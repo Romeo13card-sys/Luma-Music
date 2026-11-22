@@ -51,8 +51,8 @@ android {
         testInstrumentationRunner = "org.luma.music.LumaInstrumentation"
         minSdk = 30
         targetSdk = 36
-        versionCode = 27
-        versionName = "2.1.0-dev.1"
+        versionCode = 28
+        versionName = "2.1.0"
         ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64") }
     }
     splits {
