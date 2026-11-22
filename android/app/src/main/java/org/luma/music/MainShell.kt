@@ -93,8 +93,8 @@ internal class MainShell(
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
 
         val miniPanel = column().apply {
-            background = surface(dp(22).toFloat(), false)
-            setPadding(dp(10), dp(8), dp(8), dp(8))
+            background = surface(dp(24).toFloat(), false)
+            setPadding(dp(12), dp(10), dp(10), dp(10))
         }
         val miniBar = row()
         val miniCover = AlbumArt(context).apply {
@@ -103,18 +103,18 @@ internal class MainShell(
         }
         miniBar.addView(
             miniCover,
-            LinearLayout.LayoutParams(dp(48), dp(48)).apply { rightMargin = dp(12) },
+            LinearLayout.LayoutParams(dp(50), dp(50)).apply { rightMargin = dp(12) },
         )
         val miniLabels = column().apply {
             isFocusable = true
             swipeTracks(this, actions.openPlayer)
         }
-        val title = text(translate("Выберите трек"), 14f, textColor, true, true).apply {
+        val title = text(translate("Выберите трек"), 15f, textColor, true, true).apply {
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
             setPadding(0, 0, 0, 0)
         }
-        val subtitle = text(translate("Открыть плеер"), 11f, mutedColor, false, true).apply {
+        val subtitle = text(translate("Открыть плеер"), 12f, mutedColor, false, true).apply {
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
             setPadding(0, dp(3), 0, 0)
@@ -144,7 +144,7 @@ internal class MainShell(
             LinearLayout.LayoutParams(-1, dp(2)).apply {
                 leftMargin = dp(4)
                 rightMargin = dp(8)
-                topMargin = dp(5)
+                topMargin = dp(7)
             },
         )
         root.addView(miniPanel)
@@ -162,7 +162,7 @@ internal class MainShell(
         )
         val selectedIndex = destinations.indexOf(page).coerceAtLeast(0)
         val nav = row().apply {
-            background = surface(dp(22).toFloat(), false)
+            background = surface(dp(24).toFloat(), false)
             setPadding(dp(5), dp(5), dp(5), dp(5))
             clipToPadding = false
         }
