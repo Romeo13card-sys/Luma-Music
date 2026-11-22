@@ -332,7 +332,7 @@ try {
                 Move-Item -LiteralPath $Saved -Destination $Target -Force
             } catch {
                 $RollbackFailed = $true
-                Add-Content -LiteralPath (Join-Path $env:TEMP 'luma-update-error.log') -Value "Rollback backup preserved at $Backup: $_"
+                Add-Content -LiteralPath (Join-Path $env:TEMP 'luma-update-error.log') -Value "Rollback backup preserved at ${Backup}: $_"
             }
         }
     }
