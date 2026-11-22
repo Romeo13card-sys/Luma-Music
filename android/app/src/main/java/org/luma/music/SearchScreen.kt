@@ -67,6 +67,7 @@ internal class SearchScreen(
         var currentPage = 0
         var pageSize = 20
         var hasNext = false
+        var searchGeneration = 0
         var previous: LumaButton? = null
         var next: LumaButton? = null
 
@@ -91,27 +92,34 @@ internal class SearchScreen(
             }
             if (resetPage) currentPage = 0
             currentQuery = query
+            val requestQuery = currentQuery
+            val requestKind = selectedKind
+            val requestPage = currentPage
+            val requestId = ++searchGeneration
             (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
                 .hideSoftInputFromWindow(box.windowToken, 0)
             beginSearch()
             results.removeAllViews()
             pageStatus.text = "Ищем…"
-            searchCatalog(currentQuery, selectedKind, currentPage) { data ->
+            searchCatalog(requestQuery, requestKind, requestPage) { data ->
+                // Ignore out-of-order responses: a slower previous query must never replace
+                // the results for the category, query or page the user selected most recently.
+                if (requestId != searchGeneration) return@searchCatalog
                 val items = data.optJSONArray("results") ?: JSONArray()
                 val pager = data.optJSONObject("pager") ?: JSONObject()
                 val total = pager.optInt("total", pager.optInt("totalCount", -1))
                 pageSize = pager.optInt("perPage", pager.optInt("pageSize", 20)).coerceIn(1, 100)
                 hasNext = if (total >= 0) {
-                    (currentPage + 1) * pageSize < total
+                    (requestPage + 1) * pageSize < total
                 } else {
                     items.length() >= pageSize
                 }
                 pageStatus.text = if (total >= 0) {
-                    "Страница ${currentPage + 1} · найдено $total"
+                    "Страница ${requestPage + 1} · найдено $total"
                 } else {
-                    "Страница ${currentPage + 1} · результатов: ${items.length()}"
+                    "Страница ${requestPage + 1} · результатов: ${items.length()}"
                 }
-                renderResults(results, items, selectedKind)
+                renderResults(results, items, requestKind)
                 updateNavigation()
             }
         }
