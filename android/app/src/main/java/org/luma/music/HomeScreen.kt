@@ -63,7 +63,6 @@ internal class HomeScreen(
         val heroText = LumaDesign.contentColor(true)
         val heroMuted = if (AppThemes.active.light) 0xFF51472B.toInt() else 0xFF403719.toInt()
         val wave = panel(target).apply {
-            background = surface(dp(26).toFloat())
             // The hero uses the Luma accent as its own canvas, not another generic card.
             background = LumaDesign.card(dp(26).toFloat(), accent = true)
             setPadding(dp(20), dp(20), dp(20), dp(18))
