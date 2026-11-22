@@ -67,7 +67,23 @@ pub(crate) fn prepare_audio(
     queue: Vec<Value>,
     tx: &mpsc::SyncSender<Reply>,
 ) -> Result<Ready, String> {
-    let url = yamusic_core::MusicClient::new(token)?.stream_at(id, quality)?;
+    let stream_args = serde_json::json!({"id": id, "quality": quality}).to_string();
+    let stream_reply: Value = serde_json::from_str(&yamusic_core::dispatch(
+        token,
+        "stream_quality",
+        &stream_args,
+    ))
+    .map_err(|_| "Некорректный ответ сервиса аудио")?;
+    if stream_reply["ok"] != true {
+        return Err(stream_reply["error"]
+            .as_str()
+            .unwrap_or("Не удалось получить адрес аудио")
+            .to_owned());
+    }
+    let url = stream_reply["data"]
+        .as_str()
+        .ok_or("Сервис не вернул адрес аудио")?
+        .to_owned();
     if t.cancelled.load(Ordering::Relaxed) {
         return Err("Загрузка отменена".into());
     }
