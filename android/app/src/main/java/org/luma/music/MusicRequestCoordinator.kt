@@ -6,7 +6,7 @@ import org.json.JSONObject
 
 /**
  * Lifecycle- and generation-aware bridge for NativeCore requests.
- * The host supplies current account state and owns the result-specific UI actions.
+ * Loading is intentionally silent; actionable errors remain visible.
  */
 internal class MusicRequestCoordinator(
     private val activity: Activity,
@@ -24,7 +24,7 @@ internal class MusicRequestCoordinator(
     ) {
         val version = generation()
         val token = credential()
-        status().text = "Загрузка…"
+        status().text = ""
         requests.submit { ticket ->
             if (destroyed() || version != generation() || !ticket.valid) return@submit
             val result = try {
