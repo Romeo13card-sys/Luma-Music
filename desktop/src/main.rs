@@ -250,7 +250,10 @@ impl eframe::App for App {
                                     })
                                     .strong(),
                                 );
-                                if let Some(track) = self.queue.get(self.index.unwrap_or(usize::MAX)) {
+                                if let Some(track) = self
+                                    .queue
+                                    .get(self.index.unwrap_or(usize::MAX))
+                                {
                                     ui.label(
                                         egui::RichText::new(track["artists"].as_str().unwrap_or(""))
                                             .small()
