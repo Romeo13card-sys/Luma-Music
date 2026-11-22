@@ -39,6 +39,15 @@ pub(crate) struct App {
     pub(crate) smoke_until: Option<std::time::Instant>,
 }
 
+fn next_available_track_id(queue: &[Value], index: usize) -> Option<&str> {
+    queue
+        .iter()
+        .skip(index.saturating_add(1))
+        .find(|track| track["available"] == true)
+        .and_then(|track| track["id"].as_str())
+        .filter(|id| !id.is_empty() && id.bytes().all(|byte| byte.is_ascii_digit()))
+}
+
 impl App {
     pub(crate) fn new() -> Self {
         let (tx, rx) = mpsc::sync_channel(8);
@@ -135,18 +144,10 @@ impl App {
         let Some(index) = self.index else {
             return;
         };
-        let Some(track) = self
-            .queue
-            .iter()
-            .skip(index + 1)
-            .find(|track| track["available"] == true)
-        else {
+        let Some(id) = next_available_track_id(&self.queue, index) else {
             return;
         };
-        let id = track["id"].as_str().unwrap_or("").to_owned();
-        if id.is_empty() || !id.bytes().all(|byte| byte.is_ascii_digit()) {
-            return;
-        }
+        let id = id.to_owned();
         let token = self.token.clone();
         let quality = self.quality;
         std::thread::spawn(move || {
@@ -265,5 +266,31 @@ impl App {
                 self.adjacent(1);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod playback_prewarm_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn prewarm_selects_first_available_following_track_only() {
+        let queue = vec![
+            json!({"id":"1","available":true}),
+            json!({"id":"2","available":false}),
+            json!({"id":"3","available":true}),
+        ];
+        assert_eq!(next_available_track_id(&queue, 0), Some("3"));
+        assert_eq!(next_available_track_id(&queue, 2), None);
+    }
+
+    #[test]
+    fn prewarm_rejects_invalid_track_ids() {
+        let queue = vec![
+            json!({"id":"１２３","available":true}),
+            json!({"id":"42","available":true}),
+        ];
+        assert_eq!(next_available_track_id(&queue, 0), Some("42"));
     }
 }
