@@ -433,7 +433,15 @@ fn download_latest_desktop_release() -> Result<String, String> {
     if body.len() > 1024 * 1024 { return Err("Ответ GitHub слишком большой".into()); }
     let release: Value = serde_json::from_str(&body).map_err(|_| "Некорректный ответ GitHub")?;
     let release_tag = release["tag_name"].as_str().ok_or("В релизе отсутствует версия")?;
-    let version = release_tag.strip_prefix('v').unwrap_or(release_tag);
+    let raw_version = release_tag.strip_prefix('v').unwrap_or(release_tag);
+    if !raw_version.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'.' || byte == b'-') {
+        return Err("Некорректная версия релиза".into());
+    }
+    let version = if !raw_version.contains('-') && raw_version.ends_with(".0") {
+        &raw_version[..raw_version.len() - 2]
+    } else {
+        raw_version
+    };
     if compare_release_versions(release_tag, crate::app_version()) != Some(std::cmp::Ordering::Greater) {
         return Err("Для этой версии нет более нового стабильного релиза".into());
     }
