@@ -137,7 +137,7 @@ impl App {
         });
     }
 
-    pub(crate) fn check_updates(&mut self, ctx: egui::Context) {
+    pub(crate) fn check_updates(&mut self, ctx: eframe::egui::Context) {
         if self.update_busy {
             return;
         }
