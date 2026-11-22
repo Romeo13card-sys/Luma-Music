@@ -170,11 +170,9 @@ pub(crate) fn draw_tracks(
                     ui.vertical(|ui| {
                         let response = ui.add_enabled(
                             enabled && available,
-                            egui::Button::new(
-                                egui::RichText::new(title).size(15.0).strong(),
-                            )
-                            .frame(false)
-                            .min_size(egui::vec2(ui.available_width(), 22.0)),
+                            egui::Button::new(egui::RichText::new(title).size(15.0).strong())
+                                .frame(false)
+                                .min_size(egui::vec2(ui.available_width(), 22.0)),
                         );
                         if response.clicked() {
                             *selected = Some(index);
@@ -189,28 +187,22 @@ pub(crate) fn draw_tracks(
                             .weak(),
                         );
                     });
-                    ui.with_layout(
-                        egui::Layout::right_to_left(egui::Align::Center),
-                        |ui| {
-                            let state = if playing {
-                                "СЕЙЧАС ИГРАЕТ"
-                            } else if available {
-                                "▶"
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let state = if playing {
+                            "СЕЙЧАС ИГРАЕТ"
+                        } else if available {
+                            "▶"
+                        } else {
+                            "НЕДОСТУПЕН"
+                        };
+                        ui.label(egui::RichText::new(state).size(10.0).strong().color(
+                            if playing {
+                                egui::Color32::from_rgb(255, 190, 45)
                             } else {
-                                "НЕДОСТУПЕН"
-                            };
-                            ui.label(
-                                egui::RichText::new(state)
-                                    .size(10.0)
-                                    .strong()
-                                    .color(if playing {
-                                        egui::Color32::from_rgb(255, 190, 45)
-                                    } else {
-                                        ui.visuals().weak_text_color()
-                                    }),
-                            );
-                        },
-                    );
+                                ui.visuals().weak_text_color()
+                            },
+                        ));
+                    });
                 });
             });
         ui.add_space(6.0);
