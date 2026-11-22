@@ -14,12 +14,14 @@ private enum LumaTab: String, CaseIterable {
     case home = "Главная"
     case search = "Поиск"
     case library = "Коллекция"
+    case wave = "Моя волна"
 
     var symbol: String {
         switch self {
         case .home: return "waveform"
         case .search: return "magnifyingglass"
         case .library: return "square.stack"
+        case .wave: return "waveform.path.ecg"
         }
     }
 }
@@ -60,6 +62,8 @@ struct MusicView: View {
                         searchContent
                     case .library:
                         libraryContent
+                    case .wave:
+                        waveContent
                     }
                 }
                 .padding(.horizontal, 20)
@@ -174,6 +178,31 @@ struct MusicView: View {
                     songRow(currentSong)
                 }
             }
+            statusLine
+        }
+    }
+
+    private var waveContent: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            eyebrow("LUMA FLOW  /  PERSONAL RADIO")
+            Text("Моя волна")
+                .font(.system(size: 32, weight: .black, design: .rounded))
+                .tracking(-0.8)
+            Text("Персональная подборка, которая помогает открыть музыку под настроение.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Button {
+                catalog("wave", "")
+            } label: {
+                Label("Обновить волну", systemImage: "waveform.path.ecg")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(ink)
+                    .frame(maxWidth: .infinity, minHeight: 50)
+                    .background(accent, in: RoundedRectangle(cornerRadius: 16))
+            }
+            .disabled(!connected || busy)
+            .opacity(connected && !busy ? 1 : 0.55)
+            songResults
             statusLine
         }
     }
@@ -333,6 +362,8 @@ struct MusicView: View {
                     selectedTab = tab
                     if tab == .library && connected && songs.isEmpty {
                         catalog("likes", "")
+                    } else if tab == .wave && connected {
+                        catalog("wave", "")
                     }
                 } label: {
                     VStack(spacing: 5) {
