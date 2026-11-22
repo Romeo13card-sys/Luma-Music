@@ -23,11 +23,16 @@ pub fn channel(version: &str) -> Result<Value, String> {
 }
 const MAX_APK: u64 = 100 * 1024 * 1024;
 pub fn compare(candidate: &str, installed: &str) -> Option<i32> {
-    Some(match semantic_version(candidate).ok()?.cmp(&semantic_version(installed).ok()?) {
-        std::cmp::Ordering::Less => -1,
-        std::cmp::Ordering::Equal => 0,
-        std::cmp::Ordering::Greater => 1,
-    })
+    Some(
+        match semantic_version(candidate)
+            .ok()?
+            .cmp(&semantic_version(installed).ok()?)
+        {
+            std::cmp::Ordering::Less => -1,
+            std::cmp::Ordering::Equal => 0,
+            std::cmp::Ordering::Greater => 1,
+        },
+    )
 }
 pub fn checksum(text: &str, name: &str) -> Result<String, String> {
     if text.len() > 128 * 1024 {
