@@ -65,9 +65,13 @@ fn next_available_track_id(queue: &[Value], index: usize) -> Option<&str> {
     queue
         .iter()
         .skip(index.saturating_add(1))
-        .find(|track| track["available"] == true)
+        .find(|track| {
+            track["available"] == true
+                && track["id"]
+                    .as_str()
+                    .is_some_and(|id| !id.is_empty() && id.bytes().all(|byte| byte.is_ascii_digit()))
+        })
         .and_then(|track| track["id"].as_str())
-        .filter(|id| !id.is_empty() && id.bytes().all(|byte| byte.is_ascii_digit()))
 }
 
 impl App {
