@@ -67,6 +67,14 @@ fn compare_release_versions(candidate: &str, installed: &str) -> Option<std::cmp
     Some(candidate_version.cmp(&installed_version).then_with(|| candidate_stable.cmp(&installed_stable)))
 }
 
+fn desktop_release_asset_filename(version: &str, platform: &str, arch: &str, legacy_windows: bool) -> String {
+    format!(
+        "Luma-Music-{version}-{platform}-{arch}{}{}.zip",
+        if platform.starts_with("Windows") { "-Portable" } else { "" },
+        if legacy_windows { "-experimental" } else { "" },
+    )
+}
+
 fn next_available_track_id(queue: &[Value], index: usize) -> Option<&str> {
     queue
         .iter()
@@ -592,11 +600,7 @@ fn download_latest_desktop_release() -> Result<String, String> {
     if compare_release_versions(release_tag, crate::app_version()) != Some(std::cmp::Ordering::Greater) {
         return Err("Для этой версии нет более нового стабильного релиза".into());
     }
-    let filename = format!(
-        "Luma-Music-{version}-{platform}-{arch}{}{}.zip",
-        if platform.starts_with("Windows") { "-Portable" } else { "" },
-        if legacy_windows { "-experimental" } else { "" },
-    );
+    let filename = desktop_release_asset_filename(version, platform, arch, legacy_windows);
     let checksum_name = format!("{filename}.sha256");
     let assets = release["assets"].as_array().ok_or("В релизе отсутствуют файлы")?;
     let asset_url = |name: &str| -> Result<String, String> {
@@ -670,6 +674,22 @@ mod playback_prewarm_tests {
         assert_eq!(compare_release_versions("bad", "2.0.0"), None);
         assert_eq!(compare_release_versions("v2.1.0", "2.0"), Some(std::cmp::Ordering::Greater));
         assert_eq!(compare_release_versions("v2.0.0", "2.0"), Some(std::cmp::Ordering::Equal));
+    }
+
+    #[test]
+    fn updater_selects_the_matching_platform_archive_name() {
+        assert_eq!(
+            desktop_release_asset_filename("2.1", "Windows-10-11", "x64", false),
+            "Luma-Music-2.1-Windows-10-11-x64-Portable.zip"
+        );
+        assert_eq!(
+            desktop_release_asset_filename("2.1", "Windows-7-8-8.1", "x86", true),
+            "Luma-Music-2.1-Windows-7-8-8.1-x86-Portable-experimental.zip"
+        );
+        assert_eq!(
+            desktop_release_asset_filename("2.1", "Linux", "x64", false),
+            "Luma-Music-2.1-Linux-x64.zip"
+        );
     }
 
     #[test]
