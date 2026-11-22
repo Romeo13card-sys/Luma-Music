@@ -63,7 +63,7 @@ class SongRow(c:Context):LinearLayout(c) {
     fun bind(song:Song,current:Boolean=false){
         background=LumaDesign.trackCard(current,MusicUi.dp(context,20).toFloat())
         art.bind(song.cover);title.text=song.title;artist.text=song.artist
-        marker.text=if(current)"●" else "";marker.visibility=if(current)View.VISIBLE else View.GONE
+        marker.text=if(current)"♫" else "";marker.visibility=if(current)View.VISIBLE else View.GONE
         alpha=if(song.available)1f else .55f
         contentDescription=song.title+", "+song.artist
     }
