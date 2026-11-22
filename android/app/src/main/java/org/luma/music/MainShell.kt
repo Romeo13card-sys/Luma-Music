@@ -6,8 +6,6 @@ import android.view.View
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.ScrollView
-import com.google.android.material.bottomnavigation.BottomNavigationView
-import com.google.android.material.navigation.NavigationBarView
 
 /** Main navigation shell and persistent mini-player presentation. */
 internal class MainShell(
@@ -152,27 +150,52 @@ internal class MainShell(
         root.addView(miniPanel)
         gap(root, 8)
 
-        val nav = BottomNavigationView(context).apply {
-            labelVisibilityMode = NavigationBarView.LABEL_VISIBILITY_LABELED
-            setBackgroundColor(backgroundColor)
-        }
+        // Luma Flow navigation: compact, custom and visually distinct from the stock
+        // Material bottom bar while retaining the same four destinations and callbacks.
         val destinations = listOf("Главная", "Поиск", "Медиатека", "Настройки")
+        val labels = listOf("Главная", "Поиск", "Коллекция", "Настройки")
         val icons = listOf(
             R.drawable.luma_wave,
             android.R.drawable.ic_menu_search,
             android.R.drawable.ic_menu_agenda,
             android.R.drawable.ic_menu_manage,
         )
-        val labels = listOf("Волна", "Поиск", "Коллекция", "Настройки")
-        destinations.forEachIndexed { index, _ ->
-            nav.menu.add(0, index + 1, index, translate(labels[index])).setIcon(icons[index])
+        val selectedIndex = destinations.indexOf(page).coerceAtLeast(0)
+        val nav = row().apply {
+            background = surface(dp(22).toFloat(), false)
+            setPadding(dp(5), dp(5), dp(5), dp(5))
+            clipToPadding = false
         }
-        nav.selectedItemId = destinations.indexOf(page).coerceAtLeast(0) + 1
-        nav.setOnItemSelectedListener { item ->
-            actions.navigate(destinations[item.itemId - 1])
-            true
+        destinations.forEachIndexed { index, destination ->
+            val selected = index == selectedIndex
+            val item = column().apply {
+                gravity = Gravity.CENTER
+                isClickable = true
+                isFocusable = true
+                background = if (selected) surface(dp(17).toFloat(), true) else null
+                setPadding(dp(3), dp(7), dp(3), dp(7))
+                contentDescription = translate(labels[index])
+                setOnClickListener { if (!selected) actions.navigate(destination) }
+            }
+            val iconColor = if (selected) LumaDesign.contentColor(true) else mutedColor
+            item.addView(
+                MusicUi.icon(context, icons[index], translate(labels[index]), iconColor) {
+                    if (!selected) actions.navigate(destination)
+                },
+                LinearLayout.LayoutParams(dp(25), dp(25)),
+            )
+            item.addView(
+                text(translate(labels[index]), 10f, if (selected) LumaDesign.contentColor(true) else mutedColor, selected, true).apply {
+                    gravity = Gravity.CENTER
+                    maxLines = 1
+                },
+            )
+            nav.addView(item, LinearLayout.LayoutParams(0, -2, 1f))
         }
-        root.addView(nav)
+        root.addView(nav, LinearLayout.LayoutParams(-1, -2).apply {
+            topMargin = dp(2)
+            bottomMargin = dp(3)
+        })
 
         if (loadContent) actions.renderContent(body)
         return Bindings(body, status, miniCover, title, subtitle, toggle, progress)
