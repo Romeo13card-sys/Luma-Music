@@ -219,7 +219,7 @@ impl eframe::App for App {
             });
 
         let screen_actions = self.draw_screen(ctx);
-        request = screen_actions.request;
+        if screen_actions.request.is_some() {\n            request = screen_actions.request;\n        }
         selected_track = screen_actions.selected_track;
         play_queue = screen_actions.play_queue;
 
