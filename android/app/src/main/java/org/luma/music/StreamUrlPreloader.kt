@@ -56,7 +56,7 @@ internal object StreamUrlPreloader {
         val selectedQuality = quality(app)
 
         songs.asSequence()
-            .filter { it.available && it.uri == null && it.id.isNotBlank() && it.id.all(Char::isDigit) }
+            .filter { it.available && it.uri == null && it.id.isNotBlank() && it.id.all { digit -> digit in '0'..'9' } }
             .distinctBy { it.id }
             .take(2)
             .forEach { song ->
