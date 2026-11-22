@@ -409,14 +409,6 @@ fn download_latest_desktop_release() -> Result<String, String> {
     if platform == "Windows-10-11" && arch != "x64" {
         return Err("Для этой архитектуры Windows нет опубликованного архива".into());
     }
-    let release_tag = release["tag_name"].as_str().ok_or("В релизе отсутствует версия")?;
-    let version = release_tag.strip_prefix('v').unwrap_or(release_tag);
-    if compare_release_versions(release_tag, crate::app_version()) != Some(std::cmp::Ordering::Greater) {
-        return Err("Для этой версии нет более нового стабильного релиза".into());
-    }
-    let filename = format!("Luma-Music-{version}-{platform}-{arch}{}.zip",
-        if platform.starts_with("Windows") { "-Portable" } else { "" });
-    let checksum_name = format!("{filename}.sha256");
     let client = reqwest::blocking::Client::builder()
         .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(180))
@@ -439,6 +431,14 @@ fn download_latest_desktop_release() -> Result<String, String> {
     release_response.take(1024 * 1024 + 1).read_to_string(&mut body).map_err(|_| "Не удалось прочитать релиз")?;
     if body.len() > 1024 * 1024 { return Err("Ответ GitHub слишком большой".into()); }
     let release: Value = serde_json::from_str(&body).map_err(|_| "Некорректный ответ GitHub")?;
+    let release_tag = release["tag_name"].as_str().ok_or("В релизе отсутствует версия")?;
+    let version = release_tag.strip_prefix('v').unwrap_or(release_tag);
+    if compare_release_versions(release_tag, crate::app_version()) != Some(std::cmp::Ordering::Greater) {
+        return Err("Для этой версии нет более нового стабильного релиза".into());
+    }
+    let filename = format!("Luma-Music-{version}-{platform}-{arch}{}.zip",
+        if platform.starts_with("Windows") { "-Portable" } else { "" });
+    let checksum_name = format!("{filename}.sha256");
     let assets = release["assets"].as_array().ok_or("В релизе отсутствуют файлы")?;
     let asset_url = |name: &str| -> Result<String, String> {
         assets.iter().find(|asset| asset["name"].as_str() == Some(name))
@@ -458,9 +458,13 @@ fn download_latest_desktop_release() -> Result<String, String> {
     };
     let checksum = download(&checksum_url, 512)?;
     let checksum_text = std::str::from_utf8(&checksum).map_err(|_| "Некорректный SHA-256 файл")?;
-    let expected = checksum_text.split_whitespace().next().filter(|value| value.len() == 64 && value.bytes().all(|b| b.is_ascii_hexdigit()))
+    let mut checksum_fields = checksum_text.split_whitespace();
+    let expected = checksum_fields.next().filter(|value| value.len() == 64 && value.bytes().all(|b| b.is_ascii_hexdigit()))
         .ok_or("В SHA-256 файле отсутствует контрольная сумма")?.to_ascii_lowercase();
-    let archive = download(&archive_url, 1024 * 1024 * 1024)?;
+    if checksum_fields.next() != Some(filename.as_str()) {
+        return Err("SHA-256 файл относится к другому архиву".into());
+    }
+    let archive = download(&archive_url, 512 * 1024 * 1024)?;
     let actual = format!("{:x}", Sha256::digest(&archive));
     if actual != expected { return Err("Контрольная сумма SHA-256 не совпала; файл не сохранён".into()); }
     let downloads = std::env::var_os("USERPROFILE").map(|p| PathBuf::from(p).join("Downloads"))
