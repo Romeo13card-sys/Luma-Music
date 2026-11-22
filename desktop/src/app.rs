@@ -473,24 +473,37 @@ fn download_latest_desktop_release() -> Result<String, String> {
     if checksum_fields.next() != Some(filename.as_str()) {
         return Err("SHA-256 файл относится к другому архиву".into());
     }
-    let archive = download(&archive_url, 512 * 1024 * 1024)?;
-    let actual = format!("{:x}", Sha256::digest(&archive));
-    if actual != expected { return Err("Контрольная сумма SHA-256 не совпала; файл не сохранён".into()); }
     let downloads = std::env::var_os("USERPROFILE").map(|p| PathBuf::from(p).join("Downloads"))
         .or_else(|| std::env::var_os("HOME").map(|p| PathBuf::from(p).join("Downloads")))
         .ok_or("Не удалось определить каталог загрузок")?;
     fs::create_dir_all(&downloads).map_err(|_| "Не удалось создать каталог загрузок")?;
     let destination = downloads.join(&filename);
-    let temporary = downloads.join(format!("{filename}.part"));
-    {
-        let mut file = fs::File::create(&temporary).map_err(|_| "Не удалось создать временный файл")?;
-        file.write_all(&archive).map_err(|_| "Не удалось записать архив")?;
-        file.sync_all().map_err(|_| "Не удалось завершить запись архива")?;
+    let mut response = client.get(&archive_url).send().and_then(|r| r.error_for_status())
+        .map_err(|_| "Ошибка скачивания архива")?;
+    const MAX_ARCHIVE_BYTES: u64 = 512 * 1024 * 1024;
+    if response.content_length().is_some_and(|length| length > MAX_ARCHIVE_BYTES) {
+        return Err("Размер архива превышает лимит 512 МиБ".into());
     }
-    fs::rename(&temporary, &destination).map_err(|_| {
-        let _ = fs::remove_file(&temporary);
-        "Не удалось переместить проверенный архив в каталог загрузок".to_owned()
-    })?;
+    let mut limited = response.take(MAX_ARCHIVE_BYTES + 1);
+    let mut staged = tempfile::NamedTempFile::new_in(&downloads)
+        .map_err(|_| "Не удалось создать временный файл архива")?;
+    let mut hasher = Sha256::new();
+    let mut total = 0_u64;
+    let mut buffer = [0_u8; 32 * 1024];
+    loop {
+        let count = limited.read(&mut buffer).map_err(|_| "Ошибка чтения архива")?;
+        if count == 0 { break; }
+        total += count as u64;
+        if total > MAX_ARCHIVE_BYTES { return Err("Архив превышает лимит 512 МиБ".into()); }
+        hasher.update(&buffer[..count]);
+        staged.write_all(&buffer[..count]).map_err(|_| "Ошибка записи архива")?;
+    }
+    let actual = format!("{:x}", hasher.finalize());
+    if actual != expected {
+        return Err("Контрольная сумма SHA-256 не совпала; файл не сохранён".into());
+    }
+    staged.as_file().sync_all().map_err(|_| "Не удалось завершить запись архива")?;
+    staged.persist(&destination).map_err(|_| "Не удалось сохранить проверенный архив; возможно, файл уже существует")?;
     Ok(destination.display().to_string())
 }
 
