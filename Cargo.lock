@@ -1731,6 +1731,7 @@ dependencies = [
  "reqwest",
  "rodio",
  "serde_json",
+ "sha2",
  "tempfile",
  "yamusic-core",
 ]
