@@ -26,7 +26,7 @@ internal object StreamUrlPreloader {
     private val executor = ThreadPoolExecutor(
         2, 2, 30, TimeUnit.SECONDS,
         ArrayBlockingQueue(8),
-        ThreadPoolExecutor.DiscardOldestPolicy(),
+        ThreadPoolExecutor.AbortPolicy(),
     ).apply { allowCoreThreadTimeOut(true) }
 
     private fun quality(context: Context, metered: Boolean): Int {
