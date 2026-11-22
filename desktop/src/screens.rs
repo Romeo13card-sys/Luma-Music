@@ -256,57 +256,111 @@ impl App {
                         }
                         Screen::Settings => {
                             ui.label(
-                                egui::RichText::new("ПЕРСОНАЛИЗАЦИЯ")
+                                egui::RichText::new("MAKE IT YOURS  /  LUMA SETTINGS")
                                     .small()
                                     .strong()
                                     .color(egui::Color32::from_rgb(255, 190, 45)),
                             );
-                            ui.heading(egui::RichText::new("Настройки").size(28.0).strong());
-                            ui.add_space(10.0);
-                            ui.horizontal(|ui| {
-                                ui.label("Качество следующего трека");
-                                egui::ComboBox::from_id_source("quality")
-                                    .selected_text(format!("{} кбит/с", self.quality))
-                                    .show_ui(ui, |ui| {
-                                        for quality in [128, 192, 320] {
-                                            ui.selectable_value(
-                                                &mut self.quality,
-                                                quality,
-                                                format!("{quality} кбит/с"),
-                                            );
-                                        }
+                            ui.heading(egui::RichText::new("Настрой Luma").size(30.0).strong());
+                            ui.label(
+                                egui::RichText::new(
+                                    "Звук, внешний вид и обновления — под твоим контролем.",
+                                )
+                                .weak(),
+                            );
+                            ui.add_space(14.0);
+
+                            egui::Frame::group(ui.style())
+                                .fill(ui.visuals().window_fill)
+                                .inner_margin(egui::Margin::same(16.0))
+                                .show(ui, |ui| {
+                                    ui.label(
+                                        egui::RichText::new("ВОСПРОИЗВЕДЕНИЕ")
+                                            .small()
+                                            .strong()
+                                            .color(egui::Color32::from_rgb(255, 190, 45)),
+                                    );
+                                    ui.add_space(8.0);
+                                    ui.horizontal(|ui| {
+                                        ui.label("Качество следующего трека");
+                                        egui::ComboBox::from_id_source("quality")
+                                            .selected_text(format!("{} кбит/с", self.quality))
+                                            .show_ui(ui, |ui| {
+                                                for quality in [128, 192, 320] {
+                                                    ui.selectable_value(
+                                                        &mut self.quality,
+                                                        quality,
+                                                        format!("{quality} кбит/с"),
+                                                    );
+                                                }
+                                            });
                                     });
-                            });
-                            ui.add(
-                                egui::Slider::new(&mut self.volume, 0.0..=1.0)
-                                    .text("Громкость")
-                                    .show_value(true),
-                            );
-                            if let Some(player) = &self.player {
-                                player.sink.set_volume(self.volume);
-                            }
-                            ui.checkbox(
-                                &mut self.autoplay,
-                                "Автоматически включать следующий трек",
-                            );
-                            ui.checkbox(&mut self.repeat, "Повторять текущий трек");
-                            if ui.checkbox(&mut self.dark, "Тёмная тема").changed() {
-                                self.status = if self.dark {
-                                    "Включена тёмная тема"
-                                } else {
-                                    "Включена светлая тема"
-                                }
-                                .into();
-                            }
-                            ui.add_space(12.0);
-                            ui.hyperlink_to(
-                                "GitHub Releases",
-                                "https://github.com/Romeo13card-sys/Luma-Music/releases",
-                            );
-                            ui.hyperlink_to(
-                                "Исходный код и лицензия GPL-3.0",
-                                "https://github.com/Romeo13card-sys/Luma-Music",
-                            );
+                                    ui.add(
+                                        egui::Slider::new(&mut self.volume, 0.0..=1.0)
+                                            .text("Громкость")
+                                            .show_value(true),
+                                    );
+                                    if let Some(player) = &self.player {
+                                        player.sink.set_volume(self.volume);
+                                    }
+                                    ui.checkbox(
+                                        &mut self.autoplay,
+                                        "Автоматически включать следующий трек",
+                                    );
+                                    ui.checkbox(&mut self.repeat, "Повторять текущий трек");
+                                });
+
+                            ui.add_space(10.0);
+                            egui::Frame::group(ui.style())
+                                .fill(ui.visuals().window_fill)
+                                .inner_margin(egui::Margin::same(16.0))
+                                .show(ui, |ui| {
+                                    ui.label(
+                                        egui::RichText::new("ВНЕШНИЙ ВИД")
+                                            .small()
+                                            .strong()
+                                            .color(egui::Color32::from_rgb(255, 190, 45)),
+                                    );
+                                    ui.add_space(8.0);
+                                    if ui.checkbox(&mut self.dark, "Тёмная тема").changed() {
+                                        self.status = if self.dark {
+                                            "Включена тёмная тема"
+                                        } else {
+                                            "Включена светлая тема"
+                                        }
+                                        .into();
+                                    }
+                                });
+
+                            ui.add_space(10.0);
+                            egui::Frame::group(ui.style())
+                                .fill(ui.visuals().window_fill)
+                                .inner_margin(egui::Margin::same(16.0))
+                                .show(ui, |ui| {
+                                    ui.label(
+                                        egui::RichText::new("ОБНОВЛЕНИЯ И ИНФОРМАЦИЯ")
+                                            .small()
+                                            .strong()
+                                            .color(egui::Color32::from_rgb(255, 190, 45)),
+                                    );
+                                    ui.add_space(6.0);
+                                    ui.label(format!("Установленная версия · {}", app_version()));
+                                    ui.label(
+                                        egui::RichText::new(
+                                            "Новые сборки для Windows, macOS и Linux публикуются вместе с релизом Luma Music.",
+                                        )
+                                        .small()
+                                        .weak(),
+                                    );
+                                    ui.hyperlink_to(
+                                        "Проверить обновления и скачать свою версию",
+                                        "https://github.com/Romeo13card-sys/Luma-Music/releases",
+                                    );
+                                    ui.hyperlink_to(
+                                        "Исходный код и лицензия GPL-3.0",
+                                        "https://github.com/Romeo13card-sys/Luma-Music",
+                                    );
+                                });
                         }
                     }
                 });
