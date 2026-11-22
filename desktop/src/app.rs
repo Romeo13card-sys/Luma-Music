@@ -1,7 +1,8 @@
 use crate::engine::Jobs;
 use crate::player::{prepare_audio, Player, Reply};
 use serde_json::Value;
-use std::{io::Read, sync::mpsc, time::Duration};
+use sha2::{Digest, Sha256};
+use std::{fs, io::{Read, Write}, path::PathBuf, sync::mpsc, time::Duration};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Screen {
@@ -40,6 +41,8 @@ pub(crate) struct App {
     pub(crate) update_status: String,
     pub(crate) update_url: Option<String>,
     pub(crate) update_busy: bool,
+    pub(crate) download_busy: bool,
+    pub(crate) download_status: String,
 }
 
 fn compare_release_versions(candidate: &str, installed: &str) -> Option<std::cmp::Ordering> {
@@ -104,6 +107,8 @@ impl App {
             update_status: "Проверка обновлений ещё не выполнялась".into(),
             update_url: None,
             update_busy: false,
+            download_busy: false,
+            download_status: String::new(),
         }
     }
 
@@ -194,6 +199,18 @@ impl App {
                 }
             })();
             let _ = tx.send(Reply::Update(result));
+            ctx.request_repaint();
+        });
+    }
+
+    pub(crate) fn download_update(&mut self, ctx: eframe::egui::Context) {
+        if self.download_busy { return; }
+        self.download_busy = true;
+        self.download_status = "Загрузка и проверка SHA-256…".into();
+        let tx = self.tx.clone();
+        std::thread::spawn(move || {
+            let result = download_latest_desktop_release();
+            let _ = tx.send(Reply::Download(result));
             ctx.request_repaint();
         });
     }
@@ -315,6 +332,13 @@ impl App {
                         }
                     }
                 }
+                Reply::Download(result) => {
+                    self.download_busy = false;
+                    self.download_status = match result {
+                        Ok(path) => format!("Проверено и сохранено: {path}"),
+                        Err(error) => format!("Ошибка загрузки: {error}"),
+                    };
+                }
                 Reply::Audio(id, result) => {
                     if !self.jobs.matches(id) {
                         continue;
@@ -366,6 +390,92 @@ impl App {
             }
         }
     }
+}
+
+
+fn download_latest_desktop_release() -> Result<String, String> {
+    let platform = match std::env::consts::OS {
+        "windows" => "Windows-10-11",
+        "macos" => "macOS",
+        "linux" => "Linux",
+        _ => return Err("Эта платформа пока не поддерживается".into()),
+    };
+    let arch = match std::env::consts::ARCH {
+        "x86_64" => "x64",
+        "aarch64" => "arm64",
+        "x86" => "x86",
+        _ => return Err("Эта архитектура пока не поддерживается".into()),
+    };
+    if platform == "Windows-10-11" && arch != "x64" {
+        return Err("Для этой архитектуры Windows нет опубликованного архива".into());
+    }
+    let version = crate::app_version();
+    let version = if version.matches('.').count() == 1 { format!("{version}.0") } else { version.to_owned() };
+    let filename = format!("Luma-Music-{version}-{platform}-{arch}{}.zip",
+        if platform.starts_with("Windows") { "-Portable" } else { "" });
+    let checksum_name = format!("{filename}.sha256");
+    let client = reqwest::blocking::Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(180))
+        .user_agent("Luma-Music-Desktop-Updater")
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            let url = attempt.url();
+            let host_ok = matches!(url.host_str(), Some("github.com" | "api.github.com" | "release-assets.githubusercontent.com" | "objects.githubusercontent.com" | "github-releases.githubusercontent.com"));
+            if url.scheme() == "https" && host_ok && attempt.previous().len() < 5 {
+                attempt.follow()
+            } else {
+                attempt.stop()
+            }
+        }))
+        .build().map_err(|_| "Не удалось создать HTTP-клиент")?;
+    let release_response = client.get("https://api.github.com/repos/Romeo13card-sys/Luma-Music/releases/latest")
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .send().and_then(|r| r.error_for_status()).map_err(|_| "Не удалось получить список файлов релиза")?;
+    let mut body = String::new();
+    release_response.take(1024 * 1024 + 1).read_to_string(&mut body).map_err(|_| "Не удалось прочитать релиз")?;
+    if body.len() > 1024 * 1024 { return Err("Ответ GitHub слишком большой".into()); }
+    let release: Value = serde_json::from_str(&body).map_err(|_| "Некорректный ответ GitHub")?;
+    let assets = release["assets"].as_array().ok_or("В релизе отсутствуют файлы")?;
+    let asset_url = |name: &str| -> Result<String, String> {
+        assets.iter().find(|asset| asset["name"].as_str() == Some(name))
+            .and_then(|asset| asset["browser_download_url"].as_str())
+            .filter(|url| url.starts_with("https://github.com/Romeo13card-sys/Luma-Music/releases/download/"))
+            .map(str::to_owned).ok_or_else(|| format!("В релизе нет обязательного файла {name}"))
+    };
+    let archive_url = asset_url(&filename)?;
+    let checksum_url = asset_url(&checksum_name)?;
+    let download = |url: &str, limit: u64| -> Result<Vec<u8>, String> {
+        let mut response = client.get(url).send().and_then(|r| r.error_for_status()).map_err(|_| "Ошибка скачивания файла")?;
+        if response.content_length().is_some_and(|length| length > limit) { return Err("Размер файла превышает лимит".into()); }
+        let mut bytes = Vec::new();
+        response.take(limit + 1).read_to_end(&mut bytes).map_err(|_| "Не удалось прочитать скачанный файл")?;
+        if bytes.len() as u64 > limit { return Err("Файл превышает допустимый размер".into()); }
+        Ok(bytes)
+    };
+    let checksum = download(&checksum_url, 512)?;
+    let checksum_text = std::str::from_utf8(&checksum).map_err(|_| "Некорректный SHA-256 файл")?;
+    let expected = checksum_text.split_whitespace().next().filter(|value| value.len() == 64 && value.bytes().all(|b| b.is_ascii_hexdigit()))
+        .ok_or("В SHA-256 файле отсутствует контрольная сумма")?.to_ascii_lowercase();
+    let archive = download(&archive_url, 1024 * 1024 * 1024)?;
+    let actual = format!("{:x}", Sha256::digest(&archive));
+    if actual != expected { return Err("Контрольная сумма SHA-256 не совпала; файл не сохранён".into()); }
+    let downloads = std::env::var_os("USERPROFILE").map(|p| PathBuf::from(p).join("Downloads"))
+        .or_else(|| std::env::var_os("HOME").map(|p| PathBuf::from(p).join("Downloads")))
+        .ok_or("Не удалось определить каталог загрузок")?;
+    fs::create_dir_all(&downloads).map_err(|_| "Не удалось создать каталог загрузок")?;
+    let destination = downloads.join(&filename);
+    let temporary = downloads.join(format!("{filename}.part"));
+    {
+        let mut file = fs::File::create(&temporary).map_err(|_| "Не удалось создать временный файл")?;
+        file.write_all(&archive).map_err(|_| "Не удалось записать архив")?;
+        file.sync_all().map_err(|_| "Не удалось завершить запись архива")?;
+    }
+    fs::rename(&temporary, &destination).map_err(|_| {
+        let _ = fs::remove_file(&temporary);
+        "Не удалось переместить проверенный архив в каталог загрузок".to_owned()
+    })?;
+    Ok(destination.display().to_string())
 }
 
 #[cfg(test)]
