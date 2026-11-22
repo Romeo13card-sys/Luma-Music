@@ -137,7 +137,7 @@ impl App {
         });
     }
 
-    pub(crate) fn check_updates(&mut self) {
+    pub(crate) fn check_updates(&mut self, ctx: egui::Context) {
         if self.update_busy {
             return;
         }
@@ -190,6 +190,7 @@ impl App {
                 }
             })();
             let _ = tx.send(Reply::Update(result));
+            ctx.request_repaint();
         });
     }
 
