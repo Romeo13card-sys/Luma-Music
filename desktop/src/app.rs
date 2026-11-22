@@ -4,7 +4,13 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 #[cfg(target_os = "macos")]
 use std::path::Path;
-use std::{fs, io::{Read, Write}, path::PathBuf, sync::mpsc, time::Duration};
+use std::{
+    fs,
+    io::{Read, Write},
+    path::PathBuf,
+    sync::mpsc,
+    time::Duration,
+};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Screen {
@@ -64,13 +70,26 @@ fn compare_release_versions(candidate: &str, installed: &str) -> Option<std::cmp
     }
     let (candidate_version, candidate_stable) = parse(candidate)?;
     let (installed_version, installed_stable) = parse(installed)?;
-    Some(candidate_version.cmp(&installed_version).then_with(|| candidate_stable.cmp(&installed_stable)))
+    Some(
+        candidate_version
+            .cmp(&installed_version)
+            .then_with(|| candidate_stable.cmp(&installed_stable)),
+    )
 }
 
-fn desktop_release_asset_filename(version: &str, platform: &str, arch: &str, legacy_windows: bool) -> String {
+fn desktop_release_asset_filename(
+    version: &str,
+    platform: &str,
+    arch: &str,
+    legacy_windows: bool,
+) -> String {
     format!(
         "Luma-Music-{version}-{platform}-{arch}{}{}.zip",
-        if platform.starts_with("Windows") { "-Portable" } else { "" },
+        if platform.starts_with("Windows") {
+            "-Portable"
+        } else {
+            ""
+        },
         if legacy_windows { "-experimental" } else { "" },
     )
 }
@@ -81,9 +100,9 @@ fn next_available_track_id(queue: &[Value], index: usize) -> Option<&str> {
         .skip(index.saturating_add(1))
         .find(|track| {
             track["available"] == true
-                && track["id"]
-                    .as_str()
-                    .is_some_and(|id| !id.is_empty() && id.bytes().all(|byte| byte.is_ascii_digit()))
+                && track["id"].as_str().is_some_and(|id| {
+                    !id.is_empty() && id.bytes().all(|byte| byte.is_ascii_digit())
+                })
         })
         .and_then(|track| track["id"].as_str())
 }
@@ -203,11 +222,17 @@ impl App {
                     .ok_or("В релизе отсутствует версия")?;
                 let url = release["html_url"]
                     .as_str()
-                    .filter(|url| url.starts_with("https://github.com/Romeo13card-sys/Luma-Music/releases/tag/"))
+                    .filter(|url| {
+                        url.starts_with(
+                            "https://github.com/Romeo13card-sys/Luma-Music/releases/tag/",
+                        )
+                    })
                     .ok_or("Некорректная ссылка на релиз")?
                     .to_owned();
                 match compare_release_versions(tag, &current) {
-                    Some(std::cmp::Ordering::Greater) => Ok((format!("Доступна новая версия {tag}"), url)),
+                    Some(std::cmp::Ordering::Greater) => {
+                        Ok((format!("Доступна новая версия {tag}"), url))
+                    }
                     Some(_) => Ok((format!("Установлена актуальная версия ({current})"), url)),
                     None => Err("Не удалось сравнить версии релиза".into()),
                 }
@@ -218,7 +243,9 @@ impl App {
     }
 
     pub(crate) fn download_update(&mut self, ctx: eframe::egui::Context) {
-        if self.download_busy { return; }
+        if self.download_busy {
+            return;
+        }
         self.download_busy = true;
         self.update_archive = None;
         self.download_status = "Загрузка и проверка SHA-256…".into();
@@ -237,13 +264,24 @@ impl App {
 
     #[cfg(not(all(target_os = "windows", target_vendor = "win7")))]
     pub(crate) fn install_update(&mut self) -> Result<(), String> {
-        let archive = self.update_archive.as_ref().ok_or("Сначала скачайте и проверьте обновление")?;
-        if !archive.is_file() { return Err("Проверенный архив больше не найден".into()); }
-        let executable = std::env::current_exe().map_err(|_| "Не удалось определить путь приложения")?;
+        let archive = self
+            .update_archive
+            .as_ref()
+            .ok_or("Сначала скачайте и проверьте обновление")?;
+        if !archive.is_file() {
+            return Err("Проверенный архив больше не найден".into());
+        }
+        let executable =
+            std::env::current_exe().map_err(|_| "Не удалось определить путь приложения")?;
         #[cfg(any(target_os = "windows", target_os = "linux"))]
-        let install_dir = executable.parent().ok_or("Не удалось определить каталог приложения")?;
+        let install_dir = executable
+            .parent()
+            .ok_or("Не удалось определить каталог приложения")?;
         #[cfg(target_os = "macos")]
-        let install_target = executable.parent().and_then(Path::parent).and_then(Path::parent)
+        let install_target = executable
+            .parent()
+            .and_then(Path::parent)
+            .and_then(Path::parent)
             .filter(|path| path.extension().is_some_and(|ext| ext == "app"))
             .ok_or("Приложение запущено не из стандартного .app bundle")?;
         #[cfg(any(target_os = "windows", target_os = "linux"))]
@@ -282,13 +320,25 @@ try {
 "#;
             let script_path = write_updater_script("ps1", script)?;
             std::process::Command::new("powershell.exe")
-                .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"])
-                .arg(&script_path).arg("-Archive").arg(archive)
-                .arg("-ProcessId").arg(pid.to_string())
-                .arg("-Executable").arg(&executable)
-                .arg("-InstallDir").arg(install_dir)
+                .args([
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                ])
+                .arg(&script_path)
+                .arg("-Archive")
+                .arg(archive)
+                .arg("-ProcessId")
+                .arg(pid.to_string())
+                .arg("-Executable")
+                .arg(&executable)
+                .arg("-InstallDir")
+                .arg(install_dir)
                 .creation_flags(0x08000000)
-                .spawn().map_err(|_| "Не удалось запустить установщик обновления")?;
+                .spawn()
+                .map_err(|_| "Не удалось запустить установщик обновления")?;
         }
         #[cfg(target_os = "linux")]
         {
@@ -315,10 +365,18 @@ rm -f "$0"
 "#;
             let stage = temp.join(format!("luma-update-{pid}"));
             let script_path = write_updater_script("sh", script)?;
-            std::process::Command::new("sh").arg(&script_path)
-                .arg(archive).arg(pid.to_string()).arg(&executable).arg(install_dir).arg(stage)
-                .stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null())
-                .spawn().map_err(|_| "Не удалось запустить установщик обновления")?;
+            std::process::Command::new("sh")
+                .arg(&script_path)
+                .arg(archive)
+                .arg(pid.to_string())
+                .arg(&executable)
+                .arg(install_dir)
+                .arg(stage)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .map_err(|_| "Не удалось запустить установщик обновления")?;
         }
         #[cfg(target_os = "macos")]
         {
@@ -347,10 +405,17 @@ rm -f "$0"
 "#;
             let stage = temp.join(format!("luma-update-{pid}"));
             let script_path = write_updater_script("sh", script)?;
-            std::process::Command::new("sh").arg(&script_path)
-                .arg(archive).arg(pid.to_string()).arg(app_bundle).arg(stage)
-                .stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null())
-                .spawn().map_err(|_| "Не удалось запустить установщик обновления")?;
+            std::process::Command::new("sh")
+                .arg(&script_path)
+                .arg(archive)
+                .arg(pid.to_string())
+                .arg(app_bundle)
+                .arg(stage)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .map_err(|_| "Не удалось запустить установщик обновления")?;
         }
         #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
         return Err("Автоматическая установка не поддерживается на этой ОС".into());
@@ -480,7 +545,8 @@ rm -f "$0"
                     match result {
                         Ok(path) => {
                             self.update_archive = Some(PathBuf::from(&path));
-                            self.download_status = format!("Архив проверен SHA-256 и сохранён: {path}");
+                            self.download_status =
+                                format!("Архив проверен SHA-256 и сохранён: {path}");
                         }
                         Err(error) => {
                             self.update_archive = None;
@@ -541,13 +607,20 @@ rm -f "$0"
     }
 }
 
-
 fn write_updater_script(extension: &str, contents: &str) -> Result<PathBuf, String> {
-    let mut file = tempfile::Builder::new().prefix("luma-updater-").suffix(&format!(".{extension}"))
-        .tempfile().map_err(|_| "Не удалось создать скрипт установщика")?;
-    file.write_all(contents.as_bytes()).map_err(|_| "Не удалось записать скрипт установщика")?;
-    file.as_file().sync_all().map_err(|_| "Не удалось сохранить скрипт установщика")?;
-    let (_, path) = file.keep().map_err(|_| "Не удалось подготовить скрипт установщика")?;
+    let mut file = tempfile::Builder::new()
+        .prefix("luma-updater-")
+        .suffix(&format!(".{extension}"))
+        .tempfile()
+        .map_err(|_| "Не удалось создать скрипт установщика")?;
+    file.write_all(contents.as_bytes())
+        .map_err(|_| "Не удалось записать скрипт установщика")?;
+    file.as_file()
+        .sync_all()
+        .map_err(|_| "Не удалось сохранить скрипт установщика")?;
+    let (_, path) = file
+        .keep()
+        .map_err(|_| "Не удалось подготовить скрипт установщика")?;
     Ok(path)
 }
 
@@ -566,7 +639,9 @@ fn download_latest_desktop_release() -> Result<String, String> {
         ("linux", "x86_64") => "x64",
         ("macos", "x86_64") => "x64",
         ("macos", "aarch64") => "arm64",
-        ("windows", _) => return Err("Для этой архитектуры Windows нет опубликованного архива".into()),
+        ("windows", _) => {
+            return Err("Для этой архитектуры Windows нет опубликованного архива".into())
+        }
         ("linux", _) => return Err("Опубликована только Linux-сборка x64".into()),
         ("macos", _) => return Err("Эта архитектура macOS пока не поддерживается".into()),
         _ => return Err("Эта архитектура пока не поддерживается".into()),
@@ -577,71 +652,130 @@ fn download_latest_desktop_release() -> Result<String, String> {
         .user_agent("Luma-Music-Desktop-Updater")
         .redirect(reqwest::redirect::Policy::custom(|attempt| {
             let url = attempt.url();
-            let host_ok = matches!(url.host_str(), Some("github.com" | "api.github.com" | "release-assets.githubusercontent.com" | "objects.githubusercontent.com" | "github-releases.githubusercontent.com"));
+            let host_ok = matches!(
+                url.host_str(),
+                Some(
+                    "github.com"
+                        | "api.github.com"
+                        | "release-assets.githubusercontent.com"
+                        | "objects.githubusercontent.com"
+                        | "github-releases.githubusercontent.com"
+                )
+            );
             if url.scheme() == "https" && host_ok && attempt.previous().len() < 5 {
                 attempt.follow()
             } else {
                 attempt.stop()
             }
         }))
-        .build().map_err(|_| "Не удалось создать HTTP-клиент")?;
-    let release_response = client.get("https://api.github.com/repos/Romeo13card-sys/Luma-Music/releases/latest")
+        .build()
+        .map_err(|_| "Не удалось создать HTTP-клиент")?;
+    let release_response = client
+        .get("https://api.github.com/repos/Romeo13card-sys/Luma-Music/releases/latest")
         .header("Accept", "application/vnd.github+json")
         .header("X-GitHub-Api-Version", "2022-11-28")
-        .send().and_then(|r| r.error_for_status()).map_err(|_| "Не удалось получить список файлов релиза")?;
+        .send()
+        .and_then(|r| r.error_for_status())
+        .map_err(|_| "Не удалось получить список файлов релиза")?;
     let mut body = String::new();
-    release_response.take(1024 * 1024 + 1).read_to_string(&mut body).map_err(|_| "Не удалось прочитать релиз")?;
-    if body.len() > 1024 * 1024 { return Err("Ответ GitHub слишком большой".into()); }
+    release_response
+        .take(1024 * 1024 + 1)
+        .read_to_string(&mut body)
+        .map_err(|_| "Не удалось прочитать релиз")?;
+    if body.len() > 1024 * 1024 {
+        return Err("Ответ GitHub слишком большой".into());
+    }
     let release: Value = serde_json::from_str(&body).map_err(|_| "Некорректный ответ GitHub")?;
-    let release_tag = release["tag_name"].as_str().ok_or("В релизе отсутствует версия")?;
+    let release_tag = release["tag_name"]
+        .as_str()
+        .ok_or("В релизе отсутствует версия")?;
     let raw_version = release_tag.strip_prefix('v').unwrap_or(release_tag);
-    if !raw_version.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'.' || byte == b'-') {
+    if !raw_version
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'.' || byte == b'-')
+    {
         return Err("Некорректная версия релиза".into());
     }
-    let version = if !raw_version.contains('-') && raw_version.matches('.').count() == 2 && raw_version.ends_with(".0") {
+    let version = if !raw_version.contains('-')
+        && raw_version.matches('.').count() == 2
+        && raw_version.ends_with(".0")
+    {
         &raw_version[..raw_version.len() - 2]
     } else {
         raw_version
     };
-    if compare_release_versions(release_tag, crate::app_version()) != Some(std::cmp::Ordering::Greater) {
+    if compare_release_versions(release_tag, crate::app_version())
+        != Some(std::cmp::Ordering::Greater)
+    {
         return Err("Для этой версии нет более нового стабильного релиза".into());
     }
     let filename = desktop_release_asset_filename(version, platform, arch, legacy_windows);
     let checksum_name = format!("{filename}.sha256");
-    let assets = release["assets"].as_array().ok_or("В релизе отсутствуют файлы")?;
+    let assets = release["assets"]
+        .as_array()
+        .ok_or("В релизе отсутствуют файлы")?;
     let asset_url = |name: &str| -> Result<String, String> {
-        assets.iter().find(|asset| asset["name"].as_str() == Some(name))
+        assets
+            .iter()
+            .find(|asset| asset["name"].as_str() == Some(name))
             .and_then(|asset| asset["browser_download_url"].as_str())
-            .filter(|url| url.starts_with("https://github.com/Romeo13card-sys/Luma-Music/releases/download/"))
-            .map(str::to_owned).ok_or_else(|| format!("В релизе нет обязательного файла {name}"))
+            .filter(|url| {
+                url.starts_with("https://github.com/Romeo13card-sys/Luma-Music/releases/download/")
+            })
+            .map(str::to_owned)
+            .ok_or_else(|| format!("В релизе нет обязательного файла {name}"))
     };
     let archive_url = asset_url(&filename)?;
     let checksum_url = asset_url(&checksum_name)?;
     let download = |url: &str, limit: u64| -> Result<Vec<u8>, String> {
-        let mut response = client.get(url).send().and_then(|r| r.error_for_status()).map_err(|_| "Ошибка скачивания файла")?;
-        if response.content_length().is_some_and(|length| length > limit) { return Err("Размер файла превышает лимит".into()); }
+        let mut response = client
+            .get(url)
+            .send()
+            .and_then(|r| r.error_for_status())
+            .map_err(|_| "Ошибка скачивания файла")?;
+        if response
+            .content_length()
+            .is_some_and(|length| length > limit)
+        {
+            return Err("Размер файла превышает лимит".into());
+        }
         let mut bytes = Vec::new();
-        response.take(limit + 1).read_to_end(&mut bytes).map_err(|_| "Не удалось прочитать скачанный файл")?;
-        if bytes.len() as u64 > limit { return Err("Файл превышает допустимый размер".into()); }
+        response
+            .take(limit + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|_| "Не удалось прочитать скачанный файл")?;
+        if bytes.len() as u64 > limit {
+            return Err("Файл превышает допустимый размер".into());
+        }
         Ok(bytes)
     };
     let checksum = download(&checksum_url, 512)?;
     let checksum_text = std::str::from_utf8(&checksum).map_err(|_| "Некорректный SHA-256 файл")?;
     let mut checksum_fields = checksum_text.split_whitespace();
-    let expected = checksum_fields.next().filter(|value| value.len() == 64 && value.bytes().all(|b| b.is_ascii_hexdigit()))
-        .ok_or("В SHA-256 файле отсутствует контрольная сумма")?.to_ascii_lowercase();
+    let expected = checksum_fields
+        .next()
+        .filter(|value| value.len() == 64 && value.bytes().all(|b| b.is_ascii_hexdigit()))
+        .ok_or("В SHA-256 файле отсутствует контрольная сумма")?
+        .to_ascii_lowercase();
     if checksum_fields.next() != Some(filename.as_str()) {
         return Err("SHA-256 файл относится к другому архиву".into());
     }
-    let downloads = std::env::var_os("USERPROFILE").map(|p| PathBuf::from(p).join("Downloads"))
+    let downloads = std::env::var_os("USERPROFILE")
+        .map(|p| PathBuf::from(p).join("Downloads"))
         .or_else(|| std::env::var_os("HOME").map(|p| PathBuf::from(p).join("Downloads")))
         .ok_or("Не удалось определить каталог загрузок")?;
     fs::create_dir_all(&downloads).map_err(|_| "Не удалось создать каталог загрузок")?;
     let destination = downloads.join(&filename);
-    let mut response = client.get(&archive_url).send().and_then(|r| r.error_for_status())
+    let mut response = client
+        .get(&archive_url)
+        .send()
+        .and_then(|r| r.error_for_status())
         .map_err(|_| "Ошибка скачивания архива")?;
     const MAX_ARCHIVE_BYTES: u64 = 512 * 1024 * 1024;
-    if response.content_length().is_some_and(|length| length > MAX_ARCHIVE_BYTES) {
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_ARCHIVE_BYTES)
+    {
         return Err("Размер архива превышает лимит 512 МиБ".into());
     }
     let mut limited = response.take(MAX_ARCHIVE_BYTES + 1);
@@ -651,19 +785,32 @@ fn download_latest_desktop_release() -> Result<String, String> {
     let mut total = 0_u64;
     let mut buffer = [0_u8; 32 * 1024];
     loop {
-        let count = limited.read(&mut buffer).map_err(|_| "Ошибка чтения архива")?;
-        if count == 0 { break; }
+        let count = limited
+            .read(&mut buffer)
+            .map_err(|_| "Ошибка чтения архива")?;
+        if count == 0 {
+            break;
+        }
         total += count as u64;
-        if total > MAX_ARCHIVE_BYTES { return Err("Архив превышает лимит 512 МиБ".into()); }
+        if total > MAX_ARCHIVE_BYTES {
+            return Err("Архив превышает лимит 512 МиБ".into());
+        }
         hasher.update(&buffer[..count]);
-        staged.write_all(&buffer[..count]).map_err(|_| "Ошибка записи архива")?;
+        staged
+            .write_all(&buffer[..count])
+            .map_err(|_| "Ошибка записи архива")?;
     }
     let actual = format!("{:x}", hasher.finalize());
     if actual != expected {
         return Err("Контрольная сумма SHA-256 не совпала; файл не сохранён".into());
     }
-    staged.as_file().sync_all().map_err(|_| "Не удалось завершить запись архива")?;
-    staged.persist(&destination).map_err(|_| "Не удалось сохранить проверенный архив; возможно, файл уже существует")?;
+    staged
+        .as_file()
+        .sync_all()
+        .map_err(|_| "Не удалось завершить запись архива")?;
+    staged
+        .persist(&destination)
+        .map_err(|_| "Не удалось сохранить проверенный архив; возможно, файл уже существует")?;
     Ok(destination.display().to_string())
 }
 
@@ -674,12 +821,27 @@ mod playback_prewarm_tests {
 
     #[test]
     fn release_comparison_handles_versions_and_stable_over_preview() {
-        assert_eq!(compare_release_versions("v2.1.0", "2.0.9"), Some(std::cmp::Ordering::Greater));
-        assert_eq!(compare_release_versions("v2.1.0", "2.1.0-rc.1"), Some(std::cmp::Ordering::Greater));
-        assert_eq!(compare_release_versions("v2.0.0", "2.1.0"), Some(std::cmp::Ordering::Less));
+        assert_eq!(
+            compare_release_versions("v2.1.0", "2.0.9"),
+            Some(std::cmp::Ordering::Greater)
+        );
+        assert_eq!(
+            compare_release_versions("v2.1.0", "2.1.0-rc.1"),
+            Some(std::cmp::Ordering::Greater)
+        );
+        assert_eq!(
+            compare_release_versions("v2.0.0", "2.1.0"),
+            Some(std::cmp::Ordering::Less)
+        );
         assert_eq!(compare_release_versions("bad", "2.0.0"), None);
-        assert_eq!(compare_release_versions("v2.1.0", "2.0"), Some(std::cmp::Ordering::Greater));
-        assert_eq!(compare_release_versions("v2.0.0", "2.0"), Some(std::cmp::Ordering::Equal));
+        assert_eq!(
+            compare_release_versions("v2.1.0", "2.0"),
+            Some(std::cmp::Ordering::Greater)
+        );
+        assert_eq!(
+            compare_release_versions("v2.0.0", "2.0"),
+            Some(std::cmp::Ordering::Equal)
+        );
     }
 
     #[test]
