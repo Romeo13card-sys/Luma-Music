@@ -289,7 +289,7 @@ while kill -0 "$pid" 2>/dev/null; do sleep 0.5; done
 mkdir -p "$stage" || exit 1
 ditto -x -k "$archive" "$stage" || exit 2
 new_app="$stage/Luma Music.app"
-backup="\${app}.luma-backup"
+backup="$app.luma-backup"
 rm -rf "$backup"
 mv "$app" "$backup" || exit 3
 if ! ditto --rsrc --extattr "$new_app" "$app"; then
