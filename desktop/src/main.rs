@@ -257,6 +257,17 @@ impl eframe::App for App {
                     .inner_margin(egui::Margin::same(10.0))
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
+                            egui::Frame::group(ui.style())
+                                .fill(egui::Color32::from_rgb(255, 216, 77))
+                                .inner_margin(egui::Margin::same(9.0))
+                                .show(ui, |ui| {
+                                    ui.label(
+                                        egui::RichText::new("♫")
+                                            .size(25.0)
+                                            .strong()
+                                            .color(egui::Color32::from_rgb(24, 27, 32)),
+                                    );
+                                });
                             ui.vertical(|ui| {
                                 ui.label(
                                     egui::RichText::new("NOW PLAYING")
@@ -336,14 +347,34 @@ impl eframe::App for App {
                                 .get_pos()
                                 .as_secs_f64()
                                 .min(duration.as_secs_f64());
-                            if ui
-                                .add(
+                            let elapsed = seconds as u64;
+                            let total = duration.as_secs();
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    egui::RichText::new(format!(
+                                        "{:02}:{:02}",
+                                        elapsed / 60,
+                                        elapsed % 60
+                                    ))
+                                    .small()
+                                    .weak(),
+                                );
+                                ui.add(
                                     egui::Slider::new(&mut seconds, 0.0..=duration.as_secs_f64())
                                         .show_value(false)
                                         .text(""),
-                                )
-                                .changed()
-                            {
+                                );
+                                ui.label(
+                                    egui::RichText::new(format!(
+                                        "{:02}:{:02}",
+                                        total / 60,
+                                        total % 60
+                                    ))
+                                    .small()
+                                    .weak(),
+                                );
+                            });
+                            if seconds != player.sink.get_pos().as_secs_f64() {
                                 seek_to = Some(seconds);
                             }
                         }
