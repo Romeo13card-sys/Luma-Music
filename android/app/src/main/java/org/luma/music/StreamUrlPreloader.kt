@@ -5,7 +5,6 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import org.json.JSONObject
 import java.util.concurrent.ArrayBlockingQueue
-import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.ThreadPoolExecutor
@@ -20,9 +19,8 @@ internal fun isAsciiNumericTrackId(id: String): Boolean =
     id.isNotEmpty() && id.all { digit -> digit in '0'..'9' }
 
 internal object StreamUrlPreloader {
-    // This future is only a rendezvous signal. The actual URL cache remains
-    // account- and quality-scoped in Rust; no URL or credential is shared here.
-    private val pending = ConcurrentHashMap<String, CompletableFuture<Unit>>()
+    // Prevent duplicate concurrent warmups; URL caching and request sharing live in Rust.
+    private val pending = ConcurrentHashMap.newKeySet<String>()
     private val executor = ThreadPoolExecutor(
         2, 2, 30, TimeUnit.SECONDS,
         ArrayBlockingQueue(8),
@@ -41,11 +39,7 @@ internal object StreamUrlPreloader {
             .distinctBy { it.id }
             .take(2)
             .forEach { song ->
-                val future = CompletableFuture<Unit>()
-                val existing = pending[song.id]
-                if (existing != null && !existing.isDone) return@forEach
-                if (existing != null && !pending.remove(song.id, existing)) return@forEach
-                if (pending.putIfAbsent(song.id, future) != null) return@forEach
+                if (!pending.add(song.id)) return@forEach
 
                 try {
                     executor.execute {
@@ -70,23 +64,15 @@ internal object StreamUrlPreloader {
                                     }
                                 }
                             }
-                            future.complete(Unit)
-                        } catch (error: Exception) {
-                            future.completeExceptionally(error)
+                        } catch (_: Exception) {
+                            // Speculative warmup failures never block normal playback.
                         } finally {
-                            // Retain successful completion until the next preload attempt;
-                            // the Rust cache remains responsible for URL expiry.
-                            if (future.isCompletedExceptionally) pending.remove(song.id, future)
+                            pending.remove(song.id)
                         }
                     }
                 } catch (_: RejectedExecutionException) {
-                    pending.remove(song.id, future)
-                    future.completeExceptionally(IllegalStateException("Stream warmup queue is full"))
+                    pending.remove(song.id)
                 }
             }
-
-        if (pending.size > 8) {
-            pending.entries.firstOrNull { it.value.isDone }?.let { pending.remove(it.key, it.value) }
-        }
     }
 }
