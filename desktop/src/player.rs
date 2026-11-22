@@ -24,6 +24,7 @@ pub(crate) enum Reply {
     Data(u64, String, Result<Value, String>),
     Audio(u64, Result<Ready, String>),
     Progress(u64, u64),
+    Update(Result<(String, String), String>),
 }
 
 pub(crate) struct Player {
