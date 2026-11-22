@@ -20,12 +20,15 @@ internal class LibraryScreen(
     private val mutedColor: Int,
 ) {
     fun render() {
-        target.addView(text("Коллекция", 30f, textColor, true, false))
+        target.addView(text("YOUR SPACE  /  LIBRARY", 10f, AppThemes.active.accent, true, true))
+        target.addView(text("Твоя коллекция", 31f, textColor, true, false))
+        target.addView(text("Всё, что хочется сохранить и переслушивать.", 13f, mutedColor, false, false))
+        gap(target, 8)
         collectionCards(target)
         gap(target, 12)
         target.addView(action("Музыка с устройства", false, openFile))
         gap(target, 12)
-        target.addView(text("Плейлисты", 22f, textColor, true, false))
+        target.addView(text("Твои плейлисты", 22f, textColor, true, false))
 
         if (!hasAccount) {
             target.addView(text("Подключите аккаунт, чтобы увидеть свои плейлисты.", 15f, mutedColor, false, false))
