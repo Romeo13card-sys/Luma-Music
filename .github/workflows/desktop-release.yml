@@ -137,7 +137,7 @@ jobs:
           path: dist/*
           if-no-files-found: error
   publish:
-    if: ${{ always() && !cancelled() && github.ref == 'refs/heads/main' }}
+    if: ${{ success() && github.ref == 'refs/heads/main' }}
     needs: desktop
     runs-on: ubuntu-24.04
     permissions:
