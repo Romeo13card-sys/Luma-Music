@@ -657,7 +657,8 @@ pub fn dispatch(token: &str, operation: &str, argument: &str) -> String {
                 stream_cache::resolve(token, id, quality, || client.stream_at(id, quality))
                     .map(|url| json!(url))
             }
-            "stream" => client.stream(argument).map(|url| json!(url)),
+            "stream" => stream_cache::resolve(token, argument, 320, || client.stream(argument))
+                .map(|url| json!(url)),
             _ => Err("Неизвестная операция".into()),
         }
     })();
