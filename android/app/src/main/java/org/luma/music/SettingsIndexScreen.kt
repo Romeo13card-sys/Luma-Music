@@ -26,6 +26,17 @@ internal class SettingsIndexScreen(
     private val mutedColor: Int,
 ) {
     fun render() {
+        target.addView(text("MAKE IT YOURS  /  LUMA SETTINGS", 10f, AppThemes.active.accent, true, true))
+        target.addView(text("Настрой Luma", 30f, textColor, true, false))
+        target.addView(
+            text(
+                "Звук, внешний вид, загрузки и обновления — всё в одном месте.",
+                13f,
+                mutedColor,
+                false,
+                false,
+            ),
+        )
         val search = EditText(context).apply {
             hint = translate("Найти настройку")
             setTextColor(textColor)
