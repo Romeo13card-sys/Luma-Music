@@ -128,6 +128,33 @@ impl App {
         });
     }
 
+    fn prewarm_next(&self) {
+        if !self.autoplay {
+            return;
+        }
+        let Some(index) = self.index else {
+            return;
+        };
+        let Some(track) = self
+            .queue
+            .iter()
+            .skip(index + 1)
+            .find(|track| track["available"] == true)
+        else {
+            return;
+        };
+        let id = track["id"].as_str().unwrap_or("").to_owned();
+        if id.is_empty() || !id.bytes().all(|byte| byte.is_ascii_digit()) {
+            return;
+        }
+        let token = self.token.clone();
+        let quality = self.quality;
+        std::thread::spawn(move || {
+            let args = serde_json::json!({"id": id, "quality": quality}).to_string();
+            let _ = yamusic_core::dispatch(&token, "stream_quality", &args);
+        });
+    }
+
     pub(crate) fn adjacent(&mut self, step: isize) {
         if self.jobs.busy() {
             return;
@@ -212,9 +239,13 @@ impl App {
                         self.waiting_end = true;
                         Ok(())
                     });
+                    let started = result.is_ok();
                     self.status = result
                         .map(|_| "Воспроизведение".into())
                         .unwrap_or_else(|error: String| error);
+                    if started {
+                        self.prewarm_next();
+                    }
                 }
             }
         }
