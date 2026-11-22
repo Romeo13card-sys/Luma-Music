@@ -237,6 +237,9 @@ impl eframe::App for App {
         if screen_actions.check_updates {
             self.check_updates(ctx.clone());
         }
+        if screen_actions.download_update {
+            self.download_update(ctx.clone());
+        }
 
         egui::TopBottomPanel::bottom("luma_player")
             .resizable(false)
