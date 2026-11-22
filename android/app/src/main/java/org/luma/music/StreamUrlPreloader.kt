@@ -19,6 +19,13 @@ import java.util.concurrent.TimeUnit
 internal fun isAsciiNumericTrackId(id: String): Boolean =
     id.isNotEmpty() && id.all { digit -> digit in '0'..'9' }
 
+internal fun streamWarmupKey(id: String, bitrate: Int, token: String): String {
+    val accountScope = MessageDigest.getInstance("SHA-256")
+        .digest(token.toByteArray(Charsets.UTF_8))
+        .joinToString("") { byte -> "%02x".format(byte) }
+    return "$id:$bitrate:$accountScope"
+}
+
 internal object StreamUrlPreloader {
     // Prevent duplicate concurrent warmups; URL caching and request sharing live in Rust.
     private val pending = ConcurrentHashMap.newKeySet<String>()
@@ -53,10 +60,7 @@ internal object StreamUrlPreloader {
                                 val metered = network.isActiveNetworkMetered
                                 val prefs = SettingsStore.get(app)
                                 val bitrate = quality(app, metered)
-                                val accountScope = MessageDigest.getInstance("SHA-256")
-                                    .digest(token.toByteArray(Charsets.UTF_8))
-                                    .joinToString("") { byte -> "%02x".format(byte) }
-                                val key = "${song.id}:$bitrate:$accountScope"
+                                val key = streamWarmupKey(song.id, bitrate, token)
                                 if (!pending.add(key)) return@execute
                                 pendingKey = key
                                 if (hasInternet && !(prefs.getBoolean("unmetered_only", false) && metered) &&
