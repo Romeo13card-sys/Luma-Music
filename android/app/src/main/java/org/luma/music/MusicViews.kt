@@ -52,7 +52,7 @@ class SongRow(c:Context):LinearLayout(c) {
     val more=MusicUi.icon(c,R.drawable.luma_more,"Действия с треком"){}.apply {isFocusable=false;isFocusableInTouchMode=false}
     init {
         orientation=HORIZONTAL;gravity=Gravity.CENTER_VERTICAL
-        val p=MusicUi.dp(c,12);setPadding(p,p,p,p);background=surface(MusicUi.dp(c,20).toFloat())
+        val p=MusicUi.dp(c,12);setPadding(p,p,p,p);background=LumaDesign.trackCard(false,MusicUi.dp(c,20).toFloat())
         val tile=FrameLayout(c);tile.addView(art,FrameLayout.LayoutParams(-1,-1))
         marker.background=surface(MusicUi.dp(c,12).toFloat(),true)
         tile.addView(marker,FrameLayout.LayoutParams(MusicUi.dp(c,22),MusicUi.dp(c,22),Gravity.END or Gravity.BOTTOM))
@@ -61,6 +61,7 @@ class SongRow(c:Context):LinearLayout(c) {
         addView(labels,LayoutParams(0,-2,1f));addView(more,LayoutParams(MusicUi.dp(c,44),MusicUi.dp(c,48)))
     }
     fun bind(song:Song,current:Boolean=false){
+        background=LumaDesign.trackCard(current,MusicUi.dp(context,20).toFloat())
         art.bind(song.cover);title.text=song.title;artist.text=song.artist
         marker.text=if(current)"●" else "";marker.visibility=if(current)View.VISIBLE else View.GONE
         alpha=if(song.available)1f else .55f
