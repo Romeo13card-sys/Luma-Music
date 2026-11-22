@@ -303,6 +303,7 @@ $Backup = Join-Path $InstallDir '.luma-update-backup'
 $Touched = New-Object System.Collections.Generic.List[string]
 $BackedUp = New-Object System.Collections.Generic.List[string]
 $RollbackFailed = Test-Path -LiteralPath $Backup
+$InstallCommitted = $false
 try {
     if ($RollbackFailed) { throw "A previous update backup exists at ${Backup}; restore it before retrying" }
     Expand-Archive -LiteralPath $Archive -DestinationPath $Stage -Force
@@ -320,22 +321,28 @@ try {
         $Touched.Add($Target)
         Copy-Item -LiteralPath $Item.FullName -Destination $Target -Recurse -Force
     }
-    Remove-Item -LiteralPath $Stage,$Backup -Recurse -Force
     Start-Process -FilePath $Executable -WorkingDirectory $InstallDir
+    $InstallCommitted = $true
+    Remove-Item -LiteralPath $Stage,$Backup -Recurse -Force -ErrorAction SilentlyContinue
 } catch {
-    foreach ($Target in $Touched) {
-        Remove-Item -LiteralPath $Target -Recurse -Force -ErrorAction SilentlyContinue
-    }
-    foreach ($Target in $BackedUp) {
-        $Saved = Join-Path $Backup (Split-Path -Leaf $Target)
-        if (Test-Path -LiteralPath $Saved) {
-            try {
-                Move-Item -LiteralPath $Saved -Destination $Target -Force
-            } catch {
-                $RollbackFailed = $true
-                Add-Content -LiteralPath (Join-Path $env:TEMP 'luma-update-error.log') -Value "Rollback backup preserved at ${Backup}: $_"
+    if (-not $InstallCommitted) {
+        foreach ($Target in $Touched) {
+            Remove-Item -LiteralPath $Target -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        foreach ($Target in $BackedUp) {
+            $Saved = Join-Path $Backup (Split-Path -Leaf $Target)
+            if (Test-Path -LiteralPath $Saved) {
+                try {
+                    Move-Item -LiteralPath $Saved -Destination $Target -Force
+                } catch {
+                    $RollbackFailed = $true
+                    Add-Content -LiteralPath (Join-Path $env:TEMP 'luma-update-error.log') -Value "Rollback backup preserved at ${Backup}: $_"
+                }
             }
         }
+    } else {
+        $RollbackFailed = $true
+        Add-Content -LiteralPath (Join-Path $env:TEMP 'luma-update-error.log') -Value "Files were installed but automatic restart failed; recovery backup preserved at ${Backup}"
     }
     Add-Content -LiteralPath (Join-Path $env:TEMP 'luma-update-error.log') -Value $_
     exit 1
