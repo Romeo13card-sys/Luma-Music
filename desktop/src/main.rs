@@ -55,6 +55,7 @@ impl eframe::App for App {
         ctx.style_mut(|style| {
             style.spacing.item_spacing = egui::vec2(10.0, 10.0);
             style.spacing.button_padding = egui::vec2(14.0, 10.0);
+            style.spacing.interact_size.y = 42.0;
             style.visuals.widgets.noninteractive.rounding = egui::Rounding::same(14.0);
             style.visuals.widgets.inactive.rounding = egui::Rounding::same(14.0);
             style.visuals.widgets.hovered.rounding = egui::Rounding::same(14.0);
@@ -228,92 +229,89 @@ impl eframe::App for App {
         egui::TopBottomPanel::bottom("luma_player")
             .resizable(false)
             .show(ctx, |ui| {
-                ui.add_space(4.0);
-                ui.horizontal(|ui| {
-                    ui.vertical(|ui| {
-                        ui.label(egui::RichText::new("СЕЙЧАС ИГРАЕТ").small().weak().strong());
-                        ui.label(
-                            egui::RichText::new(if self.title.is_empty() {
-                                "Выберите музыку"
-                            } else {
-                                &self.title
-                            })
-                            .strong(),
-                        );
-                        if let Some(track) = self.queue.get(self.index.unwrap_or(usize::MAX)) {
-                            ui.label(
-                                egui::RichText::new(track["artists"].as_str().unwrap_or(""))
-                                    .small()
-                                    .weak(),
-                            );
-                        }
-                    });
-                    ui.separator();
-                    if ui.button("Предыдущий").clicked() {
-                        self.adjacent(-1);
-                    }
-                    let playing = self
-                        .player
-                        .as_ref()
-                        .is_some_and(|p| !p.sink.is_paused() && !p.sink.empty());
-                    if ui
-                        .button(if playing {
-                            "Пауза"
-                        } else {
-                            "Продолжить"
-                        })
-                        .clicked()
-                    {
-                        if let Some(player) = &self.player {
-                            if player.sink.is_paused() {
-                                player.sink.play();
-                            } else {
-                                player.sink.pause();
+                egui::Frame::group(ui.style())
+                    .fill(ui.visuals().window_fill)
+                    .inner_margin(egui::Margin::same(10.0))
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.vertical(|ui| {
+                                ui.label(
+                                    egui::RichText::new("NOW PLAYING")
+                                        .small()
+                                        .strong()
+                                        .color(egui::Color32::from_rgb(255, 190, 45)),
+                                );
+                                ui.label(
+                                    egui::RichText::new(if self.title.is_empty() {
+                                        "Выберите музыку"
+                                    } else {
+                                        &self.title
+                                    })
+                                    .strong(),
+                                );
+                                if let Some(track) = self.queue.get(self.index.unwrap_or(usize::MAX)) {
+                                    ui.label(
+                                        egui::RichText::new(track["artists"].as_str().unwrap_or(""))
+                                            .small()
+                                            .weak(),
+                                    );
+                                }
+                            });
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if ui.button("⏭").clicked() {
+                                    self.adjacent(1);
+                                }
+                                let playing = self.player.as_ref()
+                                    .is_some_and(|p| !p.sink.is_paused() && !p.sink.empty());
+                                if ui
+                                    .add(
+                                        egui::Button::new(
+                                            egui::RichText::new(if playing { "Ⅱ" } else { "▶" })
+                                                .size(19.0)
+                                                .strong()
+                                                .color(egui::Color32::from_rgb(24, 27, 32)),
+                                        )
+                                        .fill(egui::Color32::from_rgb(255, 216, 77)),
+                                    )
+                                    .clicked()
+                                {
+                                    if let Some(player) = &self.player {
+                                        if player.sink.is_paused() {
+                                            player.sink.play();
+                                        } else {
+                                            player.sink.pause();
+                                        }
+                                    }
+                                }
+                                if ui.button("⏮").clicked() {
+                                    self.adjacent(-1);
+                                }
+                                if ui.button("■").clicked() {
+                                    self.jobs.cancel();
+                                    self.stop();
+                                }
+                            });
+                        });
+                        if let (Some(player), Some(duration)) =
+                            (&self.player, self.duration.filter(|d| !d.is_zero()))
+                        {
+                            let mut seconds = player
+                                .sink
+                                .get_pos()
+                                .as_secs_f64()
+                                .min(duration.as_secs_f64());
+                            if ui
+                                .add(
+                                    egui::Slider::new(&mut seconds, 0.0..=duration.as_secs_f64())
+                                        .show_value(false)
+                                        .text(""),
+                                )
+                                .changed()
+                            {
+                                seek_to = Some(seconds);
                             }
                         }
-                    }
-                    if ui.button("Следующий").clicked() {
-                        self.adjacent(1);
-                    }
-                    if ui.button("Стоп").clicked() {
-                        self.jobs.cancel();
-                        self.stop();
-                    }
-                    if ui
-                        .add_enabled(
-                            !self.jobs.busy() && self.player.is_some(),
-                            egui::Button::new("Перезапустить выход"),
-                        )
-                        .clicked()
-                    {
-                        self.waiting_end = false;
-                        self.player = None;
-                        self.file = None;
-                        if let Some(index) = self.index {
-                            self.play(index);
-                        }
-                    }
-                });
-                if let (Some(player), Some(duration)) =
-                    (&self.player, self.duration.filter(|d| !d.is_zero()))
-                {
-                    let mut seconds = player
-                        .sink
-                        .get_pos()
-                        .as_secs_f64()
-                        .min(duration.as_secs_f64());
-                    if ui
-                        .add(
-                            egui::Slider::new(&mut seconds, 0.0..=duration.as_secs_f64())
-                                .show_value(false)
-                                .text(""),
-                        )
-                        .changed()
-                    {
-                        seek_to = Some(seconds);
-                    }
-                }
-                ui.add_space(3.0);
+                    });
             });
 
         if let Some((operation, argument)) = request {
