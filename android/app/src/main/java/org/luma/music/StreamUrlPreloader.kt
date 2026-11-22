@@ -58,7 +58,7 @@ internal object StreamUrlPreloader {
         songs.asSequence()
             .filter { it.available && it.uri == null && it.id.isNotBlank() && it.id.all(Char::isDigit) }
             .distinctBy { it.id }
-            .take(4)
+            .take(2)
             .forEach { song ->
                 val cacheKey = key(token, song, selectedQuality)
                 val future = CompletableFuture<Unit>()
