@@ -34,7 +34,7 @@ adb('shell', 'screencap', '-p', '/sdcard/glass-home.png')
 out = ROOT / 'android/app/build/outputs/smoke'
 out.mkdir(parents=True, exist_ok=True)
 adb('pull', '/sdcard/glass-home.png', str(out/'glass-home.png'))
-tap('Слушать тестовый звук')
+tap('Слушать демо')
 time.sleep(1)
 # Verify a real active session, rather than only an open activity or service PID.
 sessions = adb('shell', 'dumpsys', 'media_session').decode(errors='replace')
