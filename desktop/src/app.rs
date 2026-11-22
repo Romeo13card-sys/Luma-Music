@@ -2,7 +2,7 @@ use crate::engine::Jobs;
 use crate::player::{prepare_audio, Player, Reply};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use std::{fs, io::{Read, Write}, path::PathBuf, sync::mpsc, time::Duration};
+use std::{fs, io::{Read, Write}, path::{Path, PathBuf}, sync::mpsc, time::Duration};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Screen {
@@ -269,9 +269,17 @@ try {
         {
             let script = r#"#!/bin/sh
 archive="$1"; pid="$2"; executable="$3"; install_dir="$4"; stage="$5"
+exec >> "$HOME/luma-update.log" 2>&1
 while kill -0 "$pid" 2>/dev/null; do sleep 0.5; done
 mkdir -p "$stage" || exit 1
-unzip -q "$archive" -d "$stage" || exit 2
+if command -v unzip >/dev/null 2>&1; then
+    unzip -q "$archive" -d "$stage" || exit 2
+elif command -v python3 >/dev/null 2>&1; then
+    python3 -m zipfile -e "$archive" "$stage" || exit 2
+else
+    echo "Neither unzip nor python3 is available"
+    exit 2
+fi
 cp -a "$stage/." "$install_dir/" || exit 3
 rm -rf "$stage"
 rm -f "$archive"
@@ -291,6 +299,7 @@ rm -f "$0"
             let app_bundle = install_target;
             let script = r#"#!/bin/sh
 archive="$1"; pid="$2"; app="$3"; stage="$4"
+exec >> "$HOME/luma-update.log" 2>&1
 while kill -0 "$pid" 2>/dev/null; do sleep 0.5; done
 mkdir -p "$stage" || exit 1
 ditto -x -k "$archive" "$stage" || exit 2
