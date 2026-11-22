@@ -57,7 +57,7 @@ class PlaybackService : Service(),CoverImages.Target {
             val start=maxOf(0,position-20)
             queue=songs.drop(start).take(200);index=position-start;revision++
             // Start resolving the selected track before the service's playback worker asks for it.
-            StreamUrlPreloader.preload(context, queue.drop(index).take(4))
+            StreamUrlPreloader.preload(context, queue.drop(index).take(2))
             command(context,if(wave)"wave" else "play",index,seekMs)
         }
         fun editQueue(context:Context,action:String,song:Song?=null,at:Int=-1,to:Int=-1) {
