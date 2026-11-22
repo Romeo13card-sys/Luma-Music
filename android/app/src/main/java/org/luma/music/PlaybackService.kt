@@ -426,7 +426,6 @@ class PlaybackService : Service(),CoverImages.Target {
     }
 
     private fun source(song:Song,credential:String):String = song.uri ?: OfflineDownloads.ready(this,song.id) ?: run {
-        StreamUrlPreloader.awaitIfPending(song,credential)
         val reply=JSONObject(Native.request(credential,"stream_quality",streamOptions(song)))
         check(reply.optBoolean("ok")){reply.optString("error","Ошибка сервиса")}
         reply.getString("data")
