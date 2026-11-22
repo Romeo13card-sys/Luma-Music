@@ -299,21 +299,41 @@ param([string]$Archive, [int]$ProcessId, [string]$Executable, [string]$InstallDi
 $ErrorActionPreference = 'Stop'
 while (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 500 }
 $Stage = Join-Path $env:TEMP ('luma-update-' + [guid]::NewGuid().ToString('N'))
+$Backup = Join-Path $env:TEMP ('luma-backup-' + [guid]::NewGuid().ToString('N'))
+$Touched = New-Object System.Collections.Generic.List[string]
+$BackedUp = New-Object System.Collections.Generic.List[string]
 try {
     Expand-Archive -LiteralPath $Archive -DestinationPath $Stage -Force
     $Candidate = Join-Path $Stage 'luma-desktop.exe'
     if (-not (Test-Path -LiteralPath $Candidate)) { throw 'Archive does not contain luma-desktop.exe' }
     & $Candidate --self-check | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Updated executable failed --self-check' }
-    Get-ChildItem -LiteralPath $Stage -Force | ForEach-Object {
-        Copy-Item -LiteralPath $_.FullName -Destination $InstallDir -Recurse -Force
+    New-Item -ItemType Directory -Path $Backup -Force | Out-Null
+    foreach ($Item in Get-ChildItem -LiteralPath $Stage -Force) {
+        $Target = Join-Path $InstallDir $Item.Name
+        $Touched.Add($Target)
+        if (Test-Path -LiteralPath $Target) {
+            Move-Item -LiteralPath $Target -Destination (Join-Path $Backup $Item.Name)
+            $BackedUp.Add($Target)
+        }
+        Copy-Item -LiteralPath $Item.FullName -Destination $Target -Recurse -Force
     }
-    Remove-Item -LiteralPath $Stage -Recurse -Force
+    Remove-Item -LiteralPath $Stage,$Backup -Recurse -Force
     Start-Process -FilePath $Executable -WorkingDirectory $InstallDir
 } catch {
+    foreach ($Target in $Touched) {
+        Remove-Item -LiteralPath $Target -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    foreach ($Target in $BackedUp) {
+        $Saved = Join-Path $Backup (Split-Path -Leaf $Target)
+        if (Test-Path -LiteralPath $Saved) {
+            Move-Item -LiteralPath $Saved -Destination $Target -Force
+        }
+    }
     Add-Content -LiteralPath (Join-Path $env:TEMP 'luma-update-error.log') -Value $_
     exit 1
 } finally {
+    Remove-Item -LiteralPath $Stage,$Backup -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $Archive -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue
 }
@@ -346,7 +366,8 @@ try {
 archive="$1"; pid="$2"; executable="$3"; install_dir="$4"; stage="$5"
 exec >> "$HOME/luma-update.log" 2>&1
 while kill -0 "$pid" 2>/dev/null; do sleep 0.5; done
-mkdir -p "$stage" || exit 1
+backup="${stage}.backup"
+mkdir -p "$stage" "$backup" || exit 1
 if command -v unzip >/dev/null 2>&1; then
     unzip -q "$archive" -d "$stage" || exit 2
 elif command -v python3 >/dev/null 2>&1; then
@@ -356,9 +377,36 @@ else
     exit 2
 fi
 "$stage/luma-desktop" --self-check >/dev/null || exit 5
-cp -a "$stage/." "$install_dir/" || exit 3
-rm -rf "$stage"
-rm -f "$archive"
+touched="$backup/touched"
+rollback() {
+    while IFS= read -r name; do
+        [ -n "$name" ] || continue
+        rm -rf "$install_dir/$name"
+        if [ -e "$backup/$name" ] || [ -L "$backup/$name" ]; then
+            mv "$backup/$name" "$install_dir/$name" || echo "Rollback failed for $name"
+        fi
+    done < "$touched"
+}
+for item in "$stage"/* "$stage"/.[!.]* "$stage"/..?*; do
+    [ -e "$item" ] || [ -L "$item" ] || continue
+    name=${item##*/}
+    target="$install_dir/$name"
+    had_old=0
+    if [ -e "$target" ] || [ -L "$target" ]; then
+        mv "$target" "$backup/$name" || { rollback; exit 3; }
+        had_old=1
+    fi
+    if ! printf '%s\\n' "$name" >> "$touched"; then
+        if [ "$had_old" -eq 1 ]; then mv "$backup/$name" "$target"; fi
+        rollback
+        exit 3
+    fi
+    if ! cp -a "$item" "$target"; then
+        rollback
+        exit 3
+    fi
+done
+rm -rf "$stage" "$backup" "$archive"
 cd "$install_dir" || exit 4
 "$executable" >/dev/null 2>&1 &
 rm -f "$0"
