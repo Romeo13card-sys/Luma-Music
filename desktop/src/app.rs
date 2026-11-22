@@ -50,7 +50,7 @@ fn compare_release_versions(candidate: &str, installed: &str) -> Option<std::cmp
         let mut parts = core.split('.');
         let major = parts.next()?.parse().ok()?;
         let minor = parts.next()?.parse().ok()?;
-        let patch = parts.next()?.parse().ok()?;
+        let patch = parts.next().map(str::parse).transpose().ok()?.unwrap_or(0);
         if parts.next().is_some() {
             return None;
         }
@@ -379,6 +379,8 @@ mod playback_prewarm_tests {
         assert_eq!(compare_release_versions("v2.1.0", "2.1.0-rc.1"), Some(std::cmp::Ordering::Greater));
         assert_eq!(compare_release_versions("v2.0.0", "2.1.0"), Some(std::cmp::Ordering::Less));
         assert_eq!(compare_release_versions("bad", "2.0.0"), None);
+        assert_eq!(compare_release_versions("v2.1.0", "2.0"), Some(std::cmp::Ordering::Greater));
+        assert_eq!(compare_release_versions("v2.0.0", "2.0"), Some(std::cmp::Ordering::Equal));
     }
 
     #[test]
