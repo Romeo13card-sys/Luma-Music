@@ -135,21 +135,84 @@ pub(crate) fn draw_tracks(
         let playing = current.is_some_and(|current| current == id);
         let title = track["title"].as_str().unwrap_or("Трек");
         let artist = track["artists"].as_str().unwrap_or("");
-        let state = if playing {
-            "СЕЙЧАС"
-        } else if track["available"] == true {
-            "▶"
-        } else {
-            "—"
-        };
-        let label = format!("{state}   {title}\n          {artist}");
-        let response = ui.add_enabled(
-            enabled && track["available"] == true,
-            egui::Button::new(label).min_size(egui::vec2(ui.available_width(), 58.0)),
-        );
-        if response.clicked() {
-            *selected = Some(index);
-        }
-        ui.add_space(5.0);
+        let available = track["available"] == true;
+        egui::Frame::group(ui.style())
+            .fill(ui.visuals().window_fill)
+            .stroke(egui::Stroke::new(
+                1.0,
+                if playing {
+                    egui::Color32::from_rgb(255, 216, 77)
+                } else {
+                    ui.visuals().widgets.noninteractive.bg_stroke.color
+                },
+            ))
+            .inner_margin(egui::Margin::same(10.0))
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    let marker = if playing {
+                        "♫".to_owned()
+                    } else {
+                        format!("{:02}", index + 1)
+                    };
+                    ui.add_sized(
+                        [34.0, 38.0],
+                        egui::Label::new(
+                            egui::RichText::new(marker)
+                                .size(if playing { 22.0 } else { 13.0 })
+                                .strong()
+                                .color(if playing {
+                                    egui::Color32::from_rgb(255, 190, 45)
+                                } else {
+                                    ui.visuals().weak_text_color()
+                                }),
+                        ),
+                    );
+                    ui.vertical(|ui| {
+                        let response = ui.add_enabled(
+                            enabled && available,
+                            egui::Button::new(
+                                egui::RichText::new(title).size(15.0).strong(),
+                            )
+                            .frame(false)
+                            .min_size(egui::vec2(ui.available_width(), 22.0)),
+                        );
+                        if response.clicked() {
+                            *selected = Some(index);
+                        }
+                        ui.label(
+                            egui::RichText::new(if artist.is_empty() {
+                                "Исполнитель не указан"
+                            } else {
+                                artist
+                            })
+                            .size(12.0)
+                            .weak(),
+                        );
+                    });
+                    ui.with_layout(
+                        egui::Layout::right_to_left(egui::Align::Center),
+                        |ui| {
+                            let state = if playing {
+                                "СЕЙЧАС ИГРАЕТ"
+                            } else if available {
+                                "▶"
+                            } else {
+                                "НЕДОСТУПЕН"
+                            };
+                            ui.label(
+                                egui::RichText::new(state)
+                                    .size(10.0)
+                                    .strong()
+                                    .color(if playing {
+                                        egui::Color32::from_rgb(255, 190, 45)
+                                    } else {
+                                        ui.visuals().weak_text_color()
+                                    }),
+                            );
+                        },
+                    );
+                });
+            });
+        ui.add_space(6.0);
     }
 }
